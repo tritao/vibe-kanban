@@ -35,6 +35,7 @@ interface TaskKanbanBoardProps {
   selectedSharedTaskId?: string | null;
   onCreateTask?: () => void;
   projectId: string;
+  layout?: 'columns' | 'stacked';
 }
 
 function TaskKanbanBoard({
@@ -46,19 +47,25 @@ function TaskKanbanBoard({
   selectedSharedTaskId,
   onCreateTask,
   projectId,
+  layout = 'columns',
 }: TaskKanbanBoardProps) {
   const { userId } = useAuth();
 
   return (
-    <KanbanProvider onDragEnd={onDragEnd}>
+    <KanbanProvider onDragEnd={onDragEnd} layout={layout}>
       {Object.entries(columns).map(([status, items]) => {
         const statusKey = status as TaskStatus;
         return (
-          <KanbanBoard key={status} id={statusKey}>
+          <KanbanBoard
+            key={status}
+            id={statusKey}
+            className={layout === 'stacked' ? 'min-h-24' : undefined}
+          >
             <KanbanHeader
               name={statusLabels[statusKey]}
               color={statusBoardColors[statusKey]}
               onAddTask={onCreateTask}
+              sticky={layout !== 'stacked'}
             />
             <KanbanCards>
               {items.map((item, index) => {

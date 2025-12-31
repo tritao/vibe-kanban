@@ -153,6 +153,7 @@ export type KanbanHeaderProps =
       color: Status['color'];
       className?: string;
       onAddTask?: () => void;
+      sticky?: boolean;
     };
 
 export const KanbanHeader = (props: KanbanHeaderProps) => {
@@ -162,10 +163,15 @@ export const KanbanHeader = (props: KanbanHeaderProps) => {
     return props.children;
   }
 
+  const sticky = props.sticky ?? true;
+
   return (
     <Card
       className={cn(
-        'sticky top-0 z-20 flex shrink-0 items-center gap-2 p-3 border-b border-dashed flex gap-2',
+        sticky
+          ? 'sticky top-0 z-20'
+          : 'static',
+        'flex shrink-0 items-center gap-2 p-3 border-b border-dashed flex gap-2',
         'bg-background',
         props.className
       )}
@@ -263,12 +269,14 @@ export type KanbanProviderProps = {
   children: ReactNode;
   onDragEnd: (event: DragEndEvent) => void;
   className?: string;
+  layout?: 'columns' | 'stacked';
 };
 
 export const KanbanProvider = ({
   children,
   onDragEnd,
   className,
+  layout = 'columns',
 }: KanbanProviderProps) => {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -285,7 +293,9 @@ export const KanbanProvider = ({
     >
       <div
         className={cn(
-          'inline-grid grid-flow-col auto-cols-[minmax(200px,400px)] divide-x border-x items-stretch min-h-full',
+          layout === 'stacked'
+            ? 'flex flex-col divide-y border-y min-h-full'
+            : 'inline-grid grid-flow-col auto-cols-[minmax(200px,400px)] divide-x border-x items-stretch min-h-full',
           className
         )}
       >
