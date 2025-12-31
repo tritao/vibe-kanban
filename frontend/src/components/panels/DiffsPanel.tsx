@@ -55,9 +55,24 @@ export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
   >('loading');
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
-  const { diffs, error } = useDiffStream(selectedAttempt?.id ?? null, true);
+
+  const diffStreamRefreshKey = useMemo(() => {
+    if (!gitOps?.branchStatus?.length) return undefined;
+    return gitOps.branchStatus
+      .map(
+        (s) =>
+          `${s.repo_id}:${s.target_branch_name}:${s.head_oid ?? ''}`
+      )
+      .sort()
+      .join('|');
+  }, [gitOps?.branchStatus]);
+
+  const { diffs, error } = useDiffStream(selectedAttempt?.id ?? null, true, {
+    refreshKey: diffStreamRefreshKey,
+  });
   const { fileCount, added, deleted } = useDiffSummary(
-    selectedAttempt?.id ?? null
+    selectedAttempt?.id ?? null,
+    diffStreamRefreshKey
   );
 
   // If no diffs arrive within 3 seconds, stop showing the spinner
@@ -66,6 +81,14 @@ export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
     const timer = setTimeout(() => setLoadingState('timed-out'), 3000);
     return () => clearTimeout(timer);
   }, [loadingState]);
+
+  // Restart local UI state when we intentionally restart the diff stream
+  // (e.g. after rebase when the base commit changes).
+  useEffect(() => {
+    setLoadingState('loading');
+    setCollapsedIds(new Set());
+    setProcessedIds(new Set());
+  }, [selectedAttempt?.id, diffStreamRefreshKey]);
 
   if (diffs.length > 0 && loadingState === 'loading') {
     setLoadingState('loaded');

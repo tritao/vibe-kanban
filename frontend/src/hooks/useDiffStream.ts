@@ -12,6 +12,13 @@ type DiffStreamEvent = {
 
 export interface UseDiffStreamOptions {
   statsOnly?: boolean;
+  /**
+   * Forces the diff WebSocket stream to restart when this changes.
+   * Useful when the "base commit" changes (e.g. after rebase / target branch
+   * change), since the server-side diff stream is computed against the base at
+   * stream creation time.
+   */
+  refreshKey?: string | number;
 }
 
 interface UseDiffStreamResult {
@@ -27,13 +34,18 @@ export const useDiffStream = (
   const endpoint = (() => {
     if (!attemptId) return undefined;
     const query = `/api/task-attempts/${attemptId}/diff/ws`;
+    const params = new URLSearchParams();
+
     if (typeof options?.statsOnly === 'boolean') {
-      const params = new URLSearchParams();
       params.set('stats_only', String(options.statsOnly));
-      return `${query}?${params.toString()}`;
-    } else {
-      return query;
     }
+
+    if (options?.refreshKey != null) {
+      params.set('rev', String(options.refreshKey));
+    }
+
+    const suffix = params.toString();
+    return suffix ? `${query}?${suffix}` : query;
   })();
 
   const initialData = useCallback(
