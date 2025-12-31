@@ -290,6 +290,37 @@ export function ProjectTasks() {
   const mode: LayoutMode =
     rawMode === 'preview' || rawMode === 'diffs' ? rawMode : null;
 
+  const setMode = useCallback(
+    (newMode: LayoutMode) => {
+      const params = new URLSearchParams(searchParams);
+      params.set('view', newMode ?? 'attempt');
+      setSearchParams(params, { replace: true });
+    },
+    [searchParams, setSearchParams]
+  );
+
+  // Default to diffs view when an attempt is open.
+  // This keeps task chat + diffs visible by default (attempt-only remains available by toggling off).
+  useEffect(() => {
+    if (isMobile) return;
+    if (!isPanelOpen) return;
+    if (selectedSharedTask) return;
+    if (isTaskView) return;
+    if (!effectiveAttemptId) return;
+    if (searchParams.has('view')) return;
+    if (mode !== null) return;
+    setMode('diffs');
+  }, [
+    effectiveAttemptId,
+    isMobile,
+    isPanelOpen,
+    isTaskView,
+    mode,
+    searchParams,
+    selectedSharedTask,
+    setMode,
+  ]);
+
   // TODO: Remove this redirect after v0.1.0 (legacy URL support for bookmarked links)
   // Migrates old `view=logs` to `view=diffs`
   useEffect(() => {
@@ -300,19 +331,6 @@ export function ProjectTasks() {
       setSearchParams(params, { replace: true });
     }
   }, [searchParams, setSearchParams]);
-
-  const setMode = useCallback(
-    (newMode: LayoutMode) => {
-      const params = new URLSearchParams(searchParams);
-      if (newMode === null) {
-        params.delete('view');
-      } else {
-        params.set('view', newMode);
-      }
-      setSearchParams(params, { replace: true });
-    },
-    [searchParams, setSearchParams]
-  );
 
   const handleCreateNewTask = useCallback(() => {
     handleCreateTask();
@@ -849,7 +867,13 @@ export function ProjectTasks() {
         </Card>
       </div>
     ) : (
-      <div className="w-full h-full overflow-x-auto overflow-y-auto overscroll-x-contain">
+      <div
+        className={
+          isPanelOpen && !isMobile
+            ? 'w-full h-full overflow-y-auto'
+            : 'w-full h-full overflow-x-auto overflow-y-auto overscroll-x-contain'
+        }
+      >
         <TaskKanbanBoard
           columns={kanbanColumns}
           onDragEnd={handleDragEnd}
@@ -859,6 +883,7 @@ export function ProjectTasks() {
           selectedSharedTaskId={selectedSharedTaskId}
           onCreateTask={handleCreateNewTask}
           projectId={projectId!}
+          layout={isPanelOpen && !isMobile ? 'stacked' : 'columns'}
         />
       </div>
     );

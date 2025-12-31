@@ -17,12 +17,14 @@ interface TasksLayoutProps {
 
 type SplitSizes = [number, number];
 
-const MIN_PANEL_SIZE = 20;
-const DEFAULT_KANBAN_ATTEMPT: SplitSizes = [66, 34];
+const MIN_INNER_PANEL_SIZE = 20;
+const MIN_SIDEBAR_PANEL_SIZE = 12;
+const MIN_RIGHT_PANEL_SIZE = 40;
+const DEFAULT_KANBAN_ATTEMPT: SplitSizes = [24, 76];
 const DEFAULT_ATTEMPT_AUX: SplitSizes = [34, 66];
 
 const STORAGE_KEYS = {
-  KANBAN_ATTEMPT: 'tasksLayout.desktop.v2.kanbanAttempt',
+  KANBAN_ATTEMPT: 'tasksLayout.desktop.v3.kanbanAttempt',
   ATTEMPT_AUX: 'tasksLayout.desktop.v2.attemptAux',
 } as const;
 
@@ -113,7 +115,7 @@ function RightWorkArea({
               id="attempt"
               order={1}
               defaultSize={innerSizes[0]}
-              minSize={MIN_PANEL_SIZE}
+              minSize={MIN_INNER_PANEL_SIZE}
               collapsible
               collapsedSize={0}
               onCollapse={() => setIsAttemptCollapsed(true)}
@@ -150,7 +152,7 @@ function RightWorkArea({
               id="aux"
               order={2}
               defaultSize={innerSizes[1]}
-              minSize={MIN_PANEL_SIZE}
+              minSize={MIN_INNER_PANEL_SIZE}
               collapsible={false}
               className="min-w-0 min-h-0 overflow-hidden"
               role="region"
@@ -168,7 +170,7 @@ function RightWorkArea({
 /**
  * DesktopSimple - Conditionally renders layout based on mode.
  * When mode === null: Shows Kanban | Attempt
- * When mode !== null: Hides Kanban, shows only RightWorkArea with Attempt | Aux
+ * When mode !== null: Shows Kanban | Attempt | Aux
  */
 function DesktopSimple({
   kanban,
@@ -188,19 +190,7 @@ function DesktopSimple({
   );
   const [isKanbanCollapsed, setIsKanbanCollapsed] = useState(false);
 
-  // When preview/diffs is open, hide Kanban entirely and render only RightWorkArea
-  if (mode !== null) {
-    return (
-      <RightWorkArea
-        attempt={attempt}
-        aux={aux}
-        mode={mode}
-        rightHeader={rightHeader}
-      />
-    );
-  }
-
-  // When only viewing attempt logs, show Kanban | Attempt (no aux)
+  // Always show Kanban on desktop when the panel is open.
   return (
     <PanelGroup
       direction="horizontal"
@@ -215,14 +205,14 @@ function DesktopSimple({
         id="kanban"
         order={1}
         defaultSize={outerSizes[0]}
-        minSize={MIN_PANEL_SIZE}
+        minSize={MIN_SIDEBAR_PANEL_SIZE}
         collapsible
         collapsedSize={0}
         onCollapse={() => setIsKanbanCollapsed(true)}
         onExpand={() => setIsKanbanCollapsed(false)}
         className="min-w-0 min-h-0 overflow-hidden"
         role="region"
-        aria-label="Kanban board"
+        aria-label="Tasks"
       >
         {kanban}
       </Panel>
@@ -252,7 +242,7 @@ function DesktopSimple({
         id="right"
         order={2}
         defaultSize={outerSizes[1]}
-        minSize={MIN_PANEL_SIZE}
+        minSize={MIN_RIGHT_PANEL_SIZE}
         collapsible={false}
         className="min-w-0 min-h-0 overflow-hidden"
       >
