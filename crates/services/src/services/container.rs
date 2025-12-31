@@ -534,12 +534,21 @@ pub trait ContainerService {
         // stop execution processes for this workspace's sessions
         let sessions = match Session::find_by_workspace_id(&self.db().pool, workspace.id).await {
             Ok(s) => s,
-            Err(_) => return,
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to load sessions for workspace {} during stop: {}",
+                    workspace.id,
+                    e
+                );
+                return;
+            }
         };
 
         for session in sessions {
             if let Ok(processes) =
-                ExecutionProcess::find_by_session_id(&self.db().pool, session.id, false).await
+                // Include soft-deleted (dropped) processes; a dropped process can still be running,
+                // and we should still be able to stop it.
+                ExecutionProcess::find_by_session_id(&self.db().pool, session.id, true).await
             {
                 for process in processes {
                     // Skip dev server processes unless explicitly included
@@ -552,7 +561,7 @@ pub trait ContainerService {
                         self.stop_execution(&process, ExecutionProcessStatus::Killed)
                             .await
                             .unwrap_or_else(|e| {
-                                tracing::debug!(
+                                tracing::warn!(
                                     "Failed to stop execution process {} for workspace {}: {}",
                                     process.id,
                                     workspace.id,

@@ -1121,20 +1121,81 @@ impl ContainerService for LocalContainerService {
         execution_process: &ExecutionProcess,
         status: ExecutionProcessStatus,
     ) -> Result<(), ContainerError> {
-        let child = self
-            .get_child_from_store(&execution_process.id)
-            .await
-            .ok_or_else(|| {
-                ContainerError::Other(anyhow!("Child process not found for execution"))
-            })?;
+        // Avoid mutating historical records if stop is called for a non-running process.
+        // The UI should generally not call stop in this case, but API consumers might.
+        if execution_process.status != ExecutionProcessStatus::Running {
+            tracing::debug!(
+                "Stop requested for non-running execution process {} (status: {:?}); no-op",
+                execution_process.id,
+                execution_process.status
+            );
+            return Ok(());
+        }
+
         let exit_code = if status == ExecutionProcessStatus::Completed {
             Some(0)
         } else {
             None
         };
 
-        ExecutionProcess::update_completion(&self.db.pool, execution_process.id, status, exit_code)
-            .await?;
+        let status = status.clone();
+        ExecutionProcess::update_completion(
+            &self.db.pool,
+            execution_process.id,
+            status.clone(),
+            exit_code,
+        )
+        .await?;
+
+        let child = self.get_child_from_store(&execution_process.id).await;
+
+        // If we no longer have an in-memory child handle (e.g., it was already cleaned up),
+        // still treat the stop request as successful after persisting status, so the UI doesn't
+        // get stuck showing "running" forever.
+        let Some(child) = child else {
+            let _ = self.take_interrupt_sender(&execution_process.id).await;
+
+            if let Some(msg) = self.msg_stores.write().await.remove(&execution_process.id) {
+                msg.push_finished();
+            }
+
+            // Update task status to InReview when execution is stopped (best-effort).
+            if let Ok(ctx) =
+                ExecutionProcess::load_context(&self.db.pool, execution_process.id).await
+                && !matches!(
+                    ctx.execution_process.run_reason,
+                    ExecutionProcessRunReason::DevServer
+                )
+            {
+                match Task::update_status(&self.db.pool, ctx.task.id, TaskStatus::InReview).await {
+                    Ok(_) => {
+                        if let Some(publisher) = self.share_publisher()
+                            && let Err(err) = publisher.update_shared_task_by_id(ctx.task.id).await
+                        {
+                            tracing::warn!(
+                                ?err,
+                                "Failed to propagate shared task update for {}",
+                                ctx.task.id
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to update task status to InReview: {e}");
+                    }
+                }
+            }
+
+            tracing::warn!(
+                "Execution process {} marked as {:?}, but child handle was missing; nothing to kill",
+                execution_process.id,
+                status
+            );
+
+            // Record after-head commit OID (best-effort)
+            self.update_after_head_commits(execution_process.id).await;
+
+            return Ok(());
+        };
 
         // Try graceful interrupt first, then force kill
         if let Some(interrupt_sender) = self.take_interrupt_sender(&execution_process.id).await {
