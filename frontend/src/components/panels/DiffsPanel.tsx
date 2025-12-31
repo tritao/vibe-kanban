@@ -1,5 +1,5 @@
 import { useDiffStream } from '@/hooks/useDiffStream';
-import { useMemo, useCallback, useState, useEffect } from 'react';
+import { useMemo, useCallback, useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader } from '@/components/ui/loader';
 import { Button } from '@/components/ui/button';
@@ -55,6 +55,7 @@ export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
   >('loading');
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(new Set());
   const [processedIds, setProcessedIds] = useState<Set<string>>(new Set());
+  const lastNonEmptyDiffsRef = useRef<Diff[]>([]);
 
   const diffStreamRefreshKey = useMemo(() => {
     if (!gitOps?.branchStatus?.length) return undefined;
@@ -75,6 +76,37 @@ export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
     diffStreamRefreshKey
   );
 
+  useEffect(() => {
+    if (diffs.length > 0) {
+      lastNonEmptyDiffsRef.current = diffs;
+    }
+  }, [diffs]);
+
+  const renderDiffs = useMemo(() => {
+    if (diffs.length > 0) return diffs;
+    if (loadingState === 'loading') return lastNonEmptyDiffsRef.current;
+    return diffs;
+  }, [diffs, loadingState]);
+
+  const renderSummary = useMemo(() => {
+    if (
+      loadingState === 'loading' &&
+      renderDiffs.length > 0 &&
+      fileCount === 0
+    ) {
+      return renderDiffs.reduce(
+        (acc, d) => {
+          acc.added += d.additions ?? 0;
+          acc.deleted += d.deletions ?? 0;
+          return acc;
+        },
+        { fileCount: renderDiffs.length, added: 0, deleted: 0 }
+      );
+    }
+
+    return { fileCount, added, deleted };
+  }, [added, deleted, fileCount, loadingState, renderDiffs]);
+
   // If no diffs arrive within 3 seconds, stop showing the spinner
   useEffect(() => {
     if (loadingState !== 'loading') return;
@@ -82,17 +114,26 @@ export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
     return () => clearTimeout(timer);
   }, [loadingState]);
 
-  // Restart local UI state when we intentionally restart the diff stream
-  // (e.g. after rebase when the base commit changes).
   useEffect(() => {
+    lastNonEmptyDiffsRef.current = [];
     setLoadingState('loading');
     setCollapsedIds(new Set());
     setProcessedIds(new Set());
-  }, [selectedAttempt?.id, diffStreamRefreshKey]);
+  }, [selectedAttempt?.id]);
 
-  if (diffs.length > 0 && loadingState === 'loading') {
-    setLoadingState('loaded');
-  }
+  // Mark loaded once the (new) stream yields diffs.
+  useEffect(() => {
+    if (diffs.length > 0 && loadingState === 'loading') {
+      setLoadingState('loaded');
+    }
+  }, [diffs.length, loadingState]);
+
+  // When we intentionally restart the diff stream (e.g. after rebase), avoid
+  // clearing the UI immediately (flicker); the stream will reconnect and
+  // repopulate diffs.
+  useEffect(() => {
+    setLoadingState('loading');
+  }, [diffStreamRefreshKey]);
 
   if (diffs.length > 0) {
     const newDiffs = diffs
@@ -119,11 +160,11 @@ export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
     }
   }
 
-  const loading = loadingState === 'loading';
+  const loading = loadingState === 'loading' && renderDiffs.length === 0;
 
   const ids = useMemo(() => {
-    return diffs.map((d, i) => getDiffId({ diff: d, index: i }));
-  }, [diffs]);
+    return renderDiffs.map((d, i) => getDiffId({ diff: d, index: i }));
+  }, [renderDiffs]);
 
   const toggle = useCallback((id: string) => {
     setCollapsedIds((prev) => {
@@ -133,7 +174,7 @@ export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
     });
   }, []);
 
-  const allCollapsed = collapsedIds.size === diffs.length;
+  const allCollapsed = collapsedIds.size === renderDiffs.length;
   const handleCollapseAll = useCallback(() => {
     setCollapsedIds(allCollapsed ? new Set() : new Set(ids));
   }, [allCollapsed, ids]);
@@ -150,10 +191,10 @@ export function DiffsPanel({ selectedAttempt, gitOps }: DiffsPanelProps) {
 
   return (
     <DiffsPanelContent
-      diffs={diffs}
-      fileCount={fileCount}
-      added={added}
-      deleted={deleted}
+      diffs={renderDiffs}
+      fileCount={renderSummary.fileCount}
+      added={renderSummary.added}
+      deleted={renderSummary.deleted}
       collapsedIds={collapsedIds}
       allCollapsed={allCollapsed}
       handleCollapseAll={handleCollapseAll}
