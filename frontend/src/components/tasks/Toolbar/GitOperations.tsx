@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   CheckCircle,
   ExternalLink,
+  ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
 import {
@@ -15,6 +16,13 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip.tsx';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useCallback, useMemo, useState } from 'react';
 import type {
   RepoBranchStatus,
@@ -108,6 +116,7 @@ function GitOperations({
 
   const hasConflictsCalculated =
     (selectedRepoStatus?.conflicted_files?.length ?? 0) > 0;
+  const isRebaseInProgress = Boolean(selectedRepoStatus?.is_rebase_in_progress);
 
   // Memoize merge status information to avoid repeated calculations
   const mergeInfo = useMemo(() => {
@@ -214,6 +223,17 @@ function GitOperations({
         newBaseBranch: newBaseBranch,
         oldBaseBranch: selectedUpstream,
       });
+    } finally {
+      setRebasing(false);
+    }
+  };
+
+  const handleRebaseClick = async () => {
+    setRebasing(true);
+    try {
+      const repoId = getSelectedRepoId();
+      if (!repoId) return;
+      await git.actions.rebase({ repoId });
     } finally {
       setRebasing(false);
     }
@@ -509,19 +529,61 @@ function GitOperations({
               <span className="truncate max-w-[10ch]">{prButtonLabel}</span>
             </Button>
 
-            <Button
-              onClick={handleRebaseDialogOpen}
-              disabled={rebasing || isAttemptRunning || hasConflictsCalculated}
-              variant="outline"
-              size="xs"
-              className="border-warning text-warning hover:bg-warning gap-1 shrink-0"
-              aria-label={rebaseButtonLabel}
-            >
-              <RefreshCw
-                className={`h-3.5 w-3.5 ${rebasing ? 'animate-spin' : ''}`}
-              />
-              <span className="truncate max-w-[10ch]">{rebaseButtonLabel}</span>
-            </Button>
+            <div className="inline-flex shrink-0">
+              <Button
+                onClick={handleRebaseClick}
+                disabled={
+                  rebasing ||
+                  isRebaseInProgress ||
+                  isAttemptRunning ||
+                  hasConflictsCalculated
+                }
+                variant="outline"
+                size="xs"
+                className="border-warning text-warning hover:bg-warning gap-1 rounded-r-none border-r-0"
+                aria-label={rebaseButtonLabel}
+              >
+                <RefreshCw
+                  className={`h-3.5 w-3.5 ${rebasing ? 'animate-spin' : ''}`}
+                />
+                <span className="truncate max-w-[10ch]">
+                  {rebaseButtonLabel}
+                </span>
+              </Button>
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    disabled={
+                      rebasing ||
+                      isRebaseInProgress ||
+                      isAttemptRunning ||
+                      hasConflictsCalculated
+                    }
+                    variant="outline"
+                    size="xs"
+                    className="border-warning text-warning hover:bg-warning rounded-l-none border-l-0 px-2"
+                    aria-label={`${rebaseButtonLabel} options`}
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleRebaseClick}>
+                    {t('rebase.common.withTarget', {
+                      branch:
+                        getSelectedRepoStatus()?.target_branch_name ??
+                        selectedBranch ??
+                        t('git.branch.current'),
+                    })}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleRebaseDialogOpen}>
+                    {t('rebase.dialog.advanced')}…
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </div>
         )}
       </div>
