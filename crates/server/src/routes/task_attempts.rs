@@ -981,6 +981,7 @@ pub async fn rebase_task_attempt(
         .parent_task(pool)
         .await?
         .ok_or(SqlxError::RowNotFound)?;
+    let task_status_before_rebase = task.status.clone();
     if task.status != TaskStatus::InProgress {
         Task::update_status(pool, task.id, TaskStatus::InProgress).await?;
 
@@ -1080,6 +1081,24 @@ pub async fn rebase_task_attempt(
             }),
         )
         .await;
+
+    // Rebase completed successfully: move the task forward for review.
+    // We only do this for tasks we "activated" during rebase, to avoid overriding
+    // deliberate statuses (e.g. already InReview/Done/Cancelled).
+    if task_status_before_rebase == TaskStatus::Todo
+        || task_status_before_rebase == TaskStatus::InProgress
+    {
+        Task::update_status(pool, task.id, TaskStatus::InReview).await?;
+        if let Some(publisher) = deployment.container().share_publisher()
+            && let Err(err) = publisher.update_shared_task_by_id(task.id).await
+        {
+            tracing::warn!(
+                ?err,
+                "Failed to propagate shared task update for {}",
+                task.id
+            );
+        }
+    }
 
     Ok(ResponseJson(ApiResponse::success(())))
 }
