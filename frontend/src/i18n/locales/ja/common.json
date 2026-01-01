@@ -41,6 +41,8 @@
     "deniedByUser": "{{toolName}} がユーザーによって拒否されました",
     "output": "出力",
     "plan": "計画",
+    "showThinking": "思考を表示",
+    "thinkingHidden": "（{{count}} 件非表示）",
     "planToggle": {
       "hide": "計画を非表示",
       "show": "計画を表示"

@@ -19,6 +19,9 @@ import { Loader2 } from 'lucide-react';
 import { TaskWithAttemptStatus } from 'shared/types';
 import type { WorkspaceWithSession } from '@/types/attempt';
 import { ApprovalFormProvider } from '@/contexts/ApprovalFormContext';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { useTranslation } from 'react-i18next';
 
 interface VirtualizedListProps {
   attempt: WorkspaceWithSession;
@@ -28,6 +31,7 @@ interface VirtualizedListProps {
 interface MessageListContext {
   attempt: WorkspaceWithSession;
   task?: TaskWithAttemptStatus;
+  showThinking: boolean;
 }
 
 const INITIAL_TOP_ITEM = { index: 'LAST' as const, align: 'end' as const };
@@ -49,6 +53,7 @@ const ItemContent: VirtuosoMessageListProps<
 >['ItemContent'] = ({ data, context }) => {
   const attempt = context?.attempt;
   const task = context?.task;
+  const showThinking = context?.showThinking ?? false;
 
   if (data.type === 'STDOUT') {
     return <p>{data.content}</p>;
@@ -57,6 +62,9 @@ const ItemContent: VirtuosoMessageListProps<
     return <p>{data.content}</p>;
   }
   if (data.type === 'NORMALIZED_ENTRY' && attempt) {
+    if (data.content.entry_type.type === 'thinking' && !showThinking) {
+      return null;
+    }
     return (
       <DisplayConversationEntry
         expansionKey={data.patchKey}
@@ -80,7 +88,33 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
   const [channelData, setChannelData] =
     useState<DataWithScrollModifier<PatchTypeWithKey> | null>(null);
   const [loading, setLoading] = useState(true);
-  const { setEntries, reset } = useEntries();
+  const { t } = useTranslation('common');
+  const { entries, setEntries, reset } = useEntries();
+  const thinkingCount = useMemo(() => {
+    let count = 0;
+    for (const entry of entries) {
+      if (entry.type !== 'NORMALIZED_ENTRY') continue;
+      if (entry.content.entry_type.type === 'thinking') count += 1;
+    }
+    return count;
+  }, [entries]);
+
+  const showThinkingStorageKey = 'vk:conversation:showThinking';
+  const [showThinking, setShowThinking] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(showThinkingStorageKey) === '1';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(showThinkingStorageKey, showThinking ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [showThinking]);
 
   useEffect(() => {
     setLoading(true);
@@ -111,8 +145,8 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
 
   const messageListRef = useRef<VirtuosoMessageListMethods | null>(null);
   const messageListContext = useMemo(
-    () => ({ attempt, task }),
-    [attempt, task]
+    () => ({ attempt, task, showThinking }),
+    [attempt, task, showThinking]
   );
 
   return (
@@ -128,7 +162,32 @@ const VirtualizedList = ({ attempt, task }: VirtualizedListProps) => {
           context={messageListContext}
           computeItemKey={computeItemKey}
           ItemContent={ItemContent}
-          Header={() => <div className="h-2"></div>}
+          Header={() => (
+            <div className="sticky top-0 z-10 bg-primary/80 backdrop-blur border-b">
+              <div className="px-4 py-2 flex items-center justify-end gap-2">
+                <Switch
+                  id="show-thinking"
+                  checked={showThinking}
+                  onCheckedChange={setShowThinking}
+                  disabled={thinkingCount === 0}
+                  className="data-[state=checked]:bg-gray-900 dark:data-[state=checked]:bg-gray-100"
+                />
+                <Label
+                  htmlFor="show-thinking"
+                  className="text-xs cursor-pointer"
+                >
+                  {t('conversation.showThinking', 'Show thinking')}
+                </Label>
+                {!showThinking && thinkingCount > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {t('conversation.thinkingHidden', '({{count}} hidden)', {
+                      count: thinkingCount,
+                    })}
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           Footer={() => <div className="h-2"></div>}
         />
       </VirtuosoMessageListLicense>

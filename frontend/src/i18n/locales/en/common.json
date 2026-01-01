@@ -26,6 +26,8 @@
   },
   "conversation": {
     "plan": "Plan",
+    "showThinking": "Show thinking",
+    "thinkingHidden": "({{count}} hidden)",
     "planToggle": {
       "show": "Show plan",
       "hide": "Hide plan"

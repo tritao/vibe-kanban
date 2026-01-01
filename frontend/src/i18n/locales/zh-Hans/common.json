@@ -26,6 +26,8 @@
   },
   "conversation": {
     "plan": "计划",
+    "showThinking": "显示思考",
+    "thinkingHidden": "（已隐藏 {{count}} 条）",
     "planToggle": {
       "show": "显示计划",
       "hide": "隐藏计划"

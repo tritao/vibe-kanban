@@ -41,6 +41,8 @@
     "deniedByUser": "{{toolName}} 사용자에 의해 거부됨",
     "output": "출력",
     "plan": "계획",
+    "showThinking": "생각 표시",
+    "thinkingHidden": "({{count}}개 숨김)",
     "planToggle": {
       "hide": "계획 숨기기",
       "show": "계획 보기"

@@ -41,6 +41,8 @@
     "deniedByUser": "{{toolName}} denegado por el usuario",
     "output": "Salida",
     "plan": "Plan",
+    "showThinking": "Mostrar pensamiento",
+    "thinkingHidden": "({{count}} oculto)",
     "planToggle": {
       "hide": "Ocultar plan",
       "show": "Mostrar plan"
