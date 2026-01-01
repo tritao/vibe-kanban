@@ -17,7 +17,7 @@ Do not send notifications for an attempt when a user is *actively viewing it* in
 “Active” should mean:
 
 - The browser tab is visible (`document.visibilityState === 'visible'`)
-- The window is focused (`window.onfocus`)
+- The browser window is focused (i.e. the user has not alt-tabbed away)
 - The currently selected attempt/workspace matches the event’s workspace
 - Presence is recent (heartbeat TTL)
 
@@ -43,7 +43,9 @@ already watching.
 - If the tab is visible + focused and the operator is on the same attempt:
   - **No OS notification**
   - **No sound**
-- If the operator is on a different attempt or not focused:
+- If the operator is on a different attempt:
+  - Notify as today
+- If the operator is on the same attempt but the tab is not focused/visible (e.g. user alt-tabbed away):
   - Notify as today
 - If multiple users are in the org:
   - Only suppress for the user whose config/notifications would be used (single-user local setup is
@@ -146,7 +148,7 @@ Responsibilities:
 - Determine current workspace/attempt id from router state (task attempt page) and pass `null`
   elsewhere.
 - Track `document.visibilityState` changes.
-- Track window focus/blur.
+- Track window focus/blur (or `document.hasFocus()`).
 - Send presence updates:
   - immediately on state changes (workspace id / focus / visibility)
   - plus a heartbeat interval (e.g. every 15s) while `visible && focused`
@@ -189,4 +191,3 @@ Frontend:
 3. Gate notifications for task completion.
 4. Gate notifications for approvals.
 5. Add config toggle if desired.
-
