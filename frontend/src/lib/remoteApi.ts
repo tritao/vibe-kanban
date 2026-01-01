@@ -2,8 +2,12 @@ import { oauthApi, ApiError } from './api';
 import { UserData, AssigneesQuery } from 'shared/types';
 
 export const REMOTE_API_URL = import.meta.env.VITE_VK_SHARED_API_BASE || '';
+export const isRemoteApiConfigured = Boolean(REMOTE_API_URL);
 
 const makeRequest = async (path: string, options: RequestInit = {}) => {
+  if (!isRemoteApiConfigured) {
+    throw new Error('Remote API not configured');
+  }
   const tokenRes = await oauthApi.getToken();
   if (!tokenRes?.access_token) {
     throw new Error('Not authenticated');
@@ -14,8 +18,6 @@ const makeRequest = async (path: string, options: RequestInit = {}) => {
     headers.set('Content-Type', 'application/json');
   }
   headers.set('Authorization', `Bearer ${tokenRes.access_token}`);
-
-  console.log('VITE_VK_SHARED_API_BASE:', REMOTE_API_URL);
 
   return fetch(`${REMOTE_API_URL}${path}`, {
     ...options,

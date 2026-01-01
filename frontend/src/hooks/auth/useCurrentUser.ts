@@ -8,6 +8,7 @@ export function useCurrentUser() {
   const query = useQuery({
     queryKey: ['auth', 'user'],
     queryFn: () => oauthApi.getCurrentUser(),
+    enabled: isSignedIn,
     retry: 2,
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,

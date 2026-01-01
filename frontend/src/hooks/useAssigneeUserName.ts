@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { getSharedTaskAssignees } from '@/lib/remoteApi';
+import { getSharedTaskAssignees, isRemoteApiConfigured } from '@/lib/remoteApi';
 import type { SharedTask, UserData } from 'shared/types';
 import { useEffect, useMemo } from 'react';
+import { useAuth } from '@/hooks';
 
 interface UseAssigneeUserNamesOptions {
   projectId: string | undefined;
@@ -10,11 +11,12 @@ interface UseAssigneeUserNamesOptions {
 
 export function useAssigneeUserNames(options: UseAssigneeUserNamesOptions) {
   const { projectId, sharedTasks } = options;
+  const { isSignedIn } = useAuth();
 
   const { data: assignees, refetch } = useQuery<UserData[], Error>({
     queryKey: ['project', 'assignees', projectId],
     queryFn: () => getSharedTaskAssignees(projectId!),
-    enabled: Boolean(projectId),
+    enabled: Boolean(projectId) && isSignedIn && isRemoteApiConfigured,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 

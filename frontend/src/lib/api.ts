@@ -1098,14 +1098,23 @@ export const oauthApi = {
 
   /** Returns the current access token for the remote server (auto-refreshes if needed) */
   getToken: async (): Promise<TokenResponse | null> => {
+    // If remote/shared features aren't configured in the frontend build, avoid
+    // calling the local OAuth endpoints (they will return 400 and spam logs).
+    if (!import.meta.env.VITE_VK_SHARED_API_BASE) {
+      return null;
+    }
     const response = await makeRequest('/api/auth/token');
     if (!response.ok) return null;
     return handleApiResponse<TokenResponse>(response);
   },
 
   /** Returns the user ID of the currently authenticated user */
-  getCurrentUser: async (): Promise<CurrentUserResponse> => {
+  getCurrentUser: async (): Promise<CurrentUserResponse | null> => {
+    if (!import.meta.env.VITE_VK_SHARED_API_BASE) {
+      return null;
+    }
     const response = await makeRequest('/api/auth/user');
+    if (!response.ok) return null;
     return handleApiResponse<CurrentUserResponse>(response);
   },
 };
