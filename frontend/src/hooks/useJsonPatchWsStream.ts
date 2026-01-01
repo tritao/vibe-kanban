@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { applyPatch } from 'rfc6902';
 import type { Operation } from 'rfc6902';
 
@@ -44,6 +44,21 @@ export const useJsonPatchWsStream = <T extends object>(
 
   const injectInitialEntry = options?.injectInitialEntry;
   const deduplicatePatches = options?.deduplicatePatches;
+  const debugEnabled = useMemo(() => {
+    try {
+      return localStorage.getItem('vk:debug:websocket') === '1';
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const dbg = useCallback(
+    (...args: unknown[]) => {
+      if (!debugEnabled) return;
+      console.debug('[ws]', endpoint, ...args);
+    },
+    [debugEnabled, endpoint]
+  );
 
   function scheduleReconnect() {
     if (retryTimerRef.current) return; // already scheduled
@@ -73,6 +88,7 @@ export const useJsonPatchWsStream = <T extends object>(
       setIsConnected(false);
       setError(null);
       dataRef.current = undefined;
+      dbg('disabled/reset');
       return;
     }
 
@@ -98,6 +114,7 @@ export const useJsonPatchWsStream = <T extends object>(
       ws.onopen = () => {
         setError(null);
         setIsConnected(true);
+        dbg('open');
         // Reset backoff on successful connection
         retryAttemptsRef.current = 0;
         if (retryTimerRef.current) {
@@ -128,6 +145,7 @@ export const useJsonPatchWsStream = <T extends object>(
 
             dataRef.current = next;
             setData(next);
+            dbg('patch', { ops: filtered.length });
           }
 
           // Handle finished messages ({finished: true})
@@ -137,20 +155,24 @@ export const useJsonPatchWsStream = <T extends object>(
             ws.close(1000, 'finished');
             wsRef.current = null;
             setIsConnected(false);
+            dbg('finished');
           }
         } catch (err) {
           console.error('Failed to process WebSocket message:', err);
           setError('Failed to process stream update');
+          dbg('message error', err);
         }
       };
 
       ws.onerror = () => {
         setError('Connection failed');
+        dbg('error');
       };
 
       ws.onclose = (evt) => {
         setIsConnected(false);
         wsRef.current = null;
+        dbg('close', { code: evt?.code, wasClean: evt?.wasClean });
 
         // Do not reconnect if we received a finished message or clean close
         if (finishedRef.current || (evt?.code === 1000 && evt?.wasClean)) {
@@ -194,6 +216,7 @@ export const useJsonPatchWsStream = <T extends object>(
     injectInitialEntry,
     deduplicatePatches,
     retryNonce,
+    dbg,
   ]);
 
   return { data, isConnected, error };
