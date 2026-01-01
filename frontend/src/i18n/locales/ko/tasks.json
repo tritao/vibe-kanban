@@ -189,6 +189,7 @@
     "errorLoadingDiff": "Failed to load diff: {{error}}",
     "expandAll": "Expand all diffs",
     "ignoreWhitespace": "공백 변경 무시",
+    "wrapText": "텍스트 줄바꿈",
     "filesChanged_one": "{{count}} file changed",
     "filesChanged_other": "{{count}} files changed",
     "noChanges": "No changes have been made yet",

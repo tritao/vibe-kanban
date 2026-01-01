@@ -123,6 +123,7 @@
       "inline": "内联视图",
       "split": "分割视图"
     },
+    "wrapText": "自动换行",
     "ignoreWhitespace": "忽略空格更改",
     "errorLoadingDiff": "加载差异失败：{{error}}",
     "expandAll": "展开所有差异",
