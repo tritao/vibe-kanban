@@ -47,23 +47,33 @@ impl ExecutionProcessLogs {
         Ok(messages)
     }
 
-    /// Append a JSONL line to the logs for an execution process
-    pub async fn append_log_line(
+    /// Append one or more JSONL lines to the logs for an execution process.
+    /// `jsonl` should already include trailing newlines (`\n`) between entries.
+    pub async fn append_log_chunk(
         pool: &SqlitePool,
         execution_id: Uuid,
-        jsonl_line: &str,
+        jsonl: &str,
     ) -> Result<(), sqlx::Error> {
-        let byte_size = jsonl_line.len() as i64;
+        let byte_size = jsonl.len() as i64;
         sqlx::query!(
             r#"INSERT INTO execution_process_logs (execution_id, logs, byte_size, inserted_at)
                VALUES ($1, $2, $3, datetime('now', 'subsec'))"#,
             execution_id,
-            jsonl_line,
+            jsonl,
             byte_size
         )
         .execute(pool)
         .await?;
 
         Ok(())
+    }
+
+    /// Append a single JSONL line (compat helper).
+    pub async fn append_log_line(
+        pool: &SqlitePool,
+        execution_id: Uuid,
+        jsonl_line: &str,
+    ) -> Result<(), sqlx::Error> {
+        Self::append_log_chunk(pool, execution_id, jsonl_line).await
     }
 }

@@ -818,6 +818,99 @@ pub trait ContainerService {
 
             if let Some(store) = store {
                 let mut stream = store.history_plus_stream();
+                let (tx, mut rx) = tokio::sync::mpsc::channel::<String>(1024);
+
+                // Single writer task to reduce SQLite write contention and batch inserts.
+                let writer_db = db.clone();
+                let writer = tokio::spawn(async move {
+                    use tokio::time::{Duration, Instant};
+
+                    const MAX_CHUNK_BYTES: usize = 64 * 1024;
+                    const MAX_BUFFER_BYTES: usize = 1024 * 1024;
+                    const FLUSH_INTERVAL: Duration = Duration::from_millis(250);
+
+                    let mut buffer = String::new();
+                    let mut last_flush = Instant::now();
+
+                    let mut ticker = tokio::time::interval(FLUSH_INTERVAL);
+                    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+                    let pool = writer_db.pool.clone();
+                    let flush_chunk = move |chunk: String| {
+                        let pool = pool.clone();
+                        async move {
+                            if chunk.is_empty() {
+                                return;
+                            }
+
+                            // Best-effort retry on SQLITE_BUSY ("database is locked") while keeping
+                            // the overall loop responsive.
+                            let mut attempt: u32 = 0;
+                            loop {
+                                match ExecutionProcessLogs::append_log_chunk(
+                                    &pool,
+                                    execution_id,
+                                    &chunk,
+                                )
+                                .await
+                                {
+                                    Ok(()) => return,
+                                    Err(e) => {
+                                        attempt += 1;
+                                        let msg = e.to_string();
+                                        let is_busy = msg.contains("database is locked")
+                                            || msg.contains("code: 5")
+                                            || msg.contains("SQLITE_BUSY");
+                                        if !is_busy || attempt >= 3 {
+                                            tracing::error!(
+                                                "Failed to append log chunk for execution {}: {}",
+                                                execution_id,
+                                                e
+                                            );
+                                            return;
+                                        }
+                                        let backoff = Duration::from_millis(
+                                            50u64.saturating_mul(2u64.pow(attempt)),
+                                        );
+                                        tokio::time::sleep(backoff).await;
+                                    }
+                                }
+                            }
+                        }
+                    };
+
+                    loop {
+                        tokio::select! {
+                            maybe_line = rx.recv() => {
+                                match maybe_line {
+                                    Some(line) => {
+                                        if buffer.len() + line.len() > MAX_BUFFER_BYTES {
+                                            // Avoid unbounded growth; flush what we have and keep going.
+                                            flush_chunk(std::mem::take(&mut buffer)).await;
+                                        }
+                                        buffer.push_str(&line);
+
+                                        if buffer.len() >= MAX_CHUNK_BYTES {
+                                            flush_chunk(std::mem::take(&mut buffer)).await;
+                                            last_flush = Instant::now();
+                                        }
+                                    }
+                                    None => {
+                                        // Sender dropped: flush remaining and exit.
+                                        flush_chunk(std::mem::take(&mut buffer)).await;
+                                        break;
+                                    }
+                                }
+                            }
+                            _ = ticker.tick() => {
+                                if !buffer.is_empty() && last_flush.elapsed() >= FLUSH_INTERVAL {
+                                    flush_chunk(std::mem::take(&mut buffer)).await;
+                                    last_flush = Instant::now();
+                                }
+                            }
+                        }
+                    }
+                });
 
                 while let Some(Ok(msg)) = stream.next().await {
                     match &msg {
@@ -826,20 +919,8 @@ pub trait ContainerService {
                             match serde_json::to_string(&msg) {
                                 Ok(jsonl_line) => {
                                     let jsonl_line_with_newline = format!("{jsonl_line}\n");
-
-                                    // Append this line to the database
-                                    if let Err(e) = ExecutionProcessLogs::append_log_line(
-                                        &db.pool,
-                                        execution_id,
-                                        &jsonl_line_with_newline,
-                                    )
-                                    .await
-                                    {
-                                        tracing::error!(
-                                            "Failed to append log line for execution {}: {}",
-                                            execution_id,
-                                            e
-                                        );
+                                    if tx.send(jsonl_line_with_newline).await.is_err() {
+                                        break;
                                     }
                                 }
                                 Err(e) => {
@@ -874,6 +955,10 @@ pub trait ContainerService {
                         LogMsg::JsonPatch(_) => continue,
                     }
                 }
+
+                // Ensure writer flushes and exits.
+                drop(tx);
+                let _ = writer.await;
             }
         })
     }
