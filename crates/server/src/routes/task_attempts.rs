@@ -982,7 +982,7 @@ pub async fn rebase_task_attempt(
         .await?
         .ok_or(SqlxError::RowNotFound)?;
     let task_status_before_rebase = task.status.clone();
-    if task.status != TaskStatus::InProgress {
+    if task.status != TaskStatus::InProgress && task.status != TaskStatus::Cancelled {
         Task::update_status(pool, task.id, TaskStatus::InProgress).await?;
 
         if let Some(publisher) = deployment.container().share_publisher()
@@ -1083,11 +1083,9 @@ pub async fn rebase_task_attempt(
         .await;
 
     // Rebase completed successfully: move the task forward for review.
-    // We only do this for tasks we "activated" during rebase, to avoid overriding
-    // deliberate statuses (e.g. already InReview/Done/Cancelled).
-    if task_status_before_rebase == TaskStatus::Todo
-        || task_status_before_rebase == TaskStatus::InProgress
-    {
+    // We intentionally move tasks to InReview even if they were previously Done, since a rebase
+    // can change the resulting patch and should be reviewed again. We avoid overriding Cancelled.
+    if task_status_before_rebase != TaskStatus::Cancelled {
         Task::update_status(pool, task.id, TaskStatus::InReview).await?;
         if let Some(publisher) = deployment.container().share_publisher()
             && let Err(err) = publisher.update_shared_task_by_id(task.id).await
