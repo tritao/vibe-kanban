@@ -974,6 +974,27 @@ pub async fn rebase_task_attempt(
 ) -> Result<ResponseJson<ApiResponse<(), GitOperationError>>, ApiError> {
     let pool = &deployment.db().pool;
 
+    // Ensure the task shows as actively being worked on during long-running git operations.
+    // (Normally this happens when an ExecutionProcess starts, but rebase is currently a direct
+    // operation without an ExecutionProcess record.)
+    let task = workspace
+        .parent_task(pool)
+        .await?
+        .ok_or(SqlxError::RowNotFound)?;
+    if task.status != TaskStatus::InProgress {
+        Task::update_status(pool, task.id, TaskStatus::InProgress).await?;
+
+        if let Some(publisher) = deployment.container().share_publisher()
+            && let Err(err) = publisher.update_shared_task_by_id(task.id).await
+        {
+            tracing::warn!(
+                ?err,
+                "Failed to propagate shared task update for {}",
+                task.id
+            );
+        }
+    }
+
     let workspace_repo =
         WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, payload.repo_id)
             .await?
