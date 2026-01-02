@@ -88,6 +88,7 @@ enum NetEvent {
     DiffStreamStatus(StreamStatus),
     DiffReset,
     DiffPatch(json_patch::Patch),
+    DiffReconnect,
     LogStreamStatus(StreamStatus),
     LogReset,
     LogPatch(json_patch::Patch),
@@ -518,6 +519,7 @@ struct AppState {
     exec_sel_tx: watch::Sender<Option<Uuid>>,
     log_mode_tx: watch::Sender<LogMode>,
     diff_stats_tx: watch::Sender<bool>,
+    diff_reconnect_tx: watch::Sender<u64>,
     reconnect_tx: watch::Sender<u64>,
 }
 
@@ -530,6 +532,7 @@ impl AppState {
         exec_sel_tx: watch::Sender<Option<Uuid>>,
         log_mode_tx: watch::Sender<LogMode>,
         diff_stats_tx: watch::Sender<bool>,
+        diff_reconnect_tx: watch::Sender<u64>,
         reconnect_tx: watch::Sender<u64>,
         prefs: TuiPrefs,
     ) -> Self {
@@ -618,6 +621,7 @@ impl AppState {
             exec_sel_tx,
             log_mode_tx,
             diff_stats_tx,
+            diff_reconnect_tx,
             reconnect_tx,
         };
 
@@ -671,6 +675,7 @@ async fn main() -> anyhow::Result<()> {
     let (exec_sel_tx, exec_sel_rx) = watch::channel::<Option<Uuid>>(None);
     let (log_mode_tx, log_mode_rx) = watch::channel::<LogMode>(prefs.log_mode);
     let (diff_stats_tx, diff_stats_rx) = watch::channel::<bool>(false);
+    let (diff_reconnect_tx, diff_reconnect_rx) = watch::channel::<u64>(0);
     let (reconnect_tx, reconnect_rx) = watch::channel::<u64>(0);
 
     spawn_input_reader(ui_tx.clone());
@@ -699,6 +704,7 @@ async fn main() -> anyhow::Result<()> {
         backend_url.clone(),
         attempt_sel_tx.subscribe(),
         diff_stats_rx,
+        diff_reconnect_rx,
         reconnect_rx.clone(),
         net_tx.clone(),
     ));
@@ -718,6 +724,7 @@ async fn main() -> anyhow::Result<()> {
         exec_sel_tx,
         log_mode_tx,
         diff_stats_tx,
+        diff_reconnect_tx,
         reconnect_tx,
         prefs,
     );
@@ -900,8 +907,10 @@ fn handle_net_event(app: &mut AppState, event: NetEvent) {
             app.selected_diff_index = 0;
             app.diff_scroll_offset = 0;
             app.diff_preview_cache_key = None;
+            app.diff_preview_cache_hash = 0;
             app.diff_preview_pending = false;
             app.diff_preview_next_refresh_at = None;
+            app.diff_preview_lines = vec![Line::from("No diffs")];
         }
         NetEvent::DiffPatch(patch) => {
             let prev_selected_key = {
@@ -960,6 +969,9 @@ fn handle_net_event(app: &mut AppState, event: NetEvent) {
         }
         NetEvent::LogPatch(patch) => {
             enqueue_log_patch(app, patch);
+        }
+        NetEvent::DiffReconnect => {
+            request_diff_reconnect(app);
         }
         NetEvent::BranchStatusLoaded(statuses) => {
             app.repo_statuses = statuses;
@@ -3019,6 +3031,7 @@ fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoAction) {
                         if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                             let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                         }
+                        let _ = net_tx.send(NetEvent::DiffReconnect).await;
                     }
                     Err(e) => {
                         let _ = net_tx
@@ -4496,6 +4509,7 @@ async fn diff_stream_task(
     base_url: String,
     mut attempt_rx: watch::Receiver<Option<Uuid>>,
     mut stats_only_rx: watch::Receiver<bool>,
+    mut diff_reconnect_rx: watch::Receiver<u64>,
     mut reconnect_rx: watch::Receiver<u64>,
     net_tx: mpsc::Sender<NetEvent>,
 ) {
@@ -4516,6 +4530,11 @@ async fn diff_stream_task(
                     }
                 }
                 changed = stats_only_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+                changed = diff_reconnect_rx.changed() => {
                     if changed.is_err() {
                         return;
                     }
@@ -4557,6 +4576,13 @@ async fn diff_stream_task(
                             break;
                         }
                         changed = stats_only_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::DiffReset).await;
+                            break;
+                        }
+                        changed = diff_reconnect_rx.changed() => {
                             if changed.is_err() {
                                 return;
                             }
@@ -4618,6 +4644,12 @@ async fn diff_stream_task(
                 continue;
             }
             changed = stats_only_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+            changed = diff_reconnect_rx.changed() => {
                 if changed.is_err() {
                     return;
                 }
@@ -7976,6 +8008,11 @@ fn request_branch_status_refresh(app: &mut AppState) {
     });
 }
 
+fn request_diff_reconnect(app: &mut AppState) {
+    let next = *app.diff_reconnect_tx.borrow() + 1;
+    let _ = app.diff_reconnect_tx.send(next);
+}
+
 fn submit_composer(app: &mut AppState) {
     let msg = app.composer_buffer.trim().to_string();
     if msg.is_empty() {
@@ -8224,6 +8261,7 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                     let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                 }
+                let _ = net_tx.send(NetEvent::DiffReconnect).await;
             }
             Err(e) => {
                 let _ = net_tx
