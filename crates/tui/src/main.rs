@@ -1097,8 +1097,8 @@ fn compute_main_layout(area: ratatui::layout::Rect) -> MainLayoutRects {
     let main = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(50),
+            Constraint::Percentage(18),
+            Constraint::Percentage(57),
             Constraint::Percentage(25),
         ])
         .split(root[1]);
@@ -1516,8 +1516,8 @@ fn render(f: &mut Frame, app: &AppState) {
     let main = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(25),
-            Constraint::Percentage(50),
+            Constraint::Percentage(18),
+            Constraint::Percentage(57),
             Constraint::Percentage(25),
         ])
         .split(root[1]);
@@ -5782,9 +5782,9 @@ fn highlight_unified_diff(
         // GitHub-like backgrounds for additions/removals (light green / light red).
         // Also pad with spaces so the background covers the full visible line width.
         let line_bg = if marker_ch == '+' {
-            Some(Color::Rgb(230, 255, 237)) // #e6ffed
+            Some(Color::Rgb(205, 225, 210)) // desaturated green
         } else if marker_ch == '-' {
-            Some(Color::Rgb(255, 238, 240)) // #ffeef0
+            Some(Color::Rgb(235, 210, 212)) // desaturated red
         } else {
             None
         };
