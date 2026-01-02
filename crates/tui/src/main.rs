@@ -4310,7 +4310,11 @@ fn append_normalized_entry(
         }
 
         let body_lines = if render_mode == LogRenderMode::Markdown {
-            render_markdown(text, width.saturating_sub(2).max(1))
+            render_markdown(
+                text,
+                width.saturating_sub(2).max(1),
+                MdSoftBreakMode::Newline,
+            )
         } else {
             text.lines()
                 .map(|l| Line::from(Span::raw(l.to_string())))
@@ -4838,7 +4842,11 @@ fn append_normalized_entry(
                                 width,
                             );
                         } else {
-                            for l in render_markdown(description, width.saturating_sub(2).max(1)) {
+                            for l in render_markdown(
+                                description,
+                                width.saturating_sub(2).max(1),
+                                MdSoftBreakMode::Space,
+                            ) {
                                 let mut spans = vec![Span::styled(
                                     "  ",
                                     Style::default().add_modifier(Modifier::DIM),
@@ -4873,7 +4881,11 @@ fn append_normalized_entry(
                                 width,
                             );
                         } else {
-                            for l in render_markdown(plan, width.saturating_sub(2).max(1)) {
+                            for l in render_markdown(
+                                plan,
+                                width.saturating_sub(2).max(1),
+                                MdSoftBreakMode::Space,
+                            ) {
                                 let mut spans = vec![Span::styled(
                                     "  ",
                                     Style::default().add_modifier(Modifier::DIM),
@@ -4985,7 +4997,11 @@ fn append_normalized_entry(
                             );
                         } else if result_ty == "markdown" {
                             let md = value.as_str().unwrap_or("");
-                            for l in render_markdown(md, width.saturating_sub(2).max(1)) {
+                            for l in render_markdown(
+                                md,
+                                width.saturating_sub(2).max(1),
+                                MdSoftBreakMode::Space,
+                            ) {
                                 let mut spans = vec![Span::styled(
                                     "  ",
                                     Style::default().add_modifier(Modifier::DIM),
@@ -5044,7 +5060,7 @@ fn append_normalized_entry(
                 );
             } else if let Some(text) = normalized_entry_text(entry) {
                 let mut rendered = if render_mode == LogRenderMode::Markdown {
-                    render_markdown(&text, width.max(1))
+                    render_markdown(&text, width.max(1), MdSoftBreakMode::Newline)
                 } else {
                     text.lines()
                         .map(|l| Line::from(Span::raw(l.to_string())))
@@ -5098,6 +5114,12 @@ fn normalized_entry_text(entry: &serde_json::Value) -> Option<String> {
 #[derive(Debug, Clone)]
 enum MdToken {
     Text(String, Style),
+    Newline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MdSoftBreakMode {
+    Space,
     Newline,
 }
 
@@ -5570,7 +5592,7 @@ fn wrap_md_tokens(
     out
 }
 
-fn render_markdown(md: &str, width: usize) -> Vec<Line<'static>> {
+fn render_markdown(md: &str, width: usize, softbreak_mode: MdSoftBreakMode) -> Vec<Line<'static>> {
     let md = sanitize_tui_text(md);
     let width = width.max(1);
 
@@ -5856,12 +5878,19 @@ fn render_markdown(md: &str, width: usize) -> Vec<Line<'static>> {
                     push_text(b, &t, style);
                 }
             }
-            MdEvent::SoftBreak => {
-                if let Some(b) = block.as_mut() {
-                    b.tokens
-                        .push(MdToken::Text(" ".to_string(), Style::default()));
+            MdEvent::SoftBreak => match softbreak_mode {
+                MdSoftBreakMode::Space => {
+                    if let Some(b) = block.as_mut() {
+                        b.tokens
+                            .push(MdToken::Text(" ".to_string(), Style::default()));
+                    }
                 }
-            }
+                MdSoftBreakMode::Newline => {
+                    if let Some(b) = block.as_mut() {
+                        b.tokens.push(MdToken::Newline);
+                    }
+                }
+            },
             MdEvent::HardBreak => {
                 if let Some(b) = block.as_mut() {
                     b.tokens.push(MdToken::Newline);
