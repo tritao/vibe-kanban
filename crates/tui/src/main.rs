@@ -7179,22 +7179,111 @@ fn select_adjacent_task(app: &mut AppState, delta: i32) {
     }
 
     let by_status = tasks_by_status(&tasks);
-    let list: &[TaskRow] = match app.tasks_active_column {
-        TaskStatus::Todo => &by_status.todo,
-        TaskStatus::InProgress => &by_status.inprogress,
-        TaskStatus::InReview => &by_status.inreview,
-        TaskStatus::Done => &by_status.done,
-        TaskStatus::Cancelled => &by_status.cancelled,
-    };
-    if list.is_empty() {
+    let statuses = board_statuses(app);
+    if statuses.is_empty() {
         set_selected_task(app, None);
         return;
     }
 
-    let cur_idx = task_index_in(list, app.selected_task_id).unwrap_or(0);
-    let next_idx = clamp_index(cur_idx, delta, list.len());
-    app.board_index_by_status[app.tasks_active_column.idx()] = next_idx;
-    set_selected_task(app, Some(list[next_idx].id));
+    let list_for = |status: TaskStatus| -> &[TaskRow] {
+        match status {
+            TaskStatus::Todo => &by_status.todo,
+            TaskStatus::InProgress => &by_status.inprogress,
+            TaskStatus::InReview => &by_status.inreview,
+            TaskStatus::Done => &by_status.done,
+            TaskStatus::Cancelled => &by_status.cancelled,
+        }
+    };
+
+    // Determine current (status, index) from the selected task if possible; otherwise fall back to
+    // the active column + stored index.
+    let mut cur_status = app.tasks_active_column;
+    if !statuses.contains(&cur_status) {
+        cur_status = *statuses.last().unwrap_or(&TaskStatus::Done);
+    }
+    let mut cur_idx = app.board_index_by_status[cur_status.idx()];
+    if let Some(id) = app.selected_task_id {
+        for status in &statuses {
+            let list = list_for(*status);
+            if let Some(pos) = list.iter().position(|t| t.id == id) {
+                cur_status = *status;
+                cur_idx = pos;
+                break;
+            }
+        }
+    }
+
+    // If the current column is empty, jump to the nearest non-empty column in the movement
+    // direction (or the first non-empty).
+    if list_for(cur_status).is_empty() {
+        let order: Box<dyn Iterator<Item = TaskStatus>> = if delta < 0 {
+            Box::new(statuses.iter().copied().rev())
+        } else {
+            Box::new(statuses.iter().copied())
+        };
+        if let Some(status) = order.into_iter().find(|s| !list_for(*s).is_empty()) {
+            cur_status = status;
+            cur_idx = if delta < 0 {
+                list_for(cur_status).len().saturating_sub(1)
+            } else {
+                0
+            };
+        } else {
+            set_selected_task(app, None);
+            return;
+        }
+    }
+
+    let cur_status_pos = statuses.iter().position(|s| *s == cur_status).unwrap_or(0);
+    let cur_list = list_for(cur_status);
+
+    let (next_status, next_idx) = if delta < 0 {
+        if cur_idx > 0 {
+            (cur_status, cur_idx - 1)
+        } else {
+            // Move to the last task of the previous non-empty section (if any).
+            let mut s_pos = cur_status_pos;
+            let mut found: Option<(TaskStatus, usize)> = None;
+            while s_pos > 0 {
+                s_pos -= 1;
+                let s = statuses[s_pos];
+                let list = list_for(s);
+                if !list.is_empty() {
+                    found = Some((s, list.len() - 1));
+                    break;
+                }
+            }
+            found.unwrap_or((cur_status, 0))
+        }
+    } else {
+        if cur_idx + 1 < cur_list.len() {
+            (cur_status, cur_idx + 1)
+        } else {
+            // Move to the first task of the next non-empty section (if any).
+            let mut s_pos = cur_status_pos + 1;
+            let mut found: Option<(TaskStatus, usize)> = None;
+            while s_pos < statuses.len() {
+                let s = statuses[s_pos];
+                let list = list_for(s);
+                if !list.is_empty() {
+                    found = Some((s, 0));
+                    break;
+                }
+                s_pos += 1;
+            }
+            found.unwrap_or((cur_status, cur_idx))
+        }
+    };
+
+    let next_list = list_for(next_status);
+    if next_list.is_empty() {
+        set_selected_task(app, None);
+        return;
+    }
+    let next_idx = next_idx.min(next_list.len() - 1);
+    app.tasks_active_column = next_status;
+    app.board_index_by_status[next_status.idx()] = next_idx;
+    set_selected_task(app, Some(next_list[next_idx].id));
 }
 
 fn clamp_index(cur: usize, delta: i32, len: usize) -> usize {
