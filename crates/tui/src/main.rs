@@ -1,14 +1,18 @@
 use std::{
-    fs, io,
+    collections::hash_map::DefaultHasher,
+    fs,
+    hash::{Hash, Hasher},
+    io,
     path::PathBuf,
+    sync::OnceLock,
     time::Duration,
 };
 
 use anyhow::Context;
 use clap::Parser;
 use crossterm::{
-    execute,
     event::{DisableMouseCapture, EnableMouseCapture},
+    execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use futures_util::StreamExt;
@@ -25,14 +29,13 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, sync::OnceLock};
-use tokio::sync::{mpsc, watch};
-use tokio_tungstenite::tungstenite;
 use syntect::{
     easy::HighlightLines,
     highlighting::{Theme, ThemeSet},
     parsing::{SyntaxReference, SyntaxSet},
 };
+use tokio::sync::{mpsc, watch};
+use tokio_tungstenite::tungstenite;
 use unicode_width::UnicodeWidthStr;
 use utils::{port_file::read_port_file, response::ApiResponse};
 use uuid::Uuid;
@@ -341,6 +344,7 @@ enum LogKind {
 struct LogAssemblerState {
     open: bool,
     open_kind: Option<LogKind>,
+    attach_to_entry: Option<usize>,
 }
 
 struct AppState {
@@ -395,11 +399,14 @@ struct AppState {
     log_status: StreamStatus,
     log_store: serde_json::Value,
     log_lines: Vec<Line<'static>>,
+    log_line_entry_index: Vec<usize>,
     log_entry_line_starts: Vec<usize>,
     log_entry_end_states: Vec<LogAssemblerState>,
     log_assembler_state: LogAssemblerState,
     pending_log_patch: json_patch::Patch,
     pending_log_dirty_from_entry: Option<usize>,
+    log_collapsed: Vec<bool>,
+    log_selected_entry: Option<usize>,
     log_mode: LogMode,
     log_render_mode: LogRenderMode,
     log_render_width: u16,
@@ -484,11 +491,14 @@ impl AppState {
             log_status: StreamStatus::Disconnected,
             log_store: serde_json::json!({ "entries": [] }),
             log_lines: vec![],
+            log_line_entry_index: vec![],
             log_entry_line_starts: vec![],
             log_entry_end_states: vec![],
             log_assembler_state: LogAssemblerState::default(),
             pending_log_patch: json_patch::Patch::default(),
             pending_log_dirty_from_entry: None,
+            log_collapsed: vec![],
+            log_selected_entry: None,
             log_mode: prefs.log_mode,
             log_render_mode: prefs.log_render_mode,
             log_render_width: 0,
@@ -929,6 +939,11 @@ fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Result<bool> {
                         save_prefs(&app.prefs);
                         app.pending_log_dirty_from_entry = Some(0);
                     }
+                    (KeyCode::Char('e'), _) | (KeyCode::Enter, _)
+                        if app.focus == FocusPane::Execution =>
+                    {
+                        toggle_selected_log_entry(app);
+                    }
                     (KeyCode::Char('d'), _) => {
                         app.diff_stats_only = !app.diff_stats_only;
                         let _ = app.diff_stats_tx.send(app.diff_stats_only);
@@ -978,9 +993,7 @@ fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Result<bool> {
                     (KeyCode::Char('J'), _) if app.focus == FocusPane::Board => {
                         move_active_status(app, 1);
                     }
-                    (KeyCode::Up, _) | (KeyCode::Char('k'), _)
-                        if app.focus == FocusPane::Board =>
-                    {
+                    (KeyCode::Up, _) | (KeyCode::Char('k'), _) if app.focus == FocusPane::Board => {
                         select_adjacent_task(app, -1);
                     }
                     (KeyCode::Down, _) | (KeyCode::Char('j'), _)
@@ -1112,7 +1125,12 @@ struct BoardHit {
     clicked_task_id: Option<Uuid>,
 }
 
-fn board_hit_at(app: &AppState, area: ratatui::layout::Rect, col: u16, row: u16) -> Option<BoardHit> {
+fn board_hit_at(
+    app: &AppState,
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+) -> Option<BoardHit> {
     if !rect_contains(area, col, row) {
         return None;
     }
@@ -1263,6 +1281,50 @@ fn diff_files_hit_at(
     Some(start + inner_row)
 }
 
+fn log_entry_hit_at(
+    app: &AppState,
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+) -> Option<usize> {
+    if !rect_contains(area, col, row) {
+        return None;
+    }
+
+    let len = app.log_lines.len();
+    if len == 0 {
+        return None;
+    }
+
+    let inner_y0 = area.y.saturating_add(1);
+    let inner_y1 = area.y.saturating_add(area.height).saturating_sub(1);
+    if row < inner_y0 || row >= inner_y1 {
+        return None;
+    }
+
+    let visible = area.height.saturating_sub(2) as usize;
+    if visible == 0 {
+        return None;
+    }
+
+    let visible = visible.min(len);
+    let mut offset = if app.log_autoscroll {
+        0
+    } else {
+        app.log_scroll_offset
+    };
+    offset = offset.min(len.saturating_sub(visible));
+    let start = len.saturating_sub(visible + offset);
+
+    let inner_row = row.saturating_sub(inner_y0) as usize;
+    if inner_row >= visible {
+        return None;
+    }
+
+    let line_idx = start.saturating_add(inner_row);
+    app.log_line_entry_index.get(line_idx).copied()
+}
+
 fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
     if app.confirm.is_some() || app.input.is_some() || app.show_help {
         return;
@@ -1353,6 +1415,8 @@ fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
                 app.focus = FocusPane::Execution;
                 if rect_contains(layout.exec_input, col, row) {
                     app.composer_active = true;
+                } else if rect_contains(layout.exec_logs, col, row) {
+                    app.log_selected_entry = log_entry_hit_at(app, layout.exec_logs, col, row);
                 }
                 return;
             }
@@ -1368,6 +1432,14 @@ fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
                 } else if rect_contains(layout.diff_preview, col, row) {
                     app.diff_focus = DiffFocus::Preview;
                 }
+                return;
+            }
+        }
+        MouseEventKind::Down(MouseButton::Right) => {
+            if rect_contains(layout.exec_logs, col, row) {
+                app.focus = FocusPane::Execution;
+                app.log_selected_entry = log_entry_hit_at(app, layout.exec_logs, col, row);
+                toggle_selected_log_entry(app);
                 return;
             }
         }
@@ -1468,11 +1540,17 @@ fn render_top_bar(app: &AppState) -> Paragraph<'static> {
     let line = Line::from(vec![
         Span::styled("vk-tui", Style::default().add_modifier(Modifier::BOLD)),
         Span::raw("  "),
-        Span::styled(truncate(&project_name, 18), Style::default().fg(Color::Cyan)),
+        Span::styled(
+            truncate(&project_name, 18),
+            Style::default().fg(Color::Cyan),
+        ),
         Span::raw("  "),
         Span::styled(truncate(&task_title, 28), Style::default()),
         Span::raw("  "),
-        Span::styled(truncate(&attempt_branch, 18), Style::default().fg(Color::Magenta)),
+        Span::styled(
+            truncate(&attempt_branch, 18),
+            Style::default().fg(Color::Magenta),
+        ),
         Span::raw("  "),
         status_badge("tasks", app.tasks_status),
         Span::raw(" "),
@@ -1482,7 +1560,10 @@ fn render_top_bar(app: &AppState) -> Paragraph<'static> {
         Span::raw(" "),
         status_badge("log", app.log_status),
         Span::raw("  "),
-        Span::styled(format!("mode:{}", app.log_mode.label()), Style::default().fg(Color::Gray)),
+        Span::styled(
+            format!("mode:{}", app.log_mode.label()),
+            Style::default().fg(Color::Gray),
+        ),
         Span::raw(" "),
         Span::styled(
             format!("view:{}", app.log_render_mode.label()),
@@ -1497,8 +1578,12 @@ fn render_top_bar(app: &AppState) -> Paragraph<'static> {
 
 fn render_bottom_bar(app: &AppState) -> Paragraph<'static> {
     let text = match app.focus {
-        FocusPane::Board => "Tab next | j/k move | J/K status | ←/→ move | / search | [/] attempts | x stop | o log mode | q quit",
-        FocusPane::Execution => "Tab next | i compose | Enter send | PgUp/PgDn scroll | End bottom | m md view | x stop | o log mode | q quit",
+        FocusPane::Board => {
+            "Tab next | j/k move | J/K status | ←/→ move | / search | [/] attempts | x stop | o log mode | q quit"
+        }
+        FocusPane::Execution => {
+            "Tab next | i compose | Enter send | e expand | PgUp/PgDn scroll | End bottom | m md view | x stop | o log mode | q quit"
+        }
         FocusPane::Diff => {
             "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | q quit"
         }
@@ -1674,7 +1759,8 @@ fn render_board_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
             } else {
                 0
             };
-            let (start, end, selected_in_window) = window_for_list(list.len(), selected_idx, height);
+            let (start, end, selected_in_window) =
+                window_for_list(list.len(), selected_idx, height);
             let visible = &list[start..end];
             let items = if visible.is_empty() {
                 vec![ListItem::new(Line::from("—"))]
@@ -1743,11 +1829,7 @@ fn render_logs_viewer(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect
     let start = len.saturating_sub(visible + offset);
     let end = len.saturating_sub(offset);
 
-    let mut text: Vec<Line<'static>> = app
-        .log_lines
-        .get(start..end)
-        .unwrap_or(&[])
-        .to_vec();
+    let mut text: Vec<Line<'static>> = app.log_lines.get(start..end).unwrap_or(&[]).to_vec();
     if text.is_empty() {
         text.push(Line::from("No logs"));
     }
@@ -1769,13 +1851,12 @@ fn render_logs_viewer(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect
         app.log_mode.label(),
         app.log_render_mode.label()
     );
-    let w = Paragraph::new(text)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(title)
-                .border_style(border_style),
-        );
+    let w = Paragraph::new(text).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(title)
+            .border_style(border_style),
+    );
     f.render_widget(w, area);
 }
 
@@ -1832,8 +1913,14 @@ fn diff_rows(store: &serde_json::Value) -> Vec<DiffRow> {
             .get("change")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
-        let additions = content.get("additions").and_then(|v| v.as_u64()).map(|v| v as usize);
-        let deletions = content.get("deletions").and_then(|v| v.as_u64()).map(|v| v as usize);
+        let additions = content
+            .get("additions")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
+        let deletions = content
+            .get("deletions")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize);
         let content_omitted = content
             .get("contentOmitted")
             .and_then(|v| v.as_bool())
@@ -1941,14 +2028,14 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                 };
 
                 let (dir_part, base_part) = match path_display.rsplit_once('/') {
-                    Some((dir, base)) if !dir.is_empty() => (Some(dir.to_string()), base.to_string()),
+                    Some((dir, base)) if !dir.is_empty() => {
+                        (Some(dir.to_string()), base.to_string())
+                    }
                     _ => (None, path_display),
                 };
 
-                let mut spans: Vec<Span<'static>> = vec![
-                    Span::styled(name, change_style),
-                    Span::raw(" "),
-                ];
+                let mut spans: Vec<Span<'static>> =
+                    vec![Span::styled(name, change_style), Span::raw(" ")];
 
                 if let Some(dir) = dir_part {
                     spans.push(Span::styled(
@@ -1971,15 +2058,27 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
 
                 if let (Some(a), Some(b)) = (d.additions, d.deletions) {
                     spans.push(Span::raw(" "));
-                    spans.push(Span::styled(format!("+{a}"), Style::default().fg(Color::Green)));
+                    spans.push(Span::styled(
+                        format!("+{a}"),
+                        Style::default().fg(Color::Green),
+                    ));
                     spans.push(Span::raw("/"));
-                    spans.push(Span::styled(format!("-{b}"), Style::default().fg(Color::Red)));
+                    spans.push(Span::styled(
+                        format!("-{b}"),
+                        Style::default().fg(Color::Red),
+                    ));
                 } else if let Some(a) = d.additions {
                     spans.push(Span::raw(" "));
-                    spans.push(Span::styled(format!("+{a}"), Style::default().fg(Color::Green)));
+                    spans.push(Span::styled(
+                        format!("+{a}"),
+                        Style::default().fg(Color::Green),
+                    ));
                 } else if let Some(b) = d.deletions {
                     spans.push(Span::raw(" "));
-                    spans.push(Span::styled(format!("-{b}"), Style::default().fg(Color::Red)));
+                    spans.push(Span::styled(
+                        format!("-{b}"),
+                        Style::default().fg(Color::Red),
+                    ));
                 }
 
                 ListItem::new(Line::from(spans))
@@ -1995,11 +2094,13 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                 .border_style(border_style),
         )
         .highlight_style(Style::default().bg(Color::DarkGray))
-        .highlight_symbol(if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files {
-            "▶ "
-        } else {
-            "  "
-        });
+        .highlight_symbol(
+            if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files {
+                "▶ "
+            } else {
+                "  "
+            },
+        );
 
     let mut state = ratatui::widgets::ListState::default();
     if !visible.is_empty() {
@@ -2023,13 +2124,12 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: ratatui::layout::Rec
     let end = (start + height).min(lines.len());
     let visible = lines.get(start..end).unwrap_or(&[]);
 
-    let w = Paragraph::new(visible.to_vec())
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!("Diff ({})", app.diff_theme.label()))
-                .border_style(border_style),
-        );
+    let w = Paragraph::new(visible.to_vec()).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(format!("Diff ({})", app.diff_theme.label()))
+            .border_style(border_style),
+    );
 
     f.render_widget(w, area);
 }
@@ -2340,11 +2440,7 @@ fn render_logs_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
     let start = len.saturating_sub(visible + offset);
     let end = len.saturating_sub(offset);
 
-    let mut text: Vec<Line<'static>> = app
-        .log_lines
-        .get(start..end)
-        .unwrap_or(&[])
-        .to_vec();
+    let mut text: Vec<Line<'static>> = app.log_lines.get(start..end).unwrap_or(&[]).to_vec();
     if text.is_empty() {
         text.push(Line::from("No logs"));
     }
@@ -2404,6 +2500,7 @@ fn render_help_modal(f: &mut Frame) {
         Line::from("Execution (center)"),
         Line::from("  i           compose follow-up"),
         Line::from("  Enter       send follow-up (while composing)"),
+        Line::from("  e / Enter   expand/collapse entry"),
         Line::from("  Esc         cancel compose"),
         Line::from("  o           toggle raw/normalized"),
         Line::from("  PgUp/PgDn   scroll logs"),
@@ -2450,7 +2547,10 @@ fn render_input_modal(f: &mut Frame, input: &InputState) {
     f.render_widget(Clear, area);
 
     let (title, hint) = match input.mode {
-        InputMode::SearchTasks => ("Search tasks", "type to filter, Enter to apply, Esc to cancel"),
+        InputMode::SearchTasks => (
+            "Search tasks",
+            "type to filter, Enter to apply, Esc to cancel",
+        ),
     };
 
     let lines = vec![
@@ -3396,11 +3496,14 @@ fn parse_ws_message(text: &str) -> WsParsed {
 fn reset_logs(app: &mut AppState) {
     app.log_store = serde_json::json!({ "entries": [] });
     app.log_lines.clear();
+    app.log_line_entry_index.clear();
     app.log_entry_line_starts.clear();
     app.log_entry_end_states.clear();
     app.log_assembler_state = LogAssemblerState::default();
     app.pending_log_patch.0.clear();
     app.pending_log_dirty_from_entry = None;
+    app.log_collapsed.clear();
+    app.log_selected_entry = None;
     app.log_autoscroll = true;
     app.log_scroll_offset = 0;
 }
@@ -3448,26 +3551,37 @@ fn flush_log_patches(app: &mut AppState, width: usize) -> bool {
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
 
+    // Initialize collapse state for newly-seen entries.
+    if app.log_collapsed.len() > entries.len() {
+        app.log_collapsed.truncate(entries.len());
+    }
+    if app.log_collapsed.len() < entries.len() {
+        let before = app.log_collapsed.len();
+        app.log_collapsed.resize(entries.len(), false);
+        for idx in before..entries.len() {
+            app.log_collapsed[idx] = default_collapsed_for_log_entry(&entries[idx]);
+        }
+    }
+
     let rebuild_from = rebuild_from.min(processed_entries_before);
     if rebuild_from == 0 {
         app.log_lines.clear();
+        app.log_line_entry_index.clear();
         app.log_entry_line_starts.clear();
         app.log_entry_end_states.clear();
         app.log_assembler_state = LogAssemblerState::default();
     } else if rebuild_from < processed_entries_before {
         let truncate_to = app.log_entry_line_starts[rebuild_from];
         app.log_lines.truncate(truncate_to);
+        app.log_line_entry_index.truncate(truncate_to);
         app.log_entry_line_starts.truncate(rebuild_from);
         app.log_entry_end_states.truncate(rebuild_from);
-        app.log_assembler_state = app
-            .log_entry_end_states
-            .last()
-            .copied()
-            .unwrap_or_default();
+        app.log_assembler_state = app.log_entry_end_states.last().copied().unwrap_or_default();
     }
 
     let log_mode = app.log_mode;
     let render_mode = app.log_render_mode;
+    let diff_theme = app.diff_theme;
 
     let lines_before = app.log_lines.len();
     for idx in rebuild_from..entries.len() {
@@ -3475,11 +3589,15 @@ fn flush_log_patches(app: &mut AppState, width: usize) -> bool {
         app.log_entry_line_starts.push(app.log_lines.len());
         append_log_entry(
             &mut app.log_lines,
+            &mut app.log_line_entry_index,
             &mut app.log_assembler_state,
+            idx,
             entry,
             width,
             log_mode,
             render_mode,
+            diff_theme,
+            &app.log_collapsed,
         );
         app.log_entry_end_states.push(app.log_assembler_state);
     }
@@ -3506,6 +3624,118 @@ fn log_patch_min_entry_index(patch: &json_patch::Patch) -> Option<usize> {
         .min()
 }
 
+fn toggle_selected_log_entry(app: &mut AppState) {
+    let entries_len = app
+        .log_store
+        .get("entries")
+        .and_then(|v| v.as_array())
+        .map(|v| v.len())
+        .unwrap_or(0);
+    if entries_len == 0 {
+        return;
+    }
+
+    if app.log_collapsed.len() < entries_len {
+        let before = app.log_collapsed.len();
+        app.log_collapsed.resize(entries_len, false);
+        for idx in before..entries_len {
+            if let Some(entry) = app.log_store.get("entries").and_then(|v| v.get(idx)) {
+                app.log_collapsed[idx] = default_collapsed_for_log_entry(entry);
+            }
+        }
+    }
+
+    let mut idx = app
+        .log_selected_entry
+        .unwrap_or(entries_len.saturating_sub(1));
+    idx = idx.min(entries_len.saturating_sub(1));
+    if let Some(v) = app.log_collapsed.get_mut(idx) {
+        *v = !*v;
+    }
+    app.pending_log_dirty_from_entry = Some(
+        app.pending_log_dirty_from_entry
+            .map(|m| m.min(idx))
+            .unwrap_or(idx),
+    );
+}
+
+fn sanitize_tui_text(s: &str) -> std::borrow::Cow<'_, str> {
+    // Control chars (especially '\r') and ANSI escape sequences can cause cursor movement and
+    // visual corruption when written to the terminal. Strip them before rendering.
+    fn needs_sanitize(s: &str) -> bool {
+        s.as_bytes()
+            .iter()
+            .any(|&b| b == b'\x1b' || b == b'\r' || b < 0x20 || b == 0x7f)
+    }
+
+    if !needs_sanitize(s) {
+        return std::borrow::Cow::Borrowed(s);
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum State {
+        Text,
+        Esc,
+        Csi,
+        Osc,
+    }
+
+    let mut out = String::with_capacity(s.len());
+    let mut state = State::Text;
+    let mut osc_esc = false;
+
+    for ch in s.chars() {
+        match state {
+            State::Text => match ch {
+                '\x1b' => state = State::Esc,
+                '\r' => {
+                    // Drop CR to avoid carriage-return overwrites.
+                }
+                '\t' => {
+                    // Expand tabs to spaces for consistent width handling.
+                    out.push_str("    ");
+                }
+                c if c.is_control() => {
+                    // Drop other control chars; they can corrupt layout.
+                }
+                _ => out.push(ch),
+            },
+            State::Esc => {
+                // ESC [ ... (CSI) or ESC ] ... (OSC); otherwise drop and return to text.
+                match ch {
+                    '[' => state = State::Csi,
+                    ']' => {
+                        state = State::Osc;
+                        osc_esc = false;
+                    }
+                    _ => state = State::Text,
+                }
+            }
+            State::Csi => {
+                // Consume until final byte in the CSI range (@..~).
+                if ('@'..='~').contains(&ch) {
+                    state = State::Text;
+                }
+            }
+            State::Osc => {
+                // Consume OSC until BEL or ST (ESC \).
+                if osc_esc {
+                    if ch == '\\' {
+                        state = State::Text;
+                    }
+                    osc_esc = false;
+                } else if ch == '\x07' {
+                    state = State::Text;
+                } else if ch == '\x1b' {
+                    osc_esc = true;
+                }
+            }
+        }
+    }
+
+    std::borrow::Cow::Owned(out)
+}
+
 fn style_for_log_kind(kind: LogKind) -> Style {
     match kind {
         LogKind::Stdout => Style::default(),
@@ -3514,14 +3744,338 @@ fn style_for_log_kind(kind: LogKind) -> Style {
     }
 }
 
+fn default_collapsed_for_log_entry(entry: &serde_json::Value) -> bool {
+    const THRESHOLD_LINES: usize = 24;
+
+    let Some(ty) = entry.get("type").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    if ty != "NORMALIZED_ENTRY" {
+        return false;
+    }
+
+    let Some(content) = entry.get("content") else {
+        return false;
+    };
+    let Some(entry_type) = content.get("entry_type") else {
+        return false;
+    };
+    let Some(entry_type_tag) = entry_type.get("type").and_then(|v| v.as_str()) else {
+        return false;
+    };
+    if entry_type_tag != "tool_use" {
+        return false;
+    }
+
+    let Some(action_type) = entry_type.get("action_type") else {
+        return false;
+    };
+    let Some(action) = action_type.get("action").and_then(|v| v.as_str()) else {
+        return false;
+    };
+
+    match action {
+        "command_run" => {
+            let output = action_type
+                .get("result")
+                .and_then(|v| v.get("output"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            output.lines().count() > THRESHOLD_LINES
+        }
+        "file_edit" => {
+            let mut lines = 0usize;
+            let changes = action_type.get("changes").and_then(|v| v.as_array());
+            for c in changes.into_iter().flatten() {
+                if c.get("action").and_then(|v| v.as_str()) == Some("edit") {
+                    let diff = c.get("unified_diff").and_then(|v| v.as_str()).unwrap_or("");
+                    lines = lines.saturating_add(diff.lines().count());
+                    if lines > THRESHOLD_LINES {
+                        return true;
+                    }
+                }
+            }
+            false
+        }
+        "tool" => {
+            let result_type = action_type
+                .get("result")
+                .and_then(|v| v.get("type"))
+                .and_then(|v| v.as_str());
+            let value = action_type.get("result").and_then(|v| v.get("value"));
+            match (result_type, value) {
+                (Some("markdown"), Some(v)) => v
+                    .as_str()
+                    .unwrap_or("")
+                    .lines()
+                    .count()
+                    .gt(&THRESHOLD_LINES),
+                (Some("json"), Some(v)) => serde_json::to_string_pretty(v)
+                    .ok()
+                    .map(|s| s.lines().count() > THRESHOLD_LINES)
+                    .unwrap_or(false),
+                _ => false,
+            }
+        }
+        _ => false,
+    }
+}
+
+fn tool_status_str(entry_type: &serde_json::Value) -> Option<&str> {
+    let status = entry_type.get("status")?;
+    if let Some(s) = status.as_str() {
+        return Some(s);
+    }
+    status.get("status").and_then(|v| v.as_str())
+}
+
+fn tool_status_badge(status: Option<&str>) -> (Span<'static>, Style) {
+    match status.unwrap_or("created") {
+        "success" => (
+            Span::styled("ok", Style::default().fg(Color::Green)),
+            Style::default().fg(Color::Green),
+        ),
+        "failed" => (
+            Span::styled("fail", Style::default().fg(Color::Red)),
+            Style::default().fg(Color::Red),
+        ),
+        "denied" => (
+            Span::styled("denied", Style::default().fg(Color::Yellow)),
+            Style::default().fg(Color::Yellow),
+        ),
+        "pending_approval" => (
+            Span::styled("approval", Style::default().fg(Color::Magenta)),
+            Style::default().fg(Color::Magenta),
+        ),
+        "timed_out" => (
+            Span::styled("timeout", Style::default().fg(Color::Yellow)),
+            Style::default().fg(Color::Yellow),
+        ),
+        _ => (
+            Span::styled("…", Style::default().add_modifier(Modifier::DIM)),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+    }
+}
+
+fn line_display_width(line: &Line<'_>) -> usize {
+    line.spans
+        .iter()
+        .map(|s| display_width(s.content.as_ref()))
+        .sum()
+}
+
+fn split_token_prefer_separators(s: &str, max: usize) -> (String, String) {
+    if max == 0 {
+        return (String::new(), s.to_string());
+    }
+    if display_width(s) <= max {
+        return (s.to_string(), String::new());
+    }
+
+    let mut chunk = String::new();
+    let mut last_soft_break: Option<usize> = None;
+    for (i, ch) in s.char_indices() {
+        let next = format!("{chunk}{ch}");
+        if display_width(&next) > max {
+            break;
+        }
+        chunk.push(ch);
+        let end = i + ch.len_utf8();
+        if matches!(
+            ch,
+            '/' | '-' | '_' | '.' | ':' | '@' | '?' | '&' | '=' | '#'
+        ) {
+            last_soft_break = Some(end);
+        }
+    }
+
+    let cut = last_soft_break.unwrap_or_else(|| {
+        let (c, _) = split_by_width(s, max);
+        c.len()
+    });
+
+    let mut left = s.get(..cut).unwrap_or("").to_string();
+    let mut right = s.get(cut..).unwrap_or("").to_string();
+    // Trim spaces around the break when breaking at a separator boundary.
+    left = left.trim_end().to_string();
+    right = right.trim_start().to_string();
+    (left, right)
+}
+
+fn wrap_line_wordwise(line: &Line<'static>, width: usize) -> Vec<Line<'static>> {
+    let width = width.max(1);
+    if line.spans.is_empty() || line_display_width(line) <= width {
+        return vec![line.clone()];
+    }
+
+    #[derive(Clone)]
+    struct Tok {
+        text: String,
+        style: Style,
+        is_ws: bool,
+    }
+
+    let mut tokens: Vec<Tok> = vec![];
+    for span in &line.spans {
+        let style = span.style;
+        let text = span.content.as_ref();
+        if text.is_empty() {
+            continue;
+        }
+        let mut cur = String::new();
+        let mut cur_ws: Option<bool> = None;
+        for ch in text.chars() {
+            let is_ws = ch.is_whitespace();
+            if cur_ws == Some(is_ws) || cur_ws.is_none() {
+                cur.push(ch);
+                cur_ws = Some(is_ws);
+            } else {
+                tokens.push(Tok {
+                    text: cur.clone(),
+                    style,
+                    is_ws: cur_ws.unwrap_or(false),
+                });
+                cur.clear();
+                cur.push(ch);
+                cur_ws = Some(is_ws);
+            }
+        }
+        if !cur.is_empty() {
+            tokens.push(Tok {
+                text: cur,
+                style,
+                is_ws: cur_ws.unwrap_or(false),
+            });
+        }
+    }
+
+    let mut out: Vec<Line<'static>> = vec![];
+    let mut cur_spans: Vec<Span<'static>> = vec![];
+    let mut cur_w: usize = 0;
+
+    let mut i = 0usize;
+    while i < tokens.len() {
+        let tok = tokens[i].clone();
+        if tok.is_ws {
+            // Avoid starting wrapped lines with incidental whitespace.
+            if cur_spans.is_empty() {
+                // Keep indentation (2+ spaces) if the original line started with it.
+                if tok.text.chars().all(|c| c == ' ') && tok.text.len() >= 2 {
+                    let w = display_width(&tok.text);
+                    if w <= width {
+                        push_span_merged(&mut cur_spans, tok.text, tok.style);
+                        cur_w += w;
+                    }
+                }
+                i += 1;
+                continue;
+            }
+
+            // Normalize whitespace between words to a single space for wrapping.
+            let space = " ".to_string();
+            let w = 1usize;
+            if cur_w + w > width {
+                out.push(Line::from(cur_spans.clone()));
+                cur_spans.clear();
+                cur_w = 0;
+                i += 1;
+                continue;
+            }
+            push_span_merged(&mut cur_spans, space, tok.style);
+            cur_w += w;
+            i += 1;
+            continue;
+        }
+
+        // Non-whitespace token
+        let mut text = tok.text;
+        let style = tok.style;
+        loop {
+            let w = display_width(&text);
+            if cur_w + w <= width {
+                push_span_merged(&mut cur_spans, text, style);
+                cur_w += w;
+                break;
+            }
+
+            if !cur_spans.is_empty() {
+                // Word-wrap: move token to next line.
+                out.push(Line::from(cur_spans.clone()));
+                cur_spans.clear();
+                cur_w = 0;
+                continue;
+            }
+
+            // Token longer than the full line: split on soft separators first.
+            let (chunk, rest) = split_token_prefer_separators(&text, width);
+            if chunk.is_empty() {
+                let (c, r) = split_by_width(&text, width);
+                if c.is_empty() {
+                    break;
+                }
+                push_span_merged(&mut cur_spans, c, style);
+                out.push(Line::from(cur_spans.clone()));
+                cur_spans.clear();
+                cur_w = 0;
+                text = r;
+                if text.is_empty() {
+                    break;
+                }
+                continue;
+            }
+            let chunk_w = display_width(&chunk);
+            push_span_merged(&mut cur_spans, chunk, style);
+            cur_w += chunk_w;
+            out.push(Line::from(cur_spans.clone()));
+            cur_spans.clear();
+            cur_w = 0;
+            text = rest;
+            if text.is_empty() {
+                break;
+            }
+        }
+        i += 1;
+    }
+
+    if !cur_spans.is_empty() {
+        out.push(Line::from(cur_spans));
+    }
+
+    out
+}
+
+fn push_line(
+    lines: &mut Vec<Line<'static>>,
+    map: &mut Vec<usize>,
+    entry_idx: usize,
+    line: Line<'static>,
+    width: usize,
+) {
+    for wrapped in wrap_line_wordwise(&line, width) {
+        lines.push(wrapped);
+        map.push(entry_idx);
+    }
+}
+
 fn append_log_entry(
     lines: &mut Vec<Line<'static>>,
+    map: &mut Vec<usize>,
     state: &mut LogAssemblerState,
+    entry_idx: usize,
     entry: &serde_json::Value,
     width: usize,
     log_mode: LogMode,
     render_mode: LogRenderMode,
+    diff_theme: DiffTheme,
+    collapsed: &[bool],
 ) {
+    fn line_is_blank(line: &Line<'static>) -> bool {
+        line.spans
+            .iter()
+            .all(|s| s.content.as_ref().trim().is_empty())
+    }
+
     let Some(ty) = entry.get("type").and_then(|v| v.as_str()) else {
         return;
     };
@@ -3531,60 +4085,79 @@ fn append_log_entry(
             let Some(text) = entry.get("content").and_then(|v| v.as_str()) else {
                 return;
             };
+            let target_idx = state.attach_to_entry.unwrap_or(entry_idx);
+            if collapsed.get(target_idx).copied().unwrap_or(false) {
+                return;
+            }
             append_stream_text(
                 lines,
+                map,
                 state,
                 LogKind::Stdout,
                 text,
-                style_for_log_kind(LogKind::Stdout),
+                Style::default().add_modifier(Modifier::DIM),
                 true,
+                target_idx,
+                "  ",
+                width,
             );
         }
         "STDERR" => {
             let Some(text) = entry.get("content").and_then(|v| v.as_str()) else {
                 return;
             };
+            let target_idx = state.attach_to_entry.unwrap_or(entry_idx);
+            if collapsed.get(target_idx).copied().unwrap_or(false) {
+                return;
+            }
             append_stream_text(
                 lines,
+                map,
                 state,
                 LogKind::Stderr,
                 text,
-                style_for_log_kind(LogKind::Stderr),
+                Style::default().fg(Color::Red),
                 true,
+                target_idx,
+                "  ",
+                width,
             );
         }
         "NORMALIZED_ENTRY" => {
             let Some(content) = entry.get("content") else {
                 return;
             };
-            let Some(text) = normalized_entry_text(content) else {
-                return;
-            };
 
             // Don't join stdout/stderr across normalized entries.
             state.open = false;
             state.open_kind = None;
+            state.attach_to_entry = None;
 
-            if log_mode == LogMode::Normalized && render_mode == LogRenderMode::Markdown {
-                let mut rendered = render_markdown(&text, width);
-                if rendered.is_empty() {
-                    rendered.push(Line::from(""));
-                }
-                lines.extend(rendered);
-            } else {
-                for l in text.lines() {
-                    lines.push(Line::from(Span::styled(
-                        l.to_string(),
-                        style_for_log_kind(LogKind::Info),
-                    )));
-                }
-                if text.lines().next().is_none() {
-                    lines.push(Line::from(Span::styled(
-                        "".to_string(),
-                        style_for_log_kind(LogKind::Info),
-                    )));
+            if log_mode == LogMode::Raw {
+                // Raw mode intentionally focuses on stdout/stderr.
+                return;
+            }
+
+            // Visual separation between "cards"/blocks, without breaking stdout/stderr
+            // attachments which arrive after the tool event.
+            if let Some(last) = lines.last() {
+                if !line_is_blank(last) {
+                    let sep_owner = map.last().copied().unwrap_or(entry_idx);
+                    push_line(lines, map, sep_owner, Line::from(""), width);
                 }
             }
+
+            append_normalized_entry(
+                lines,
+                map,
+                state,
+                entry_idx,
+                content,
+                width,
+                render_mode,
+                diff_theme,
+                collapsed.get(entry_idx).copied().unwrap_or(false),
+            );
         }
         _ => {}
     }
@@ -3592,11 +4165,15 @@ fn append_log_entry(
 
 fn append_stream_text(
     lines: &mut Vec<Line<'static>>,
+    map: &mut Vec<usize>,
     state: &mut LogAssemblerState,
     kind: LogKind,
     text: &str,
     style: Style,
     allow_join: bool,
+    entry_idx: usize,
+    prefix: &str,
+    width: usize,
 ) {
     if text.is_empty() {
         return;
@@ -3606,22 +4183,39 @@ fn append_stream_text(
     let mut is_first = true;
     for raw in text.split_terminator('\n') {
         let seg = raw.strip_suffix('\r').unwrap_or(raw);
+        let seg = sanitize_tui_text(seg);
 
         if allow_join
             && is_first
             && state.open
             && state.open_kind == Some(kind)
-            && lines.last().is_some_and(|l| {
-                l.spans.len() == 1 && l.spans[0].style == style
-            })
+            && map.last().copied() == Some(entry_idx)
+            && lines
+                .last()
+                .is_some_and(|l| l.spans.len() == 1 && l.spans[0].style == style)
         {
             if let Some(last) = lines.last_mut() {
                 if let Some(span) = last.spans.first_mut() {
-                    span.content.to_mut().push_str(seg);
+                    span.content.to_mut().push_str(seg.as_ref());
                 }
             }
+            // If joining caused the line to overflow, re-wrap it.
+            if lines
+                .last()
+                .is_some_and(|l| line_display_width(l) > width.max(1))
+            {
+                let line = lines.pop().unwrap();
+                let _ = map.pop();
+                push_line(lines, map, entry_idx, line, width);
+            }
         } else {
-            lines.push(Line::from(Span::styled(seg.to_string(), style)));
+            push_line(
+                lines,
+                map,
+                entry_idx,
+                Line::from(Span::styled(format!("{prefix}{}", seg), style)),
+                width,
+            );
         }
 
         is_first = false;
@@ -3633,6 +4227,785 @@ fn append_stream_text(
     } else {
         state.open = false;
         state.open_kind = None;
+    }
+}
+
+fn append_normalized_entry(
+    lines: &mut Vec<Line<'static>>,
+    map: &mut Vec<usize>,
+    state: &mut LogAssemblerState,
+    entry_idx: usize,
+    entry: &serde_json::Value,
+    width: usize,
+    render_mode: LogRenderMode,
+    diff_theme: DiffTheme,
+    collapsed: bool,
+) {
+    fn append_text_block(
+        lines: &mut Vec<Line<'static>>,
+        map: &mut Vec<usize>,
+        entry_idx: usize,
+        label: &str,
+        accent: Color,
+        text: &str,
+        width: usize,
+        render_mode: LogRenderMode,
+    ) {
+        let header = Line::from(vec![
+            Span::styled("▌", Style::default().fg(accent)),
+            Span::raw(" "),
+            Span::styled(
+                label.to_string(),
+                Style::default().add_modifier(Modifier::BOLD),
+            ),
+        ]);
+        push_line(lines, map, entry_idx, header, width);
+
+        if text.trim().is_empty() {
+            return;
+        }
+
+        let body_lines = if render_mode == LogRenderMode::Markdown {
+            render_markdown(text, width.saturating_sub(2).max(1))
+        } else {
+            text.lines()
+                .map(|l| Line::from(Span::raw(l.to_string())))
+                .collect()
+        };
+        for l in body_lines {
+            let mut spans = vec![Span::styled(
+                "  ",
+                Style::default().add_modifier(Modifier::DIM),
+            )];
+            spans.extend(l.spans.into_iter());
+            push_line(lines, map, entry_idx, Line::from(spans), width);
+        }
+    }
+
+    let entry_type = entry.get("entry_type");
+    let entry_type = match entry_type {
+        Some(v) => v,
+        None => {
+            let fallback = entry.to_string();
+            push_line(lines, map, entry_idx, Line::from(fallback), width);
+            return;
+        }
+    };
+
+    let entry_type_tag = entry_type
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let content_text = entry.get("content").and_then(|v| v.as_str()).unwrap_or("");
+
+    match entry_type_tag {
+        "user_message" => {
+            append_text_block(
+                lines,
+                map,
+                entry_idx,
+                "You",
+                Color::Yellow,
+                content_text,
+                width,
+                render_mode,
+            );
+        }
+        "assistant_message" => {
+            append_text_block(
+                lines,
+                map,
+                entry_idx,
+                "Assistant",
+                Color::Cyan,
+                content_text,
+                width,
+                render_mode,
+            );
+        }
+        "system_message" => {
+            append_text_block(
+                lines,
+                map,
+                entry_idx,
+                "System",
+                Color::Gray,
+                content_text,
+                width,
+                render_mode,
+            );
+        }
+        "error_message" => {
+            append_text_block(
+                lines,
+                map,
+                entry_idx,
+                "Error",
+                Color::Red,
+                content_text,
+                width,
+                render_mode,
+            );
+        }
+        "user_feedback" => {
+            let denied_tool = entry_type
+                .get("denied_tool")
+                .and_then(|v| v.as_str())
+                .unwrap_or("tool");
+            append_text_block(
+                lines,
+                map,
+                entry_idx,
+                &format!("Feedback (denied {denied_tool})"),
+                Color::Yellow,
+                content_text,
+                width,
+                render_mode,
+            );
+        }
+        "thinking" => {
+            push_line(
+                lines,
+                map,
+                entry_idx,
+                Line::from(Span::styled(
+                    "thinking…".to_string(),
+                    Style::default().add_modifier(Modifier::DIM),
+                )),
+                width,
+            );
+        }
+        "loading" => {
+            push_line(
+                lines,
+                map,
+                entry_idx,
+                Line::from(Span::styled(
+                    "loading…".to_string(),
+                    Style::default().add_modifier(Modifier::DIM),
+                )),
+                width,
+            );
+        }
+        "next_action" => {
+            let failed = entry_type
+                .get("failed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let needs_setup = entry_type
+                .get("needs_setup")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let procs = entry_type
+                .get("execution_processes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let text = format!(
+                "next action{} (execs: {}, setup: {})",
+                if failed { " (failed)" } else { "" },
+                procs,
+                if needs_setup { "needed" } else { "ok" }
+            );
+            push_line(
+                lines,
+                map,
+                entry_idx,
+                Line::from(Span::styled(
+                    text,
+                    Style::default().add_modifier(Modifier::DIM),
+                )),
+                width,
+            );
+        }
+        "tool_use" => {
+            let status = tool_status_str(entry_type);
+            let (status_badge, _status_style) = tool_status_badge(status);
+
+            let action_type = entry_type.get("action_type");
+            let action_type = match action_type {
+                Some(v) => v,
+                None => {
+                    append_text_block(
+                        lines,
+                        map,
+                        entry_idx,
+                        "Tool",
+                        Color::Blue,
+                        content_text,
+                        width,
+                        render_mode,
+                    );
+                    return;
+                }
+            };
+            let action = action_type
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("other");
+
+            let (label, accent) = match action {
+                "file_read" | "search" => ("Explored", Color::Cyan),
+                "file_edit" => ("Edited", Color::Green),
+                "command_run" => ("Ran", Color::Cyan),
+                "web_fetch" => ("Fetched", Color::Cyan),
+                "task_create" => ("Created", Color::Green),
+                "plan_presentation" => ("Plan", Color::Magenta),
+                "todo_management" => ("Todos", Color::Magenta),
+                "tool" => ("Tool", Color::Blue),
+                _ => ("Tool", Color::Blue),
+            };
+
+            let arrow = if collapsed { "▸" } else { "▾" };
+
+            let mut header_spans: Vec<Span<'static>> = vec![
+                Span::styled("▌", Style::default().fg(accent)),
+                Span::raw(" "),
+                Span::styled(
+                    arrow.to_string(),
+                    Style::default().add_modifier(Modifier::DIM),
+                ),
+                Span::raw(" "),
+            ];
+
+            // Put the most important detail in the header for scannability.
+            match action {
+                "command_run" => {
+                    let cmd = action_type
+                        .get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("command");
+                    header_spans.push(Span::styled(
+                        format!("{label} {cmd}"),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ));
+                }
+                "file_edit" => {
+                    let path = action_type
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("file");
+                    header_spans.push(Span::styled(
+                        format!("{label} {path}"),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ));
+                }
+                _ => {
+                    header_spans.push(Span::styled(
+                        label.to_string(),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ));
+                }
+            }
+
+            header_spans.push(Span::raw(" ("));
+            header_spans.push(status_badge);
+            header_spans.push(Span::raw(")"));
+            push_line(lines, map, entry_idx, Line::from(header_spans), width);
+
+            match action {
+                "file_read" => {
+                    let path = action_type
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("file");
+                    push_line(
+                        lines,
+                        map,
+                        entry_idx,
+                        Line::from(vec![
+                            Span::styled("  - ", Style::default().add_modifier(Modifier::DIM)),
+                            Span::raw(format!("Read {path}")),
+                        ]),
+                        width,
+                    );
+                }
+                "search" => {
+                    let query = action_type
+                        .get("query")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    push_line(
+                        lines,
+                        map,
+                        entry_idx,
+                        Line::from(vec![
+                            Span::styled("  - ", Style::default().add_modifier(Modifier::DIM)),
+                            Span::raw(format!("Search {query}")),
+                        ]),
+                        width,
+                    );
+                }
+                "command_run" => {
+                    state.attach_to_entry = Some(entry_idx);
+
+                    let exit_status = action_type.get("result").and_then(|v| v.get("exit_status"));
+                    if let Some(es) = exit_status {
+                        let exit_str =
+                            serde_json::to_string(es).unwrap_or_else(|_| "unknown".to_string());
+                        push_line(
+                            lines,
+                            map,
+                            entry_idx,
+                            Line::from(vec![
+                                Span::styled("  - ", Style::default().add_modifier(Modifier::DIM)),
+                                Span::styled(
+                                    format!("exit_status: {exit_str}"),
+                                    Style::default().add_modifier(Modifier::DIM),
+                                ),
+                            ]),
+                            width,
+                        );
+                    }
+
+                    let output = action_type
+                        .get("result")
+                        .and_then(|v| v.get("output"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if !output.is_empty() {
+                        if collapsed {
+                            push_line(
+                                lines,
+                                map,
+                                entry_idx,
+                                Line::from(vec![
+                                    Span::styled(
+                                        "  ▸ ",
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                    Span::styled(
+                                        "output (collapsed)".to_string(),
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                ]),
+                                width,
+                            );
+                        } else {
+                            const MAX_OUTPUT_LINES: usize = 400;
+                            for (i, l) in output.lines().take(MAX_OUTPUT_LINES).enumerate() {
+                                let line = sanitize_tui_text(l.strip_suffix('\r').unwrap_or(l));
+                                push_line(
+                                    lines,
+                                    map,
+                                    entry_idx,
+                                    Line::from(Span::styled(
+                                        format!("  {}", line),
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    )),
+                                    width,
+                                );
+                                if i + 1 == MAX_OUTPUT_LINES {
+                                    push_line(
+                                        lines,
+                                        map,
+                                        entry_idx,
+                                        Line::from(Span::styled(
+                                            "  … (truncated)".to_string(),
+                                            Style::default().add_modifier(Modifier::DIM),
+                                        )),
+                                        width,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                "web_fetch" => {
+                    let url = action_type
+                        .get("url")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    push_line(
+                        lines,
+                        map,
+                        entry_idx,
+                        Line::from(vec![
+                            Span::styled("  - ", Style::default().add_modifier(Modifier::DIM)),
+                            Span::raw(format!("GET {url}")),
+                        ]),
+                        width,
+                    );
+                }
+                "file_edit" => {
+                    let path = action_type
+                        .get("path")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("file");
+                    let changes = action_type
+                        .get("changes")
+                        .and_then(|v| v.as_array())
+                        .cloned();
+                    if let Some(changes) = changes {
+                        let mut has_diff = false;
+                        for c in &changes {
+                            let action =
+                                c.get("action").and_then(|v| v.as_str()).unwrap_or("change");
+                            match action {
+                                "write" => {
+                                    push_line(
+                                        lines,
+                                        map,
+                                        entry_idx,
+                                        Line::from(vec![
+                                            Span::styled(
+                                                "  - ",
+                                                Style::default().add_modifier(Modifier::DIM),
+                                            ),
+                                            Span::raw("Write content".to_string()),
+                                        ]),
+                                        width,
+                                    );
+                                }
+                                "delete" => {
+                                    push_line(
+                                        lines,
+                                        map,
+                                        entry_idx,
+                                        Line::from(vec![
+                                            Span::styled(
+                                                "  - ",
+                                                Style::default().add_modifier(Modifier::DIM),
+                                            ),
+                                            Span::raw("Delete file".to_string()),
+                                        ]),
+                                        width,
+                                    );
+                                }
+                                "rename" => {
+                                    let new_path = c
+                                        .get("new_path")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("new path");
+                                    push_line(
+                                        lines,
+                                        map,
+                                        entry_idx,
+                                        Line::from(vec![
+                                            Span::styled(
+                                                "  - ",
+                                                Style::default().add_modifier(Modifier::DIM),
+                                            ),
+                                            Span::raw(format!("Rename → {new_path}")),
+                                        ]),
+                                        width,
+                                    );
+                                }
+                                "edit" => {
+                                    has_diff = true;
+                                }
+                                _ => {}
+                            }
+                        }
+
+                        if has_diff {
+                            if collapsed {
+                                push_line(
+                                    lines,
+                                    map,
+                                    entry_idx,
+                                    Line::from(vec![
+                                        Span::styled(
+                                            "  ▸ ",
+                                            Style::default().add_modifier(Modifier::DIM),
+                                        ),
+                                        Span::styled(
+                                            "diff (collapsed)".to_string(),
+                                            Style::default().add_modifier(Modifier::DIM),
+                                        ),
+                                    ]),
+                                    width,
+                                );
+                            } else {
+                                const MAX_DIFF_LINES: usize = 300;
+                                for c in &changes {
+                                    if c.get("action").and_then(|v| v.as_str()) != Some("edit") {
+                                        continue;
+                                    }
+                                    let diff = c
+                                        .get("unified_diff")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    if diff.trim().is_empty() {
+                                        continue;
+                                    }
+                                    let body_width = width.saturating_sub(2).max(1);
+                                    let mut rendered =
+                                        highlight_unified_diff(path, diff, body_width, diff_theme);
+                                    if rendered.len() > MAX_DIFF_LINES {
+                                        rendered.truncate(MAX_DIFF_LINES);
+                                        rendered.push(Line::from(Span::styled(
+                                            "… (truncated)".to_string(),
+                                            Style::default().add_modifier(Modifier::DIM),
+                                        )));
+                                    }
+                                    for l in rendered {
+                                        let mut spans: Vec<Span<'static>> = vec![Span::styled(
+                                            "  ",
+                                            Style::default().add_modifier(Modifier::DIM),
+                                        )];
+                                        spans.extend(l.spans.into_iter());
+                                        push_line(lines, map, entry_idx, Line::from(spans), width);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        push_line(
+                            lines,
+                            map,
+                            entry_idx,
+                            Line::from(vec![
+                                Span::styled("  - ", Style::default().add_modifier(Modifier::DIM)),
+                                Span::raw(format!("Edit {path}")),
+                            ]),
+                            width,
+                        );
+                    }
+                }
+                "task_create" => {
+                    let description = action_type
+                        .get("description")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if !description.trim().is_empty() {
+                        if collapsed {
+                            push_line(
+                                lines,
+                                map,
+                                entry_idx,
+                                Line::from(vec![
+                                    Span::styled(
+                                        "  ▸ ",
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                    Span::styled(
+                                        "details (collapsed)".to_string(),
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                ]),
+                                width,
+                            );
+                        } else {
+                            for l in render_markdown(description, width.saturating_sub(2).max(1)) {
+                                let mut spans = vec![Span::styled(
+                                    "  ",
+                                    Style::default().add_modifier(Modifier::DIM),
+                                )];
+                                spans.extend(l.spans.into_iter());
+                                push_line(lines, map, entry_idx, Line::from(spans), width);
+                            }
+                        }
+                    }
+                }
+                "plan_presentation" => {
+                    let plan = action_type
+                        .get("plan")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if !plan.trim().is_empty() {
+                        if collapsed {
+                            push_line(
+                                lines,
+                                map,
+                                entry_idx,
+                                Line::from(vec![
+                                    Span::styled(
+                                        "  ▸ ",
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                    Span::styled(
+                                        "plan (collapsed)".to_string(),
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                ]),
+                                width,
+                            );
+                        } else {
+                            for l in render_markdown(plan, width.saturating_sub(2).max(1)) {
+                                let mut spans = vec![Span::styled(
+                                    "  ",
+                                    Style::default().add_modifier(Modifier::DIM),
+                                )];
+                                spans.extend(l.spans.into_iter());
+                                push_line(lines, map, entry_idx, Line::from(spans), width);
+                            }
+                        }
+                    }
+                }
+                "todo_management" => {
+                    let todos = action_type.get("todos").and_then(|v| v.as_array()).cloned();
+                    if let Some(todos) = todos {
+                        let count = todos.len();
+                        push_line(
+                            lines,
+                            map,
+                            entry_idx,
+                            Line::from(vec![
+                                Span::styled("  - ", Style::default().add_modifier(Modifier::DIM)),
+                                Span::raw(format!("{count} todos")),
+                            ]),
+                            width,
+                        );
+                        if !collapsed {
+                            for t in todos.iter().take(50) {
+                                let content =
+                                    t.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                                let status = t.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                                let mark = if status == "done" { "[x]" } else { "[ ]" };
+                                push_line(
+                                    lines,
+                                    map,
+                                    entry_idx,
+                                    Line::from(vec![
+                                        Span::styled(
+                                            "  ",
+                                            Style::default().add_modifier(Modifier::DIM),
+                                        ),
+                                        Span::raw(format!("{mark} {content}")),
+                                    ]),
+                                    width,
+                                );
+                            }
+                        }
+                    }
+                }
+                "tool" => {
+                    let tool_name = action_type
+                        .get("tool_name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("tool");
+                    let args = action_type.get("arguments");
+                    if let Some(args) = args {
+                        if let Ok(pretty) = serde_json::to_string_pretty(args) {
+                            push_line(
+                                lines,
+                                map,
+                                entry_idx,
+                                Line::from(vec![
+                                    Span::styled(
+                                        "  - ",
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                    Span::raw(format!("{tool_name} args")),
+                                ]),
+                                width,
+                            );
+                            if !collapsed {
+                                for l in pretty.lines().take(80) {
+                                    let l = sanitize_tui_text(l);
+                                    push_line(
+                                        lines,
+                                        map,
+                                        entry_idx,
+                                        Line::from(Span::styled(
+                                            format!("  {}", l),
+                                            Style::default().add_modifier(Modifier::DIM),
+                                        )),
+                                        width,
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    let result_ty = action_type
+                        .get("result")
+                        .and_then(|v| v.get("type"))
+                        .and_then(|v| v.as_str());
+                    let value = action_type.get("result").and_then(|v| v.get("value"));
+                    if let (Some(result_ty), Some(value)) = (result_ty, value) {
+                        if collapsed {
+                            push_line(
+                                lines,
+                                map,
+                                entry_idx,
+                                Line::from(vec![
+                                    Span::styled(
+                                        "  ▸ ",
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                    Span::styled(
+                                        "result (collapsed)".to_string(),
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                ]),
+                                width,
+                            );
+                        } else if result_ty == "markdown" {
+                            let md = value.as_str().unwrap_or("");
+                            for l in render_markdown(md, width.saturating_sub(2).max(1)) {
+                                let mut spans = vec![Span::styled(
+                                    "  ",
+                                    Style::default().add_modifier(Modifier::DIM),
+                                )];
+                                spans.extend(l.spans.into_iter());
+                                push_line(lines, map, entry_idx, Line::from(spans), width);
+                            }
+                        } else if result_ty == "json" {
+                            if let Ok(pretty) = serde_json::to_string_pretty(value) {
+                                for l in pretty.lines().take(200) {
+                                    let l = sanitize_tui_text(l);
+                                    push_line(
+                                        lines,
+                                        map,
+                                        entry_idx,
+                                        Line::from(Span::styled(
+                                            format!("  {}", l),
+                                            Style::default().add_modifier(Modifier::DIM),
+                                        )),
+                                        width,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    if !content_text.trim().is_empty() {
+                        append_text_block(
+                            lines,
+                            map,
+                            entry_idx,
+                            label,
+                            accent,
+                            content_text,
+                            width,
+                            render_mode,
+                        );
+                    }
+                }
+            }
+        }
+        other => {
+            // Fallback: preserve existing behavior.
+            let fallback = other.replace('_', " ");
+            if !content_text.trim().is_empty() {
+                append_text_block(
+                    lines,
+                    map,
+                    entry_idx,
+                    &fallback,
+                    Color::Gray,
+                    content_text,
+                    width,
+                    render_mode,
+                );
+            } else if let Some(text) = normalized_entry_text(entry) {
+                let mut rendered = if render_mode == LogRenderMode::Markdown {
+                    render_markdown(&text, width.max(1))
+                } else {
+                    text.lines()
+                        .map(|l| Line::from(Span::raw(l.to_string())))
+                        .collect()
+                };
+                if rendered.is_empty() {
+                    rendered.push(Line::from(""));
+                }
+                for l in rendered {
+                    push_line(lines, map, entry_idx, l, width);
+                }
+            }
+        }
     }
 }
 
@@ -3757,8 +5130,14 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
             .get("newContent")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let adds = content.get("additions").and_then(|v| v.as_u64()).unwrap_or(0);
-        let dels = content.get("deletions").and_then(|v| v.as_u64()).unwrap_or(0);
+        let adds = content
+            .get("additions")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let dels = content
+            .get("deletions")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         (old, new, adds, dels)
     } else {
         ("", "", 0, 0)
@@ -3789,8 +5168,14 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
 
     let content = entry_content.unwrap();
     if omitted {
-        let adds = content.get("additions").and_then(|v| v.as_u64()).unwrap_or(0);
-        let dels = content.get("deletions").and_then(|v| v.as_u64()).unwrap_or(0);
+        let adds = content
+            .get("additions")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let dels = content
+            .get("deletions")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         lines.push(Line::from(format!(
             "{} (content omitted)  +{}/-{}",
             selected.key, adds, dels
@@ -3857,7 +5242,9 @@ fn syntax_for_path<'a>(ps: &'a SyntaxSet, path: &str) -> &'a SyntaxReference {
         }
     }
 
-    let ext = std::path::Path::new(path).extension().and_then(|s| s.to_str());
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|s| s.to_str());
     if let Some(ext) = ext {
         if let Some(syntax) = ps.find_syntax_by_extension(ext) {
             return syntax;
@@ -4089,8 +5476,18 @@ fn wrap_md_tokens(
                         break;
                     }
 
+                    // Prefer word wrapping: if this is a non-space token and we're not at the
+                    // beginning of the line, move it to the next line instead of splitting it.
+                    if text != " " && cur_w > cur_prefix_w {
+                        out.push(Line::from(cur_spans.clone()));
+                        start_line(&mut cur_spans, &mut cur_w, &mut cur_prefix_w, false);
+                        continue;
+                    }
+
+                    // If the token is too long even at the line start, hard-split by width.
                     let (chunk, rest) = split_by_width(&text, available);
                     if chunk.is_empty() {
+                        // Should be rare; avoid infinite loops.
                         out.push(Line::from(cur_spans.clone()));
                         start_line(&mut cur_spans, &mut cur_w, &mut cur_prefix_w, false);
                         continue;
@@ -4122,6 +5519,7 @@ fn wrap_md_tokens(
 }
 
 fn render_markdown(md: &str, width: usize) -> Vec<Line<'static>> {
+    let md = sanitize_tui_text(md);
     let width = width.max(1);
 
     let mut options = MdOptions::empty();
@@ -4129,7 +5527,7 @@ fn render_markdown(md: &str, width: usize) -> Vec<Line<'static>> {
     options.insert(MdOptions::ENABLE_TABLES);
     options.insert(MdOptions::ENABLE_TASKLISTS);
 
-    let parser = MdParser::new_ext(md, options);
+    let parser = MdParser::new_ext(md.as_ref(), options);
 
     #[derive(Debug, Clone, Copy)]
     struct ListCtx {
@@ -4181,9 +5579,7 @@ fn render_markdown(md: &str, width: usize) -> Vec<Line<'static>> {
                 block.tokens.push(MdToken::Text(" ".to_string(), style));
             }
         }
-        block
-            .tokens
-            .push(MdToken::Text(word.to_string(), style));
+        block.tokens.push(MdToken::Text(word.to_string(), style));
     };
 
     let push_text = |block: &mut Block, text: &str, style: Style| {
@@ -4381,10 +5777,14 @@ fn render_markdown(md: &str, width: usize) -> Vec<Line<'static>> {
                 if let Some(b) = block.as_mut() {
                     if let Some(MdToken::Text(prev, _)) = b.tokens.last() {
                         if !prev.is_empty() && !prev.ends_with(' ') {
-                            b.tokens.push(MdToken::Text(" ".to_string(), Style::default()));
+                            b.tokens
+                                .push(MdToken::Text(" ".to_string(), Style::default()));
                         }
                     }
-                    b.tokens.push(MdToken::Text(t.to_string(), code_style));
+                    // Treat inline code like normal text for wrapping purposes (but keep style).
+                    for word in t.split_whitespace() {
+                        push_word(b, word, code_style);
+                    }
                 }
             }
             MdEvent::Text(t) => {
@@ -4406,7 +5806,8 @@ fn render_markdown(md: &str, width: usize) -> Vec<Line<'static>> {
             }
             MdEvent::SoftBreak => {
                 if let Some(b) = block.as_mut() {
-                    b.tokens.push(MdToken::Text(" ".to_string(), Style::default()));
+                    b.tokens
+                        .push(MdToken::Text(" ".to_string(), Style::default()));
                 }
             }
             MdEvent::HardBreak => {
@@ -5246,7 +6647,10 @@ struct SessionDto {
     id: Uuid,
 }
 
-async fn latest_session_id_http(base_url: &str, workspace_id: Uuid) -> anyhow::Result<Option<Uuid>> {
+async fn latest_session_id_http(
+    base_url: &str,
+    workspace_id: Uuid,
+) -> anyhow::Result<Option<Uuid>> {
     let client = reqwest::Client::builder()
         .build()
         .context("build reqwest client")?;
