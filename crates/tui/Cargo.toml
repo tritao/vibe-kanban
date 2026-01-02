@@ -1,0 +1,31 @@
+[package]
+name = "tui"
+version = "0.0.143"
+edition = "2024"
+
+[[bin]]
+name = "vibe-kanban-tui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+utils = { path = "../utils" }
+
+clap = { version = "4.5.27", features = ["derive", "env"] }
+crossterm = "0.28.1"
+futures-util = "0.3"
+json-patch = "2.0"
+pulldown-cmark = "0.10.3"
+ratatui = "0.29.0"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+sqlx = { version = "0.8.6", default-features = false, features = ["derive"] }
+syntect = "5.2.0"
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+unicode-width = "0.2.0"
+url = "2.5"
+uuid = { version = "1.0", features = ["serde"] }

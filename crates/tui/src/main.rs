@@ -1,0 +1,5157 @@
+use std::{
+    fs, io,
+    path::PathBuf,
+    time::Duration,
+};
+
+use anyhow::Context;
+use clap::Parser;
+use crossterm::{
+    execute,
+    event::{DisableMouseCapture, EnableMouseCapture},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
+use futures_util::StreamExt;
+use pulldown_cmark::{
+    CodeBlockKind, Event as MdEvent, Options as MdOptions, Parser as MdParser, Tag as MdTag,
+    TagEnd as MdTagEnd,
+};
+use ratatui::{
+    Frame, Terminal,
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+};
+use serde::{Deserialize, Serialize};
+use std::{collections::hash_map::DefaultHasher, hash::{Hash, Hasher}, sync::OnceLock};
+use tokio::sync::{mpsc, watch};
+use tokio_tungstenite::tungstenite;
+use syntect::{
+    easy::HighlightLines,
+    highlighting::{Theme, ThemeSet},
+    parsing::{SyntaxReference, SyntaxSet},
+};
+use unicode_width::UnicodeWidthStr;
+use utils::{port_file::read_port_file, response::ApiResponse};
+use uuid::Uuid;
+
+#[derive(Parser, Debug, Clone)]
+#[command(name = "vibe-kanban-tui")]
+#[command(about = "Full-screen TUI dashboard for Vibe Kanban")]
+struct Args {
+    /// Backend base URL (e.g., http://127.0.0.1:3001)
+    #[arg(long, env = "VIBE_BACKEND_URL")]
+    backend_url: Option<String>,
+
+    /// Backend host (used when backend-url not set)
+    #[arg(long, env = "HOST")]
+    host: Option<String>,
+
+    /// Backend port (used when backend-url not set)
+    #[arg(long, env = "BACKEND_PORT")]
+    port: Option<u16>,
+
+    /// Enable verbose logging
+    #[arg(long, default_value_t = false)]
+    verbose: bool,
+}
+
+#[derive(Debug)]
+enum UiEvent {
+    Crossterm(crossterm::event::Event),
+    Tick,
+}
+
+#[derive(Debug)]
+enum NetEvent {
+    InfoLoaded {
+        ok: bool,
+        summary: String,
+    },
+    ProjectsStreamStatus(StreamStatus),
+    ProjectsPatch(json_patch::Patch),
+    TasksStreamStatus(StreamStatus),
+    TasksReset,
+    TasksPatch(json_patch::Patch),
+    AttemptsLoaded {
+        task_id: Uuid,
+        attempts: Vec<AttemptRow>,
+    },
+    ExecStreamStatus(StreamStatus),
+    ExecReset,
+    ExecPatch(json_patch::Patch),
+    DiffStreamStatus(StreamStatus),
+    DiffReset,
+    DiffPatch(json_patch::Patch),
+    LogStreamStatus(StreamStatus),
+    LogReset,
+    LogPatch(json_patch::Patch),
+    Error(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamStatus {
+    Connecting,
+    Connected,
+    Completed,
+    Disconnected,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusPane {
+    Board,
+    Execution,
+    Diff,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum LogMode {
+    Normalized,
+    Raw,
+}
+
+impl LogMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Normalized => "normalized",
+            Self::Raw => "raw",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum LogRenderMode {
+    Plain,
+    Markdown,
+}
+
+impl LogRenderMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Plain => "plain",
+            Self::Markdown => "md",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiffFocus {
+    Files,
+    Preview,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InputMode {
+    SearchTasks,
+}
+
+#[derive(Debug, Clone)]
+struct InputState {
+    mode: InputMode,
+    buffer: String,
+    original: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ConfirmAction {
+    StopExec { exec_id: Uuid },
+}
+
+#[derive(Debug, Clone)]
+struct ConfirmState {
+    title: String,
+    body: String,
+    action: ConfirmAction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+struct TuiPrefs {
+    selected_project_id: Option<Uuid>,
+    show_cancelled: bool,
+    log_mode: LogMode,
+    log_render_mode: LogRenderMode,
+}
+
+impl Default for TuiPrefs {
+    fn default() -> Self {
+        Self {
+            selected_project_id: None,
+            show_cancelled: false,
+            log_mode: LogMode::Normalized,
+            log_render_mode: LogRenderMode::Markdown,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskStatus {
+    Todo,
+    InProgress,
+    InReview,
+    Done,
+    Cancelled,
+}
+
+impl TaskStatus {
+    fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "todo" => Some(Self::Todo),
+            "inprogress" => Some(Self::InProgress),
+            "inreview" => Some(Self::InReview),
+            "done" => Some(Self::Done),
+            "cancelled" => Some(Self::Cancelled),
+            _ => None,
+        }
+    }
+
+    fn as_api_str(self) -> &'static str {
+        match self {
+            Self::Todo => "todo",
+            Self::InProgress => "inprogress",
+            Self::InReview => "inreview",
+            Self::Done => "done",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Todo => "Todo",
+            Self::InProgress => "In Progress",
+            Self::InReview => "In Review",
+            Self::Done => "Done",
+            Self::Cancelled => "Cancelled",
+        }
+    }
+
+    fn idx(self) -> usize {
+        match self {
+            Self::Todo => 0,
+            Self::InProgress => 1,
+            Self::InReview => 2,
+            Self::Done => 3,
+            Self::Cancelled => 4,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TaskRow {
+    id: Uuid,
+    title: String,
+    status: TaskStatus,
+    updated_at: Option<String>,
+    has_in_progress_attempt: bool,
+    last_attempt_failed: bool,
+    executor: Option<String>,
+    description: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct AttemptRow {
+    id: Uuid,
+    branch: String,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+    setup_completed_at: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ExecRow {
+    id: Uuid,
+    session_id: Option<Uuid>,
+    run_reason: Option<String>,
+    status: Option<String>,
+    created_at: Option<String>,
+    dropped: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogKind {
+    Stdout,
+    Stderr,
+    Info,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct LogAssemblerState {
+    open: bool,
+    open_kind: Option<LogKind>,
+}
+
+struct AppState {
+    backend_url: String,
+    info_summary: String,
+    info_ok: bool,
+
+    prefs: TuiPrefs,
+
+    focus: FocusPane,
+    show_help: bool,
+
+    input: Option<InputState>,
+    confirm: Option<ConfirmState>,
+
+    project_filter: String,
+
+    projects_status: StreamStatus,
+    projects_store: serde_json::Value,
+    selected_project_id: Option<Uuid>,
+    selected_project_index: usize,
+
+    task_filter: String,
+    show_cancelled: bool,
+
+    tasks_status: StreamStatus,
+    tasks_store: serde_json::Value,
+    selected_task_id: Option<Uuid>,
+    tasks_active_column: TaskStatus,
+    board_index_by_status: [usize; 5],
+
+    attempts: Vec<AttemptRow>,
+    selected_attempt_id: Option<Uuid>,
+    selected_attempt_index: usize,
+
+    exec_status: StreamStatus,
+    exec_store: serde_json::Value,
+    selected_exec_id: Option<Uuid>,
+
+    diff_status: StreamStatus,
+    diff_store: serde_json::Value,
+    diff_stats_only: bool,
+    selected_diff_index: usize,
+    diff_scroll_offset: usize,
+    diff_focus: DiffFocus,
+    diff_preview_cache_key: Option<String>,
+    diff_preview_cache_hash: u64,
+    diff_preview_cache_width: u16,
+    diff_preview_lines: Vec<Line<'static>>,
+
+    log_status: StreamStatus,
+    log_store: serde_json::Value,
+    log_lines: Vec<Line<'static>>,
+    log_entry_line_starts: Vec<usize>,
+    log_entry_end_states: Vec<LogAssemblerState>,
+    log_assembler_state: LogAssemblerState,
+    pending_log_patch: json_patch::Patch,
+    pending_log_dirty_from_entry: Option<usize>,
+    log_mode: LogMode,
+    log_render_mode: LogRenderMode,
+    log_render_width: u16,
+    log_autoscroll: bool,
+    log_scroll_offset: usize,
+
+    composer_active: bool,
+    composer_buffer: String,
+
+    last_error: Option<String>,
+
+    net_tx: mpsc::Sender<NetEvent>,
+    project_sel_tx: watch::Sender<Option<Uuid>>,
+    attempt_sel_tx: watch::Sender<Option<Uuid>>,
+    exec_sel_tx: watch::Sender<Option<Uuid>>,
+    log_mode_tx: watch::Sender<LogMode>,
+    diff_stats_tx: watch::Sender<bool>,
+    reconnect_tx: watch::Sender<u64>,
+}
+
+impl AppState {
+    fn new(
+        backend_url: String,
+        net_tx: mpsc::Sender<NetEvent>,
+        project_sel_tx: watch::Sender<Option<Uuid>>,
+        attempt_sel_tx: watch::Sender<Option<Uuid>>,
+        exec_sel_tx: watch::Sender<Option<Uuid>>,
+        log_mode_tx: watch::Sender<LogMode>,
+        diff_stats_tx: watch::Sender<bool>,
+        reconnect_tx: watch::Sender<u64>,
+        prefs: TuiPrefs,
+    ) -> Self {
+        let state = Self {
+            backend_url,
+            info_summary: "loading /api/info…".to_string(),
+            info_ok: false,
+
+            prefs: prefs.clone(),
+
+            focus: FocusPane::Board,
+            show_help: false,
+
+            input: None,
+            confirm: None,
+
+            project_filter: String::new(),
+
+            projects_status: StreamStatus::Disconnected,
+            projects_store: serde_json::json!({ "projects": {} }),
+            selected_project_id: prefs.selected_project_id,
+            selected_project_index: 0,
+
+            task_filter: String::new(),
+            show_cancelled: prefs.show_cancelled,
+
+            tasks_status: StreamStatus::Disconnected,
+            tasks_store: serde_json::json!({ "tasks": {} }),
+            selected_task_id: None,
+            tasks_active_column: TaskStatus::Todo,
+            board_index_by_status: [0; 5],
+
+            attempts: vec![],
+            selected_attempt_id: None,
+            selected_attempt_index: 0,
+
+            exec_status: StreamStatus::Disconnected,
+            exec_store: serde_json::json!({ "execution_processes": {} }),
+            selected_exec_id: None,
+
+            diff_status: StreamStatus::Disconnected,
+            diff_store: serde_json::json!({ "entries": {} }),
+            diff_stats_only: false,
+            selected_diff_index: 0,
+            diff_scroll_offset: 0,
+            diff_focus: DiffFocus::Files,
+            diff_preview_cache_key: None,
+            diff_preview_cache_hash: 0,
+            diff_preview_cache_width: 0,
+            diff_preview_lines: vec![Line::from("No diffs")],
+
+            log_status: StreamStatus::Disconnected,
+            log_store: serde_json::json!({ "entries": [] }),
+            log_lines: vec![],
+            log_entry_line_starts: vec![],
+            log_entry_end_states: vec![],
+            log_assembler_state: LogAssemblerState::default(),
+            pending_log_patch: json_patch::Patch::default(),
+            pending_log_dirty_from_entry: None,
+            log_mode: prefs.log_mode,
+            log_render_mode: prefs.log_render_mode,
+            log_render_width: 0,
+            log_autoscroll: true,
+            log_scroll_offset: 0,
+
+            composer_active: false,
+            composer_buffer: String::new(),
+
+            last_error: None,
+
+            net_tx,
+            project_sel_tx,
+            attempt_sel_tx,
+            exec_sel_tx,
+            log_mode_tx,
+            diff_stats_tx,
+            reconnect_tx,
+        };
+
+        let _ = state.project_sel_tx.send(state.selected_project_id);
+        let _ = state.diff_stats_tx.send(state.diff_stats_only);
+
+        state
+    }
+}
+
+struct TerminalGuard;
+
+impl TerminalGuard {
+    fn enter() -> anyhow::Result<Self> {
+        enable_raw_mode().context("enable raw mode")?;
+        execute!(io::stdout(), EnterAlternateScreen, EnableMouseCapture)
+            .context("enter alt screen")?;
+        Ok(Self)
+    }
+}
+
+impl Drop for TerminalGuard {
+    fn drop(&mut self) {
+        let _ = disable_raw_mode();
+        let _ = execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen);
+    }
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(if args.verbose { "debug" } else { "warn" })
+        .init();
+
+    let backend_url = resolve_backend_url(&args).await?;
+    let _guard = TerminalGuard::enter()?;
+
+    let backend = CrosstermBackend::new(io::stdout());
+    let mut terminal = Terminal::new(backend).context("create terminal")?;
+    terminal.clear().ok();
+
+    let prefs = load_prefs();
+
+    let (ui_tx, mut ui_rx) = mpsc::channel::<UiEvent>(256);
+    let (net_tx, mut net_rx) = mpsc::channel::<NetEvent>(256);
+    let (project_sel_tx, project_sel_rx) = watch::channel::<Option<Uuid>>(None);
+    let (attempt_sel_tx, attempt_sel_rx) = watch::channel::<Option<Uuid>>(None);
+    let (exec_sel_tx, exec_sel_rx) = watch::channel::<Option<Uuid>>(None);
+    let (log_mode_tx, log_mode_rx) = watch::channel::<LogMode>(prefs.log_mode);
+    let (diff_stats_tx, diff_stats_rx) = watch::channel::<bool>(false);
+    let (reconnect_tx, reconnect_rx) = watch::channel::<u64>(0);
+
+    spawn_input_reader(ui_tx.clone());
+    // 30fps-ish tick; also used to batch WS patches + throttle redraw.
+    spawn_tick(ui_tx.clone(), Duration::from_millis(33));
+
+    tokio::spawn(load_info_task(backend_url.clone(), net_tx.clone()));
+    tokio::spawn(projects_stream_task(
+        backend_url.clone(),
+        reconnect_rx.clone(),
+        net_tx.clone(),
+    ));
+    tokio::spawn(tasks_stream_task(
+        backend_url.clone(),
+        project_sel_rx,
+        reconnect_rx.clone(),
+        net_tx.clone(),
+    ));
+    tokio::spawn(exec_stream_task(
+        backend_url.clone(),
+        attempt_sel_rx,
+        reconnect_rx.clone(),
+        net_tx.clone(),
+    ));
+    tokio::spawn(diff_stream_task(
+        backend_url.clone(),
+        attempt_sel_tx.subscribe(),
+        diff_stats_rx,
+        reconnect_rx.clone(),
+        net_tx.clone(),
+    ));
+    tokio::spawn(logs_stream_task(
+        backend_url.clone(),
+        exec_sel_rx,
+        log_mode_rx,
+        reconnect_rx.clone(),
+        net_tx.clone(),
+    ));
+
+    let mut app = AppState::new(
+        backend_url,
+        net_tx.clone(),
+        project_sel_tx,
+        attempt_sel_tx,
+        exec_sel_tx,
+        log_mode_tx,
+        diff_stats_tx,
+        reconnect_tx,
+        prefs,
+    );
+
+    let mut dirty = true;
+    loop {
+        tokio::select! {
+            Some(evt) = ui_rx.recv() => {
+                match evt {
+                    UiEvent::Tick => {
+                        let layout = compute_main_layout(current_terminal_rect());
+                        let inner_width = layout.exec_logs.width.saturating_sub(2);
+                        let width = inner_width as usize;
+                        if app.log_render_width != inner_width {
+                            app.log_render_width = inner_width;
+                            app.pending_log_dirty_from_entry = Some(0);
+                        }
+                        if flush_log_patches(&mut app, width) {
+                            dirty = true;
+                        }
+                        if dirty || app.diff_preview_cache_key.is_none() {
+                            let diff_inner_width = layout.diff_preview.width.saturating_sub(2) as usize;
+                            if refresh_diff_preview_cache(&mut app, diff_inner_width) {
+                                dirty = true;
+                            }
+                        }
+                        if dirty {
+                            terminal.draw(|f| render(f, &app)).context("draw frame")?;
+                            dirty = false;
+                        }
+                    }
+                    other => {
+                        if handle_ui_event(&mut app, other)? {
+                            break;
+                        }
+                        dirty = true;
+                    }
+                }
+            }
+            Some(evt) = net_rx.recv() => {
+                handle_net_event(&mut app, evt);
+                dirty = true;
+            }
+            else => break,
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_net_event(app: &mut AppState, event: NetEvent) {
+    match event {
+        NetEvent::InfoLoaded { ok, summary } => {
+            app.info_ok = ok;
+            app.info_summary = summary;
+        }
+        NetEvent::ProjectsStreamStatus(status) => {
+            app.projects_status = status;
+        }
+        NetEvent::ProjectsPatch(patch) => {
+            if let Err(e) = json_patch::patch(&mut app.projects_store, &patch) {
+                app.last_error = Some(format!("failed to apply projects patch: {e}"));
+                app.projects_status = StreamStatus::Error;
+                return;
+            }
+
+            let projects = filtered_projects(app);
+            if projects.is_empty() {
+                app.selected_project_index = 0;
+                set_selected_project(app, None);
+                return;
+            }
+
+            if let Some(selected_id) = app.selected_project_id {
+                if let Some(idx) = projects.iter().position(|p| p.id == selected_id) {
+                    app.selected_project_index = idx;
+                    return;
+                }
+            }
+
+            app.selected_project_index = app.selected_project_index.min(projects.len() - 1);
+            set_selected_project(app, Some(projects[app.selected_project_index].id));
+        }
+        NetEvent::TasksStreamStatus(status) => {
+            app.tasks_status = status;
+        }
+        NetEvent::TasksReset => {
+            app.tasks_store = serde_json::json!({ "tasks": {} });
+            set_selected_task(app, None);
+        }
+        NetEvent::TasksPatch(patch) => {
+            if let Err(e) = json_patch::patch(&mut app.tasks_store, &patch) {
+                app.last_error = Some(format!("failed to apply tasks patch: {e}"));
+                app.tasks_status = StreamStatus::Error;
+                return;
+            }
+
+            let tasks = tasks_filtered_base(app);
+            if tasks.is_empty() {
+                set_selected_task(app, None);
+                return;
+            }
+
+            if let Some(selected_id) = app.selected_task_id {
+                if tasks.iter().any(|t| t.id == selected_id) {
+                    sync_tasks_active_column(app);
+                    return;
+                }
+            }
+
+            let by_status = tasks_by_status(&tasks);
+            let chosen = match app.tasks_active_column {
+                TaskStatus::Todo => by_status.todo.first(),
+                TaskStatus::InProgress => by_status.inprogress.first(),
+                TaskStatus::InReview => by_status.inreview.first(),
+                TaskStatus::Done => by_status.done.first(),
+                TaskStatus::Cancelled => by_status.cancelled.first(),
+            }
+            .or_else(|| tasks.first());
+
+            set_selected_task(app, chosen.map(|t| t.id));
+            sync_tasks_active_column(app);
+            ensure_selection_visible(app);
+        }
+        NetEvent::AttemptsLoaded { task_id, attempts } => {
+            if app.selected_task_id != Some(task_id) {
+                return;
+            }
+
+            app.attempts = attempts;
+            app.selected_attempt_index = 0;
+            let default_attempt = app.attempts.first().map(|a| a.id);
+            set_selected_attempt(app, default_attempt);
+        }
+        NetEvent::ExecStreamStatus(status) => {
+            app.exec_status = status;
+        }
+        NetEvent::ExecReset => {
+            app.exec_store = serde_json::json!({ "execution_processes": {} });
+            set_selected_exec(app, None);
+        }
+        NetEvent::ExecPatch(patch) => {
+            if let Err(e) = json_patch::patch(&mut app.exec_store, &patch) {
+                app.last_error = Some(format!("failed to apply exec patch: {e}"));
+                app.exec_status = StreamStatus::Error;
+                return;
+            }
+
+            let execs = exec_list(&app.exec_store);
+            set_selected_exec(app, active_exec_id(&execs));
+        }
+        NetEvent::DiffStreamStatus(status) => {
+            app.diff_status = status;
+        }
+        NetEvent::DiffReset => {
+            app.diff_store = serde_json::json!({ "entries": {} });
+            app.selected_diff_index = 0;
+            app.diff_scroll_offset = 0;
+            app.diff_preview_cache_key = None;
+        }
+        NetEvent::DiffPatch(patch) => {
+            if let Err(e) = json_patch::patch(&mut app.diff_store, &patch) {
+                app.last_error = Some(format!("failed to apply diff patch: {e}"));
+                app.diff_status = StreamStatus::Error;
+                return;
+            }
+
+            let len = app
+                .diff_store
+                .get("entries")
+                .and_then(|v| v.as_object())
+                .map(|o| o.len())
+                .unwrap_or(0);
+
+            if len == 0 {
+                app.selected_diff_index = 0;
+            } else {
+                app.selected_diff_index = app.selected_diff_index.min(len - 1);
+            }
+            app.diff_preview_cache_key = None;
+        }
+        NetEvent::LogStreamStatus(status) => {
+            app.log_status = status;
+        }
+        NetEvent::LogReset => {
+            reset_logs(app);
+        }
+        NetEvent::LogPatch(patch) => {
+            enqueue_log_patch(app, patch);
+        }
+        NetEvent::Error(msg) => {
+            app.last_error = Some(msg);
+        }
+    }
+}
+
+fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Result<bool> {
+    match event {
+        UiEvent::Tick => Ok(false),
+        UiEvent::Crossterm(ev) => match ev {
+            crossterm::event::Event::Key(key) => {
+                use crossterm::event::{KeyCode, KeyModifiers};
+
+                if let Some(confirm) = app.confirm.as_ref() {
+                    match key.code {
+                        KeyCode::Char('y') | KeyCode::Enter => {
+                            let action = confirm.action;
+                            app.confirm = None;
+                            handle_confirm_action(app, action);
+                        }
+                        KeyCode::Char('n') | KeyCode::Esc => {
+                            app.confirm = None;
+                        }
+                        _ => {}
+                    }
+                    return Ok(false);
+                }
+
+                if let Some(input) = app.input.as_mut() {
+                    match (key.code, key.modifiers) {
+                        (KeyCode::Esc, _) => {
+                            app.task_filter = input.original.clone();
+                            app.input = None;
+                            ensure_selection_visible(app);
+                        }
+                        (KeyCode::Enter, _) => {
+                            app.input = None;
+                            ensure_selection_visible(app);
+                        }
+                        (KeyCode::Backspace, _) => {
+                            input.buffer.pop();
+                            app.task_filter = input.buffer.clone();
+                            ensure_selection_visible(app);
+                        }
+                        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                            input.buffer.clear();
+                            app.task_filter.clear();
+                            ensure_selection_visible(app);
+                        }
+                        (KeyCode::Char(c), KeyModifiers::NONE) => {
+                            input.buffer.push(c);
+                            app.task_filter = input.buffer.clone();
+                            ensure_selection_visible(app);
+                        }
+                        _ => {}
+                    }
+                    return Ok(false);
+                }
+
+                if app.show_help {
+                    match key.code {
+                        KeyCode::Char('?') | KeyCode::Esc => {
+                            app.show_help = false;
+                        }
+                        _ => {}
+                    }
+                    return Ok(false);
+                }
+
+                if app.composer_active {
+                    match (key.code, key.modifiers) {
+                        (KeyCode::Esc, _) => {
+                            app.composer_active = false;
+                            app.composer_buffer.clear();
+                        }
+                        (KeyCode::Enter, _) => {
+                            submit_composer(app);
+                        }
+                        (KeyCode::Backspace, _) => {
+                            app.composer_buffer.pop();
+                        }
+                        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
+                            app.composer_buffer.clear();
+                        }
+                        (KeyCode::Char(c), KeyModifiers::NONE) => {
+                            app.composer_buffer.push(c);
+                        }
+                        _ => {}
+                    }
+                    return Ok(false);
+                }
+
+                match (key.code, key.modifiers) {
+                    (KeyCode::Char('q'), _) => return Ok(true),
+                    (KeyCode::Char('?'), _) => {
+                        app.show_help = true;
+                    }
+                    (KeyCode::Tab, KeyModifiers::NONE) => {
+                        app.focus = match app.focus {
+                            FocusPane::Board => FocusPane::Execution,
+                            FocusPane::Execution => FocusPane::Diff,
+                            FocusPane::Diff => FocusPane::Board,
+                        };
+                    }
+                    (KeyCode::Char('/'), _) => {
+                        app.input = Some(InputState {
+                            mode: InputMode::SearchTasks,
+                            buffer: app.task_filter.clone(),
+                            original: app.task_filter.clone(),
+                        });
+                    }
+                    (KeyCode::Char('r'), _) => {
+                        let next = *app.reconnect_tx.borrow() + 1;
+                        let _ = app.reconnect_tx.send(next);
+                    }
+                    (KeyCode::Char('o'), _) => {
+                        app.log_mode = match app.log_mode {
+                            LogMode::Normalized => LogMode::Raw,
+                            LogMode::Raw => LogMode::Normalized,
+                        };
+                        let _ = app.log_mode_tx.send(app.log_mode);
+                        app.prefs.log_mode = app.log_mode;
+                        save_prefs(&app.prefs);
+                    }
+                    (KeyCode::Char('m'), _) if app.focus == FocusPane::Execution => {
+                        app.log_render_mode = match app.log_render_mode {
+                            LogRenderMode::Plain => LogRenderMode::Markdown,
+                            LogRenderMode::Markdown => LogRenderMode::Plain,
+                        };
+                        app.prefs.log_render_mode = app.log_render_mode;
+                        save_prefs(&app.prefs);
+                        app.pending_log_dirty_from_entry = Some(0);
+                    }
+                    (KeyCode::Char('d'), _) => {
+                        app.diff_stats_only = !app.diff_stats_only;
+                        let _ = app.diff_stats_tx.send(app.diff_stats_only);
+                        app.diff_scroll_offset = 0;
+                    }
+                    (KeyCode::Char('i'), _) if app.focus == FocusPane::Execution => {
+                        app.composer_active = true;
+                    }
+                    (KeyCode::Char('x'), _) => {
+                        if let Some(exec_id) = app.selected_exec_id {
+                            app.confirm = Some(ConfirmState {
+                                title: "Stop execution?".to_string(),
+                                body: format!("Stop execution process {exec_id}? (y/n)"),
+                                action: ConfirmAction::StopExec { exec_id },
+                            });
+                        }
+                    }
+                    (KeyCode::Char('['), _) => {
+                        select_adjacent_attempt(app, -1);
+                    }
+                    (KeyCode::Char(']'), _) => {
+                        select_adjacent_attempt(app, 1);
+                    }
+                    (KeyCode::Char('h'), _) if app.focus == FocusPane::Diff => {
+                        app.diff_focus = DiffFocus::Files;
+                    }
+                    (KeyCode::Char('l'), _) if app.focus == FocusPane::Diff => {
+                        app.diff_focus = DiffFocus::Preview;
+                    }
+                    (KeyCode::Char('c'), _) if app.focus == FocusPane::Board => {
+                        app.show_cancelled = !app.show_cancelled;
+                        if !app.show_cancelled && app.tasks_active_column == TaskStatus::Cancelled {
+                            app.tasks_active_column = TaskStatus::Done;
+                        }
+                        app.prefs.show_cancelled = app.show_cancelled;
+                        save_prefs(&app.prefs);
+                    }
+                    (KeyCode::Char('K'), _) if app.focus == FocusPane::Board => {
+                        move_active_status(app, -1);
+                    }
+                    (KeyCode::Char('J'), _) if app.focus == FocusPane::Board => {
+                        move_active_status(app, 1);
+                    }
+                    (KeyCode::Up, _) | (KeyCode::Char('k'), _)
+                        if app.focus == FocusPane::Board =>
+                    {
+                        select_adjacent_task(app, -1);
+                    }
+                    (KeyCode::Down, _) | (KeyCode::Char('j'), _)
+                        if app.focus == FocusPane::Board =>
+                    {
+                        select_adjacent_task(app, 1);
+                    }
+                    (KeyCode::Left, _) if app.focus == FocusPane::Board => {
+                        request_move_selected_task(app, -1);
+                    }
+                    (KeyCode::Right, _) if app.focus == FocusPane::Board => {
+                        request_move_selected_task(app, 1);
+                    }
+                    (KeyCode::Up, _) | (KeyCode::Char('k'), _)
+                        if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files =>
+                    {
+                        select_adjacent_diff_file(app, -1);
+                    }
+                    (KeyCode::Down, _) | (KeyCode::Char('j'), _)
+                        if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files =>
+                    {
+                        select_adjacent_diff_file(app, 1);
+                    }
+                    (KeyCode::PageUp, _) if app.focus == FocusPane::Execution => {
+                        app.log_autoscroll = false;
+                        app.log_scroll_offset = app.log_scroll_offset.saturating_add(40);
+                    }
+                    (KeyCode::PageDown, _) if app.focus == FocusPane::Execution => {
+                        app.log_scroll_offset = app.log_scroll_offset.saturating_sub(40);
+                        if app.log_scroll_offset == 0 {
+                            app.log_autoscroll = true;
+                        }
+                    }
+                    (KeyCode::End, _) if app.focus == FocusPane::Execution => {
+                        app.log_autoscroll = true;
+                        app.log_scroll_offset = 0;
+                    }
+                    (KeyCode::PageUp, _) if app.focus == FocusPane::Diff => {
+                        app.diff_scroll_offset = app.diff_scroll_offset.saturating_sub(20);
+                    }
+                    (KeyCode::PageDown, _) if app.focus == FocusPane::Diff => {
+                        app.diff_scroll_offset = app.diff_scroll_offset.saturating_add(20);
+                    }
+                    _ => {}
+                }
+                Ok(false)
+            }
+            crossterm::event::Event::Mouse(mouse) => {
+                handle_mouse_event(app, mouse);
+                Ok(false)
+            }
+            _ => Ok(false),
+        },
+    }
+}
+
+fn current_terminal_rect() -> ratatui::layout::Rect {
+    let (w, h) = crossterm::terminal::size().unwrap_or((80, 24));
+    ratatui::layout::Rect {
+        x: 0,
+        y: 0,
+        width: w,
+        height: h,
+    }
+}
+
+fn rect_contains(r: ratatui::layout::Rect, col: u16, row: u16) -> bool {
+    col >= r.x
+        && col < r.x.saturating_add(r.width)
+        && row >= r.y
+        && row < r.y.saturating_add(r.height)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MainLayoutRects {
+    board: ratatui::layout::Rect,
+    exec: ratatui::layout::Rect,
+    diff: ratatui::layout::Rect,
+    exec_logs: ratatui::layout::Rect,
+    exec_input: ratatui::layout::Rect,
+    diff_files: ratatui::layout::Rect,
+    diff_preview: ratatui::layout::Rect,
+}
+
+fn compute_main_layout(area: ratatui::layout::Rect) -> MainLayoutRects {
+    let root = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .split(area);
+
+    let main = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(26),
+            Constraint::Percentage(48),
+            Constraint::Percentage(26),
+        ])
+        .split(root[1]);
+
+    let exec_sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(3)])
+        .split(main[1]);
+
+    let diff_sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(10), Constraint::Min(3)])
+        .split(main[2]);
+
+    MainLayoutRects {
+        board: main[0],
+        exec: main[1],
+        diff: main[2],
+        exec_logs: exec_sections[0],
+        exec_input: exec_sections[1],
+        diff_files: diff_sections[0],
+        diff_preview: diff_sections[1],
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BoardHit {
+    status: TaskStatus,
+    clicked_index: Option<usize>,
+    clicked_task_id: Option<Uuid>,
+}
+
+fn board_hit_at(app: &AppState, area: ratatui::layout::Rect, col: u16, row: u16) -> Option<BoardHit> {
+    if !rect_contains(area, col, row) {
+        return None;
+    }
+
+    let tasks = tasks_filtered_base(app);
+    let by_status = tasks_by_status(&tasks);
+    let statuses = board_statuses(app);
+    let needs: Vec<u16> = statuses
+        .iter()
+        .map(|status| {
+            let list_len = match status {
+                TaskStatus::Todo => by_status.todo.len(),
+                TaskStatus::InProgress => by_status.inprogress.len(),
+                TaskStatus::InReview => by_status.inreview.len(),
+                TaskStatus::Done => by_status.done.len(),
+                TaskStatus::Cancelled => by_status.cancelled.len(),
+            };
+            desired_board_section_height(list_len)
+        })
+        .collect();
+    let heights = allocate_board_section_heights(&needs, area.height);
+    let mut constraints: Vec<Constraint> = heights
+        .iter()
+        .copied()
+        .map(|h| Constraint::Length(h))
+        .collect();
+    constraints.push(Constraint::Min(0));
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (idx, status) in statuses.iter().copied().enumerate() {
+        if idx >= sections.len() {
+            break;
+        }
+        let rect = sections[idx];
+        if !rect_contains(rect, col, row) {
+            continue;
+        }
+
+        let list: &[TaskRow] = match status {
+            TaskStatus::Todo => &by_status.todo,
+            TaskStatus::InProgress => &by_status.inprogress,
+            TaskStatus::InReview => &by_status.inreview,
+            TaskStatus::Done => &by_status.done,
+            TaskStatus::Cancelled => &by_status.cancelled,
+        };
+
+        if list.is_empty() {
+            return Some(BoardHit {
+                status,
+                clicked_index: None,
+                clicked_task_id: None,
+            });
+        }
+
+        let inner_y0 = rect.y.saturating_add(1);
+        let inner_y1 = rect.y.saturating_add(rect.height).saturating_sub(1);
+        if row < inner_y0 || row >= inner_y1 {
+            return Some(BoardHit {
+                status,
+                clicked_index: None,
+                clicked_task_id: None,
+            });
+        }
+
+        let height = rect.height.saturating_sub(2) as usize;
+        if height == 0 {
+            return Some(BoardHit {
+                status,
+                clicked_index: None,
+                clicked_task_id: None,
+            });
+        }
+
+        let is_active = status == app.tasks_active_column;
+        let selected_idx = if is_active {
+            task_index_in(list, app.selected_task_id)
+                .or_else(|| {
+                    (!list.is_empty()).then_some(
+                        app.board_index_by_status[status.idx()].min(list.len().saturating_sub(1)),
+                    )
+                })
+                .unwrap_or(0)
+        } else {
+            0
+        };
+
+        let (start, end, _) = window_for_list(list.len(), selected_idx, height);
+        let visible_len = end.saturating_sub(start);
+        let inner_row = row.saturating_sub(inner_y0) as usize;
+        if inner_row >= visible_len {
+            return Some(BoardHit {
+                status,
+                clicked_index: None,
+                clicked_task_id: None,
+            });
+        }
+
+        let clicked_index = start + inner_row;
+        let clicked_task_id = list.get(clicked_index).map(|t| t.id);
+        return Some(BoardHit {
+            status,
+            clicked_index: Some(clicked_index),
+            clicked_task_id,
+        });
+    }
+
+    None
+}
+
+fn diff_files_hit_at(
+    app: &AppState,
+    area: ratatui::layout::Rect,
+    col: u16,
+    row: u16,
+) -> Option<usize> {
+    if !rect_contains(area, col, row) {
+        return None;
+    }
+
+    let rows = diff_rows(&app.diff_store);
+    if rows.is_empty() {
+        return None;
+    }
+
+    let inner_y0 = area.y.saturating_add(1);
+    let inner_y1 = area.y.saturating_add(area.height).saturating_sub(1);
+    if row < inner_y0 || row >= inner_y1 {
+        return None;
+    }
+
+    let height = area.height.saturating_sub(2) as usize;
+    if height == 0 {
+        return None;
+    }
+
+    let selected = app.selected_diff_index.min(rows.len() - 1);
+    let (start, end, _) = window_for_list(rows.len(), selected, height);
+    let visible_len = end.saturating_sub(start);
+    let inner_row = row.saturating_sub(inner_y0) as usize;
+    if inner_row >= visible_len {
+        return None;
+    }
+
+    Some(start + inner_row)
+}
+
+fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
+    if app.confirm.is_some() || app.input.is_some() || app.show_help {
+        return;
+    }
+
+    use crossterm::event::{MouseButton, MouseEventKind};
+
+    let col = mouse.column;
+    let row = mouse.row;
+    let layout = compute_main_layout(current_terminal_rect());
+
+    const LOG_WHEEL_STEP: usize = 3;
+    const DIFF_WHEEL_STEP: usize = 3;
+
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            if rect_contains(layout.exec_logs, col, row) {
+                app.focus = FocusPane::Execution;
+                app.log_autoscroll = false;
+                app.log_scroll_offset = app.log_scroll_offset.saturating_add(LOG_WHEEL_STEP);
+                return;
+            }
+            if rect_contains(layout.diff_preview, col, row) {
+                app.focus = FocusPane::Diff;
+                app.diff_focus = DiffFocus::Preview;
+                app.diff_scroll_offset = app.diff_scroll_offset.saturating_sub(DIFF_WHEEL_STEP);
+                return;
+            }
+            if rect_contains(layout.diff_files, col, row) {
+                app.focus = FocusPane::Diff;
+                app.diff_focus = DiffFocus::Files;
+                select_adjacent_diff_file(app, -1);
+                return;
+            }
+            if let Some(hit) = board_hit_at(app, layout.board, col, row) {
+                app.focus = FocusPane::Board;
+                app.tasks_active_column = hit.status;
+                ensure_selected_task_in_active_column(app);
+                select_adjacent_task(app, -1);
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            if rect_contains(layout.exec_logs, col, row) {
+                app.focus = FocusPane::Execution;
+                app.log_scroll_offset = app.log_scroll_offset.saturating_sub(LOG_WHEEL_STEP);
+                if app.log_scroll_offset == 0 {
+                    app.log_autoscroll = true;
+                }
+                return;
+            }
+            if rect_contains(layout.diff_preview, col, row) {
+                app.focus = FocusPane::Diff;
+                app.diff_focus = DiffFocus::Preview;
+                app.diff_scroll_offset = app.diff_scroll_offset.saturating_add(DIFF_WHEEL_STEP);
+                return;
+            }
+            if rect_contains(layout.diff_files, col, row) {
+                app.focus = FocusPane::Diff;
+                app.diff_focus = DiffFocus::Files;
+                select_adjacent_diff_file(app, 1);
+                return;
+            }
+            if let Some(hit) = board_hit_at(app, layout.board, col, row) {
+                app.focus = FocusPane::Board;
+                app.tasks_active_column = hit.status;
+                ensure_selected_task_in_active_column(app);
+                select_adjacent_task(app, 1);
+            }
+        }
+        MouseEventKind::Down(MouseButton::Left) => {
+            if rect_contains(layout.board, col, row) {
+                app.focus = FocusPane::Board;
+                if let Some(hit) = board_hit_at(app, layout.board, col, row) {
+                    app.tasks_active_column = hit.status;
+                    if let Some(idx) = hit.clicked_index {
+                        app.board_index_by_status[hit.status.idx()] = idx;
+                    }
+                    if let Some(task_id) = hit.clicked_task_id {
+                        set_selected_task(app, Some(task_id));
+                    } else {
+                        ensure_selected_task_in_active_column(app);
+                    }
+                }
+                return;
+            }
+
+            if rect_contains(layout.exec, col, row) {
+                app.focus = FocusPane::Execution;
+                if rect_contains(layout.exec_input, col, row) {
+                    app.composer_active = true;
+                }
+                return;
+            }
+
+            if rect_contains(layout.diff, col, row) {
+                app.focus = FocusPane::Diff;
+                if rect_contains(layout.diff_files, col, row) {
+                    app.diff_focus = DiffFocus::Files;
+                    if let Some(idx) = diff_files_hit_at(app, layout.diff_files, col, row) {
+                        app.selected_diff_index = idx;
+                        app.diff_scroll_offset = 0;
+                    }
+                } else if rect_contains(layout.diff_preview, col, row) {
+                    app.diff_focus = DiffFocus::Preview;
+                }
+                return;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn render(f: &mut Frame, app: &AppState) {
+    let root = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .split(f.area());
+
+    let top = render_top_bar(app);
+    f.render_widget(top, root[0]);
+
+    let main = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(26),
+            Constraint::Percentage(48),
+            Constraint::Percentage(26),
+        ])
+        .split(root[1]);
+
+    render_board_pane(f, app, main[0]);
+    render_execution_pane(f, app, main[1]);
+    render_diff_pane(f, app, main[2]);
+
+    let bottom = render_bottom_bar(app);
+    f.render_widget(bottom, root[2]);
+
+    if app.show_help {
+        render_help_modal(f);
+    }
+
+    if let Some(confirm) = app.confirm.as_ref() {
+        render_confirm_modal(f, confirm);
+    }
+
+    if let Some(input) = app.input.as_ref() {
+        render_input_modal(f, input);
+    }
+}
+
+fn render_top_bar(app: &AppState) -> Paragraph<'static> {
+    fn status_badge(label: &'static str, status: StreamStatus) -> Span<'static> {
+        let text = match status {
+            StreamStatus::Connecting => format!("{label}:…"),
+            StreamStatus::Connected => format!("{label}:ok"),
+            StreamStatus::Completed => format!("{label}:done"),
+            StreamStatus::Disconnected => format!("{label}:off"),
+            StreamStatus::Error => format!("{label}:err"),
+        };
+        let color = match status {
+            StreamStatus::Connecting => Color::Yellow,
+            StreamStatus::Connected => Color::Green,
+            StreamStatus::Completed => Color::Green,
+            StreamStatus::Disconnected => Color::DarkGray,
+            StreamStatus::Error => Color::Red,
+        };
+        Span::styled(text, Style::default().fg(color))
+    }
+
+    let focus = match app.focus {
+        FocusPane::Board => "board",
+        FocusPane::Execution => "exec",
+        FocusPane::Diff => "diff",
+    };
+
+    let project_name = app
+        .selected_project_id
+        .and_then(|id| {
+            app.projects_store
+                .get("projects")?
+                .get(id.to_string())?
+                .get("name")?
+                .as_str()
+                .map(|s| s.to_string())
+        })
+        .unwrap_or_else(|| "(no project)".to_string());
+
+    let task_title = app
+        .selected_task_id
+        .and_then(|id| find_task(&app.tasks_store, id).map(|t| t.title))
+        .unwrap_or_else(|| "—".to_string());
+
+    let attempt_branch = app
+        .selected_attempt_id
+        .and_then(|id| app.attempts.iter().find(|a| a.id == id))
+        .map(|a| a.branch.clone())
+        .unwrap_or_else(|| "—".to_string());
+
+    let line = Line::from(vec![
+        Span::styled("vk-tui", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw("  "),
+        Span::styled(truncate(&project_name, 18), Style::default().fg(Color::Cyan)),
+        Span::raw("  "),
+        Span::styled(truncate(&task_title, 28), Style::default()),
+        Span::raw("  "),
+        Span::styled(truncate(&attempt_branch, 18), Style::default().fg(Color::Magenta)),
+        Span::raw("  "),
+        status_badge("tasks", app.tasks_status),
+        Span::raw(" "),
+        status_badge("exec", app.exec_status),
+        Span::raw(" "),
+        status_badge("diff", app.diff_status),
+        Span::raw(" "),
+        status_badge("log", app.log_status),
+        Span::raw("  "),
+        Span::styled(format!("mode:{}", app.log_mode.label()), Style::default().fg(Color::Gray)),
+        Span::raw(" "),
+        Span::styled(
+            format!("view:{}", app.log_render_mode.label()),
+            Style::default().fg(Color::Gray),
+        ),
+        Span::raw("  "),
+        Span::styled(focus, Style::default().fg(Color::DarkGray)),
+    ]);
+
+    Paragraph::new(line)
+}
+
+fn render_bottom_bar(app: &AppState) -> Paragraph<'static> {
+    let text = match app.focus {
+        FocusPane::Board => "Tab next | j/k move | J/K status | ←/→ move | / search | [/] attempts | x stop | o log mode | q quit",
+        FocusPane::Execution => "Tab next | i compose | Enter send | PgUp/PgDn scroll | End bottom | m md view | x stop | o log mode | q quit",
+        FocusPane::Diff => "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | q quit",
+    };
+    Paragraph::new(Line::from(Span::styled(
+        text,
+        Style::default().fg(Color::DarkGray),
+    )))
+}
+
+fn board_statuses(app: &AppState) -> Vec<TaskStatus> {
+    if app.show_cancelled {
+        vec![
+            TaskStatus::Todo,
+            TaskStatus::InProgress,
+            TaskStatus::InReview,
+            TaskStatus::Done,
+            TaskStatus::Cancelled,
+        ]
+    } else {
+        vec![
+            TaskStatus::Todo,
+            TaskStatus::InProgress,
+            TaskStatus::InReview,
+            TaskStatus::Done,
+        ]
+    }
+}
+
+fn window_for_list(len: usize, selected: usize, height: usize) -> (usize, usize, usize) {
+    if len == 0 || height == 0 {
+        return (0, 0, 0);
+    }
+
+    if len <= height {
+        return (0, len, selected.min(len - 1));
+    }
+
+    let selected = selected.min(len - 1);
+    let mut start = selected.saturating_sub(height / 2);
+    start = start.min(len.saturating_sub(height));
+    let end = (start + height).min(len);
+    (start, end, selected.saturating_sub(start))
+}
+
+fn desired_board_section_height(list_len: usize) -> u16 {
+    let inner = (list_len.max(1)).min(u16::MAX as usize) as u16;
+    inner.saturating_add(2).max(3)
+}
+
+fn allocate_board_section_heights(needs: &[u16], available: u16) -> Vec<u16> {
+    if needs.is_empty() || available == 0 {
+        return vec![];
+    }
+
+    // 3 lines is the minimum to show a bordered block + 1 line of content.
+    let min_h = 3u16;
+    let n = needs.len();
+
+    // If the terminal is absurdly small, just split whatever is available.
+    if available < (n as u16).saturating_mul(min_h) {
+        let base = (available / n as u16).max(1);
+        let mut heights = vec![base; n];
+        let mut remaining = available.saturating_sub(base.saturating_mul(n as u16));
+        for h in heights.iter_mut() {
+            if remaining == 0 {
+                break;
+            }
+            *h = h.saturating_add(1);
+            remaining -= 1;
+        }
+        return heights;
+    }
+
+    let needs: Vec<u16> = needs.iter().copied().map(|h| h.max(min_h)).collect();
+    let total_need: u16 = needs.iter().copied().sum();
+    if total_need <= available {
+        return needs;
+    }
+
+    let mut heights = vec![min_h; n];
+    let mut remaining = available.saturating_sub(min_h.saturating_mul(n as u16));
+    let mut deficits: Vec<u16> = needs.iter().map(|h| h.saturating_sub(min_h)).collect();
+
+    while remaining > 0 {
+        let mut progressed = false;
+        for i in 0..n {
+            if remaining == 0 {
+                break;
+            }
+            if deficits[i] > 0 {
+                heights[i] = heights[i].saturating_add(1);
+                deficits[i] -= 1;
+                remaining -= 1;
+                progressed = true;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+
+    heights
+}
+
+fn render_board_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let tasks = tasks_filtered_base(app);
+    let by_status = tasks_by_status(&tasks);
+    let statuses = board_statuses(app);
+    let needs: Vec<u16> = statuses
+        .iter()
+        .map(|status| {
+            let list_len = match status {
+                TaskStatus::Todo => by_status.todo.len(),
+                TaskStatus::InProgress => by_status.inprogress.len(),
+                TaskStatus::InReview => by_status.inreview.len(),
+                TaskStatus::Done => by_status.done.len(),
+                TaskStatus::Cancelled => by_status.cancelled.len(),
+            };
+            desired_board_section_height(list_len)
+        })
+        .collect();
+    let heights = allocate_board_section_heights(&needs, area.height);
+    let mut constraints: Vec<Constraint> = heights
+        .iter()
+        .copied()
+        .map(|h| Constraint::Length(h))
+        .collect();
+    constraints.push(Constraint::Min(0)); // filler
+
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
+        .split(area);
+
+    for (idx, status) in statuses.iter().copied().enumerate() {
+        if idx >= sections.len() {
+            break;
+        }
+
+        let list: &[TaskRow] = match status {
+            TaskStatus::Todo => &by_status.todo,
+            TaskStatus::InProgress => &by_status.inprogress,
+            TaskStatus::InReview => &by_status.inreview,
+            TaskStatus::Done => &by_status.done,
+            TaskStatus::Cancelled => &by_status.cancelled,
+        };
+
+        let is_active = status == app.tasks_active_column;
+        let border_style = if app.focus == FocusPane::Board && is_active {
+            Style::default().fg(Color::Cyan)
+        } else if app.focus == FocusPane::Board {
+            Style::default().fg(Color::Gray)
+        } else {
+            Style::default()
+        };
+
+        let title = format!("{} ({})", status.label(), list.len());
+
+        let height = sections[idx].height.saturating_sub(2) as usize;
+        let (items, selected_in_window) = if list.is_empty() || height == 0 {
+            (vec![ListItem::new(Line::from("—"))], None)
+        } else {
+            let selected_idx = if is_active {
+                task_index_in(list, app.selected_task_id)
+                    .or_else(|| {
+                        (!list.is_empty()).then_some(
+                            app.board_index_by_status[status.idx()]
+                                .min(list.len().saturating_sub(1)),
+                        )
+                    })
+                    .unwrap_or(0)
+            } else {
+                0
+            };
+            let (start, end, selected_in_window) = window_for_list(list.len(), selected_idx, height);
+            let visible = &list[start..end];
+            let items = if visible.is_empty() {
+                vec![ListItem::new(Line::from("—"))]
+            } else {
+                visible
+                    .iter()
+                    .map(|t| ListItem::new(render_task_line(t)))
+                    .collect()
+            };
+            (items, is_active.then_some(selected_in_window))
+        };
+
+        let widget = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title)
+                    .border_style(border_style),
+            )
+            .highlight_style(Style::default().bg(Color::DarkGray))
+            .highlight_symbol(if is_active { "▶ " } else { "  " });
+
+        let mut state = ratatui::widgets::ListState::default();
+        state.select(selected_in_window);
+        f.render_stateful_widget(widget, sections[idx], &mut state);
+    }
+}
+
+fn render_execution_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(3)])
+        .split(area);
+
+    render_logs_viewer(f, app, sections[0]);
+    render_composer(f, app, sections[1]);
+}
+
+fn render_logs_viewer(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let border_style = if app.focus == FocusPane::Execution {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default()
+    };
+
+    let err_line = app.last_error.as_ref().map(|e| {
+        Line::from(vec![Span::styled(
+            e.clone(),
+            Style::default().fg(Color::Red),
+        )])
+    });
+
+    let len = app.log_lines.len();
+    let max_render = area.height.saturating_sub(2) as usize;
+    let visible = max_render.min(len);
+    let mut offset = if app.log_autoscroll {
+        0
+    } else {
+        app.log_scroll_offset
+    };
+    offset = offset.min(len.saturating_sub(visible));
+    let start = len.saturating_sub(visible + offset);
+    let end = len.saturating_sub(offset);
+
+    let mut text: Vec<Line<'static>> = app
+        .log_lines
+        .get(start..end)
+        .unwrap_or(&[])
+        .to_vec();
+    if text.is_empty() {
+        text.push(Line::from("No logs"));
+    }
+    if let Some(line) = err_line {
+        text.push(Line::from(""));
+        text.push(Line::from("Last error:"));
+        text.push(line);
+    }
+
+    let title = format!(
+        "Run Logs ({}, {}, {})",
+        match app.log_status {
+            StreamStatus::Connected => "live",
+            StreamStatus::Connecting => "connecting",
+            StreamStatus::Completed => "done",
+            StreamStatus::Disconnected => "offline",
+            StreamStatus::Error => "error",
+        },
+        app.log_mode.label(),
+        app.log_render_mode.label()
+    );
+    let w = Paragraph::new(text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        );
+    f.render_widget(w, area);
+}
+
+fn render_composer(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let border_style = if app.focus == FocusPane::Execution {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default()
+    };
+
+    let hint = if app.composer_active {
+        format!("> {}", app.composer_buffer)
+    } else {
+        "Press i to type a follow-up…".to_string()
+    };
+
+    let w = Paragraph::new(Line::from(hint))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Input")
+                .border_style(border_style),
+        )
+        .wrap(Wrap { trim: true });
+    f.render_widget(w, area);
+}
+
+#[derive(Debug, Clone)]
+struct DiffRow {
+    key: String,
+    change: Option<String>,
+    additions: Option<usize>,
+    deletions: Option<usize>,
+    content_omitted: bool,
+}
+
+fn diff_rows(store: &serde_json::Value) -> Vec<DiffRow> {
+    let Some(entries) = store.get("entries").and_then(|v| v.as_object()) else {
+        return vec![];
+    };
+
+    let mut rows = Vec::with_capacity(entries.len());
+    for (key, value) in entries {
+        if value.get("type").and_then(|v| v.as_str()) != Some("DIFF") {
+            continue;
+        }
+        let Some(content) = value.get("content") else {
+            continue;
+        };
+
+        let change = content
+            .get("change")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let additions = content.get("additions").and_then(|v| v.as_u64()).map(|v| v as usize);
+        let deletions = content.get("deletions").and_then(|v| v.as_u64()).map(|v| v as usize);
+        let content_omitted = content
+            .get("contentOmitted")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        rows.push(DiffRow {
+            key: key.clone(),
+            change,
+            additions,
+            deletions,
+            content_omitted,
+        });
+    }
+
+    rows.sort_by(|a, b| a.key.cmp(&b.key));
+    rows
+}
+
+fn render_diff_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(10), Constraint::Min(3)])
+        .split(area);
+
+    render_diff_files(f, app, sections[0]);
+    render_diff_preview(f, app, sections[1]);
+}
+
+fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let rows = diff_rows(&app.diff_store);
+    let border_style = if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files {
+        Style::default().fg(Color::Cyan)
+    } else if app.focus == FocusPane::Diff {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default()
+    };
+
+    let title = format!(
+        "Files ({}, {})",
+        rows.len(),
+        match app.diff_status {
+            StreamStatus::Connected => "live",
+            StreamStatus::Connecting => "connecting",
+            StreamStatus::Completed => "done",
+            StreamStatus::Disconnected => "offline",
+            StreamStatus::Error => "error",
+        }
+    );
+
+    let selected = if rows.is_empty() {
+        0
+    } else {
+        app.selected_diff_index.min(rows.len() - 1)
+    };
+
+    let height = area.height.saturating_sub(2) as usize;
+    let (start, end, selected_in_window) = window_for_list(rows.len(), selected, height);
+    let visible = &rows[start..end];
+
+    let items: Vec<ListItem> = if visible.is_empty() {
+        vec![ListItem::new(Line::from("No diffs"))]
+    } else {
+        visible
+            .iter()
+            .map(|d| {
+                let mut left = d.key.clone();
+                if d.content_omitted {
+                    left.push_str(" (omitted)");
+                }
+
+                let stats = match (d.additions, d.deletions) {
+                    (Some(a), Some(b)) => format!(" +{a}/-{b}"),
+                    (Some(a), None) => format!(" +{a}"),
+                    (None, Some(b)) => format!(" -{b}"),
+                    (None, None) => "".to_string(),
+                };
+
+                let kind = d.change.clone().unwrap_or_else(|| "?".to_string());
+                ListItem::new(Line::from(format!("{kind:>8} {left}{stats}")))
+            })
+            .collect()
+    };
+
+    let widget = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
+        .highlight_style(Style::default().bg(Color::DarkGray))
+        .highlight_symbol("▶ ");
+
+    let mut state = ratatui::widgets::ListState::default();
+    if !visible.is_empty() {
+        state.select(Some(selected_in_window));
+    }
+    f.render_stateful_widget(widget, area, &mut state);
+}
+
+fn render_diff_preview(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let border_style = if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Preview {
+        Style::default().fg(Color::Cyan)
+    } else if app.focus == FocusPane::Diff {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        Style::default()
+    };
+
+    let lines = &app.diff_preview_lines;
+    let start = app.diff_scroll_offset.min(lines.len());
+    let height = area.height.saturating_sub(2) as usize;
+    let end = (start + height).min(lines.len());
+    let visible = lines.get(start..end).unwrap_or(&[]);
+
+    let w = Paragraph::new(visible.to_vec())
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Diff")
+                .border_style(border_style),
+        );
+
+    f.render_widget(w, area);
+}
+
+fn render_projects_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let border_style = Style::default();
+
+    let projects = filtered_projects(app);
+    let items: Vec<ListItem> = if projects.is_empty() {
+        vec![ListItem::new(Line::from("No projects"))]
+    } else {
+        projects
+            .iter()
+            .map(|p| ListItem::new(Line::from(p.name.clone())))
+            .collect()
+    };
+
+    let title = format!(
+        "Projects ({}){}",
+        match app.projects_status {
+            StreamStatus::Connected => "live",
+            StreamStatus::Connecting => "connecting",
+            StreamStatus::Completed => "done",
+            StreamStatus::Disconnected => "offline",
+            StreamStatus::Error => "error",
+        },
+        if app.project_filter.trim().is_empty() {
+            "".to_string()
+        } else {
+            format!(" /{}", app.project_filter.trim())
+        }
+    );
+
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
+        .highlight_style(Style::default().bg(Color::DarkGray))
+        .highlight_symbol("▶ ");
+
+    let mut state = ratatui::widgets::ListState::default();
+    if !projects.is_empty() {
+        let idx = app
+            .selected_project_id
+            .and_then(|id| projects.iter().position(|p| p.id == id))
+            .unwrap_or(0);
+        state.select(Some(idx));
+    }
+    f.render_stateful_widget(list, area, &mut state);
+}
+
+fn render_tasks_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    render_tasks_board(f, app, area)
+}
+
+fn render_tasks_board(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let tasks = tasks_filtered_base(app);
+    let by_status = tasks_by_status(&tasks);
+    let columns: Vec<TaskStatus> = if app.show_cancelled {
+        vec![
+            TaskStatus::Todo,
+            TaskStatus::InProgress,
+            TaskStatus::InReview,
+            TaskStatus::Done,
+            TaskStatus::Cancelled,
+        ]
+    } else {
+        vec![
+            TaskStatus::Todo,
+            TaskStatus::InProgress,
+            TaskStatus::InReview,
+            TaskStatus::Done,
+        ]
+    };
+
+    let pct = (100 / columns.len().max(1)) as u16;
+    let constraints: Vec<Constraint> = (0..columns.len())
+        .map(|_| Constraint::Percentage(pct))
+        .collect();
+
+    let col_areas = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(area);
+
+    for (i, status) in columns.into_iter().enumerate() {
+        let list: &[TaskRow] = match status {
+            TaskStatus::Todo => &by_status.todo,
+            TaskStatus::InProgress => &by_status.inprogress,
+            TaskStatus::InReview => &by_status.inreview,
+            TaskStatus::Done => &by_status.done,
+            TaskStatus::Cancelled => &by_status.cancelled,
+        };
+
+        let is_active_col = app.focus == FocusPane::Board && app.tasks_active_column == status;
+        let border_style = if is_active_col {
+            Style::default().fg(Color::Cyan)
+        } else if app.focus == FocusPane::Board {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            Style::default()
+        };
+
+        let title = format!("{} ({})", status.label(), list.len());
+        let items: Vec<ListItem> = if list.is_empty() {
+            vec![ListItem::new(Line::from("—"))]
+        } else {
+            list.iter()
+                .map(|t| ListItem::new(render_task_line(t)))
+                .collect()
+        };
+
+        let widget = List::new(items)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title)
+                    .border_style(border_style),
+            )
+            .highlight_style(Style::default().bg(Color::DarkGray))
+            .highlight_symbol("▶ ");
+
+        let mut state = ratatui::widgets::ListState::default();
+        if let Some(idx) = task_index_in(list, app.selected_task_id) {
+            state.select(Some(idx));
+        } else if is_active_col && !list.is_empty() {
+            state.select(Some(0));
+        }
+
+        f.render_stateful_widget(widget, col_areas[i], &mut state);
+    }
+}
+
+fn render_tasks_table(f: &mut Frame, _app: &AppState, area: ratatui::layout::Rect) {
+    let w = Paragraph::new("Table view removed (use the board)")
+        .block(Block::default().borders(Borders::ALL).title("Tasks"));
+    f.render_widget(w, area);
+}
+
+fn render_details_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(9),
+            Constraint::Min(5),
+            Constraint::Min(5),
+        ])
+        .split(area);
+
+    let project_name = app.selected_project_id.and_then(|id| {
+        projects_list(&app.projects_store)
+            .into_iter()
+            .find(|p| p.id == id)
+            .map(|p| p.name)
+    });
+
+    let task = app
+        .selected_task_id
+        .and_then(|id| find_task(&app.tasks_store, id));
+
+    let mut header_lines = vec![
+        Line::from(vec![Span::styled(
+            "Details",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(format!(
+            "project: {}",
+            project_name.unwrap_or_else(|| "none".to_string())
+        )),
+    ];
+    match task.as_ref() {
+        Some(t) => {
+            header_lines.push(Line::from(format!("task: {}", t.title)));
+            header_lines.push(Line::from(format!("status: {}", t.status.as_api_str())));
+            if let Some(desc) = t.description.as_ref().filter(|s| !s.trim().is_empty()) {
+                let first = desc.lines().next().unwrap_or("").trim();
+                if !first.is_empty() {
+                    header_lines.push(Line::from(format!("desc: {}", truncate(first, 60))));
+                }
+            }
+        }
+        None => header_lines.push(Line::from("task: none")),
+    }
+    header_lines.push(Line::from(app.info_summary.clone()));
+
+    let header = Paragraph::new(header_lines)
+        .block(Block::default().borders(Borders::ALL).title("Task"))
+        .wrap(Wrap { trim: true });
+    f.render_widget(header, sections[0]);
+
+    let attempts_border = Style::default();
+
+    let attempts_items: Vec<ListItem> = if app.attempts.is_empty() {
+        vec![ListItem::new(Line::from("No attempts"))]
+    } else {
+        app.attempts
+            .iter()
+            .map(|a| {
+                let when = a.created_at.as_deref().and_then(short_time).unwrap_or("");
+                let updated = a.updated_at.as_deref().and_then(short_time).unwrap_or("");
+                let suffix = if a.setup_completed_at.is_some() {
+                    " setup✓"
+                } else {
+                    ""
+                };
+                let text = if when.is_empty() && updated.is_empty() {
+                    format!("{}{}", a.branch, suffix)
+                } else if updated.is_empty() {
+                    format!("{} [{}]{}", a.branch, when, suffix)
+                } else if when.is_empty() {
+                    format!("{} [u:{}]{}", a.branch, updated, suffix)
+                } else {
+                    format!("{} [{} u:{}]{}", a.branch, when, updated, suffix)
+                };
+                ListItem::new(Line::from(text))
+            })
+            .collect()
+    };
+    let attempts_title = format!("Attempts ({})", app.attempts.len());
+    let attempts_list = List::new(attempts_items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(attempts_title)
+                .border_style(attempts_border),
+        )
+        .highlight_style(Style::default().bg(Color::DarkGray))
+        .highlight_symbol("▶ ");
+    let mut attempts_state = ratatui::widgets::ListState::default();
+    if !app.attempts.is_empty() {
+        attempts_state.select(Some(app.selected_attempt_index.min(app.attempts.len() - 1)));
+    }
+    f.render_stateful_widget(attempts_list, sections[1], &mut attempts_state);
+
+    let execs_border = Style::default();
+
+    let execs = exec_list(&app.exec_store);
+    let exec_items: Vec<ListItem> = if execs.is_empty() {
+        vec![ListItem::new(Line::from("No execution processes"))]
+    } else {
+        execs
+            .iter()
+            .map(|e| {
+                let reason = e.run_reason.clone().unwrap_or_else(|| "?".to_string());
+                let status = e.status.clone().unwrap_or_else(|| "?".to_string());
+                let dropped = if e.dropped { " dropped" } else { "" };
+                ListItem::new(Line::from(format!("{reason}: {status}{dropped}")))
+            })
+            .collect()
+    };
+    let exec_title = format!(
+        "Execs ({}) {}",
+        execs.len(),
+        match app.exec_status {
+            StreamStatus::Connected => "live",
+            StreamStatus::Connecting => "connecting",
+            StreamStatus::Completed => "done",
+            StreamStatus::Disconnected => "offline",
+            StreamStatus::Error => "error",
+        }
+    );
+    let exec_list_widget = List::new(exec_items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(exec_title)
+                .border_style(execs_border),
+        )
+        .highlight_style(Style::default().bg(Color::DarkGray))
+        .highlight_symbol("▶ ");
+    let mut exec_state = ratatui::widgets::ListState::default();
+    if !execs.is_empty() {
+        let idx = app
+            .selected_exec_id
+            .and_then(|id| execs.iter().position(|e| e.id == id))
+            .unwrap_or(0);
+        exec_state.select(Some(idx));
+    }
+    f.render_stateful_widget(exec_list_widget, sections[2], &mut exec_state);
+}
+
+fn render_logs_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let border_style = if app.focus == FocusPane::Execution {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default()
+    };
+
+    let err_line = app.last_error.as_ref().map(|e| {
+        Line::from(vec![Span::styled(
+            e.clone(),
+            Style::default().fg(Color::Red),
+        )])
+    });
+
+    let max_render = 200usize;
+    let len = app.log_lines.len();
+    let visible = max_render.min(len);
+    let mut offset = if app.log_autoscroll {
+        0
+    } else {
+        app.log_scroll_offset
+    };
+    offset = offset.min(len.saturating_sub(visible));
+    let start = len.saturating_sub(visible + offset);
+    let end = len.saturating_sub(offset);
+
+    let mut text: Vec<Line<'static>> = app
+        .log_lines
+        .get(start..end)
+        .unwrap_or(&[])
+        .to_vec();
+    if text.is_empty() {
+        text.push(Line::from("No logs"));
+    }
+    if let Some(line) = err_line {
+        text.push(Line::from(""));
+        text.push(Line::from("Last error:"));
+        text.push(line);
+    }
+
+    let title = format!(
+        "Logs ({}, {}, {})",
+        match app.log_status {
+            StreamStatus::Connected => "live",
+            StreamStatus::Connecting => "connecting",
+            StreamStatus::Completed => "done",
+            StreamStatus::Disconnected => "offline",
+            StreamStatus::Error => "error",
+        },
+        app.log_mode.label(),
+        app.log_render_mode.label()
+    );
+    let p = Paragraph::new(text)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
+        .wrap(Wrap { trim: true });
+    f.render_widget(p, area);
+}
+
+fn render_help_modal(f: &mut Frame) {
+    let area = centered_rect(70, 70, f.area());
+    f.render_widget(Clear, area);
+
+    let lines = vec![
+        Line::from(vec![Span::styled(
+            "Vibe Kanban TUI — Help",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from("Global"),
+        Line::from("  q           quit"),
+        Line::from("  Tab         cycle focus"),
+        Line::from("  /           search tasks"),
+        Line::from("  r           reconnect streams"),
+        Line::from("  ? / Esc     close help"),
+        Line::from(""),
+        Line::from("Board (left)"),
+        Line::from("  j/k or ↑/↓  move within status"),
+        Line::from("  J/K         change status section"),
+        Line::from("  ←/→         move task status"),
+        Line::from("  [ / ]       switch attempt"),
+        Line::from("  c           toggle cancelled section"),
+        Line::from(""),
+        Line::from("Execution (center)"),
+        Line::from("  i           compose follow-up"),
+        Line::from("  Enter       send follow-up (while composing)"),
+        Line::from("  Esc         cancel compose"),
+        Line::from("  o           toggle raw/normalized"),
+        Line::from("  PgUp/PgDn   scroll logs"),
+        Line::from("  End         jump bottom"),
+        Line::from("  x           stop active run"),
+        Line::from(""),
+        Line::from("Diff (right)"),
+        Line::from("  j/k         select file"),
+        Line::from("  h/l         files/preview focus"),
+        Line::from("  PgUp/PgDn   scroll diff preview"),
+        Line::from("  d           toggle stats-only"),
+    ];
+
+    let p = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("Help"))
+        .wrap(Wrap { trim: true });
+    f.render_widget(p, area);
+}
+
+fn render_confirm_modal(f: &mut Frame, confirm: &ConfirmState) {
+    let area = centered_rect(70, 35, f.area());
+    f.render_widget(Clear, area);
+
+    let lines = vec![
+        Line::from(vec![Span::styled(
+            confirm.title.clone(),
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(confirm.body.clone()),
+        Line::from(""),
+        Line::from("y = confirm, n/Esc = cancel"),
+    ];
+
+    let p = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("Confirm"))
+        .wrap(Wrap { trim: true });
+    f.render_widget(p, area);
+}
+
+fn render_input_modal(f: &mut Frame, input: &InputState) {
+    let area = centered_rect(80, 25, f.area());
+    f.render_widget(Clear, area);
+
+    let (title, hint) = match input.mode {
+        InputMode::SearchTasks => ("Search tasks", "type to filter, Enter to apply, Esc to cancel"),
+    };
+
+    let lines = vec![
+        Line::from(vec![Span::styled(
+            title,
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(format!("/{}", input.buffer)),
+        Line::from(""),
+        Line::from(hint),
+    ];
+
+    let p = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("Input"))
+        .wrap(Wrap { trim: true });
+    f.render_widget(p, area);
+}
+
+fn centered_rect(
+    percent_x: u16,
+    percent_y: u16,
+    r: ratatui::layout::Rect,
+) -> ratatui::layout::Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(popup_layout[1])[1]
+}
+
+fn prefs_path() -> PathBuf {
+    utils::assets::asset_dir().join("tui.json")
+}
+
+fn load_prefs() -> TuiPrefs {
+    let path = prefs_path();
+    match fs::read_to_string(&path) {
+        Ok(raw) => serde_json::from_str(&raw).unwrap_or_default(),
+        Err(_) => TuiPrefs::default(),
+    }
+}
+
+fn save_prefs(prefs: &TuiPrefs) {
+    let path = prefs_path();
+    match serde_json::to_string_pretty(prefs) {
+        Ok(raw) => {
+            let _ = fs::write(path, raw);
+        }
+        Err(_) => {}
+    }
+}
+
+async fn resolve_backend_url(args: &Args) -> anyhow::Result<String> {
+    if let Some(url) = args.backend_url.as_ref().filter(|s| !s.trim().is_empty()) {
+        return Ok(url.trim_end_matches('/').to_string());
+    }
+
+    let host = args
+        .host
+        .clone()
+        .or_else(|| std::env::var("HOST").ok())
+        .unwrap_or_else(|| "127.0.0.1".to_string());
+
+    let port = if let Some(p) = args.port {
+        p
+    } else if let Ok(port_str) = std::env::var("BACKEND_PORT").or_else(|_| std::env::var("PORT")) {
+        port_str.parse::<u16>().context("invalid port value")?
+    } else {
+        read_port_file("vibe-kanban").await?
+    };
+
+    Ok(format!("http://{}:{}", host, port))
+}
+
+async fn load_info_task(base_url: String, net_tx: mpsc::Sender<NetEvent>) {
+    let url = format!("{}/api/info", base_url.trim_end_matches('/'));
+    let client = match reqwest::Client::builder().build() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = net_tx
+                .send(NetEvent::Error(format!("reqwest init: {e}")))
+                .await;
+            return;
+        }
+    };
+
+    let res = client.get(&url).send().await;
+    match res {
+        Ok(r) => {
+            let parsed = r.json::<ApiResponse<serde_json::Value>>().await;
+            match parsed {
+                Ok(api) => {
+                    let ok = api.is_success();
+                    let summary = api
+                        .into_data()
+                        .and_then(|d| summarize_info(&d))
+                        .unwrap_or_else(|| "loaded /api/info".to_string());
+                    let _ = net_tx.send(NetEvent::InfoLoaded { ok, summary }).await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::InfoLoaded {
+                            ok: false,
+                            summary: format!("failed to parse /api/info: {e}"),
+                        })
+                        .await;
+                }
+            }
+        }
+        Err(e) => {
+            let _ = net_tx
+                .send(NetEvent::InfoLoaded {
+                    ok: false,
+                    summary: format!("failed to fetch /api/info: {e}"),
+                })
+                .await;
+        }
+    }
+}
+
+fn summarize_info(info: &serde_json::Value) -> Option<String> {
+    let env = info.get("environment")?;
+    let os_type = env.get("os_type")?.as_str().unwrap_or("unknown");
+    let os_arch = env
+        .get("os_architecture")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let login_status = info.get("login_status")?;
+
+    Some(format!(
+        "env: {os_type} ({os_arch}) | login_status: {}",
+        login_status_summary(login_status)
+    ))
+}
+
+fn login_status_summary(v: &serde_json::Value) -> String {
+    if v.get("LoggedOut").is_some() {
+        return "logged_out".to_string();
+    }
+    if let Some(obj) = v.get("LoggedIn").and_then(|x| x.as_object()) {
+        if let Some(user) = obj.get("user_id").and_then(|x| x.as_str()) {
+            return format!("logged_in({})", &user[..user.len().min(8)]);
+        }
+        return "logged_in".to_string();
+    }
+    "unknown".to_string()
+}
+
+async fn projects_stream_task(
+    base_url: String,
+    mut reconnect_rx: watch::Receiver<u64>,
+    net_tx: mpsc::Sender<NetEvent>,
+) {
+    let mut backoff = Duration::from_millis(250);
+    let max_backoff = Duration::from_secs(8);
+    let endpoint = format!("{}/api/projects/stream/ws", base_url.trim_end_matches('/'));
+
+    loop {
+        let _ = net_tx
+            .send(NetEvent::ProjectsStreamStatus(StreamStatus::Connecting))
+            .await;
+
+        match connect_ws(&endpoint).await {
+            Ok(mut stream) => {
+                let _ = net_tx
+                    .send(NetEvent::ProjectsStreamStatus(StreamStatus::Connected))
+                    .await;
+                backoff = Duration::from_millis(250);
+
+                loop {
+                    tokio::select! {
+                        changed = reconnect_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            break;
+                        }
+                        msg = stream.next() => {
+                            let Some(msg) = msg else { break; };
+                            match msg {
+                                Ok(tungstenite::Message::Text(text)) => match parse_ws_message(&text) {
+                                    WsParsed::Patch(patch) => {
+                                        let _ = net_tx.send(NetEvent::ProjectsPatch(patch)).await;
+                                    }
+                                    WsParsed::Finished => {
+                                        let _ = net_tx
+                                            .send(NetEvent::ProjectsStreamStatus(
+                                                StreamStatus::Disconnected,
+                                            ))
+                                            .await;
+                                        return;
+                                    }
+                                    WsParsed::Ignored => {}
+                                    WsParsed::Error(e) => {
+                                        let _ = net_tx
+                                            .send(NetEvent::Error(format!(
+                                                "projects stream message error: {e}"
+                                            )))
+                                            .await;
+                                    }
+                                },
+                                Ok(tungstenite::Message::Close(_)) => break,
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let _ = net_tx
+                                        .send(NetEvent::Error(format!("projects stream: {e}")))
+                                        .await;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let _ = net_tx
+                    .send(NetEvent::ProjectsStreamStatus(StreamStatus::Disconnected))
+                    .await;
+
+                continue;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::ProjectsStreamStatus(StreamStatus::Error))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("projects stream connect: {e}")))
+                    .await;
+            }
+        }
+
+        tokio::select! {
+            _ = tokio::time::sleep(backoff) => {}
+            changed = reconnect_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+            }
+        }
+        backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
+async fn tasks_stream_task(
+    base_url: String,
+    mut project_rx: watch::Receiver<Option<Uuid>>,
+    mut reconnect_rx: watch::Receiver<u64>,
+    net_tx: mpsc::Sender<NetEvent>,
+) {
+    let max_backoff = Duration::from_secs(8);
+    let mut backoff = Duration::from_millis(250);
+
+    loop {
+        let project_id = *project_rx.borrow();
+        let Some(project_id) = project_id else {
+            let _ = net_tx.send(NetEvent::TasksReset).await;
+            let _ = net_tx
+                .send(NetEvent::TasksStreamStatus(StreamStatus::Disconnected))
+                .await;
+            tokio::select! {
+                changed = project_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+                changed = reconnect_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+            }
+            continue;
+        };
+
+        let endpoint = format!(
+            "{}/api/tasks/stream/ws?project_id={project_id}",
+            base_url.trim_end_matches('/')
+        );
+
+        let _ = net_tx
+            .send(NetEvent::TasksStreamStatus(StreamStatus::Connecting))
+            .await;
+        let _ = net_tx.send(NetEvent::TasksReset).await;
+
+        match connect_ws(&endpoint).await {
+            Ok(mut stream) => {
+                let _ = net_tx
+                    .send(NetEvent::TasksStreamStatus(StreamStatus::Connected))
+                    .await;
+                backoff = Duration::from_millis(250);
+
+                loop {
+                    tokio::select! {
+                        changed = project_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::TasksReset).await;
+                            break;
+                        }
+                        changed = reconnect_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::TasksReset).await;
+                            break;
+                        }
+                        msg = stream.next() => {
+                            let Some(msg) = msg else { break; };
+                            match msg {
+                                Ok(tungstenite::Message::Text(text)) => match parse_ws_message(&text) {
+                                    WsParsed::Patch(patch) => {
+                                        let _ = net_tx.send(NetEvent::TasksPatch(patch)).await;
+                                    }
+                                    WsParsed::Finished => {
+                                        let _ = net_tx.send(NetEvent::TasksStreamStatus(StreamStatus::Disconnected)).await;
+                                        return;
+                                    }
+                                    WsParsed::Ignored => {}
+                                    WsParsed::Error(e) => {
+                                        let _ = net_tx.send(NetEvent::Error(format!("tasks stream message error: {e}"))).await;
+                                    }
+                                },
+                                Ok(tungstenite::Message::Close(_)) => break,
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let _ = net_tx.send(NetEvent::Error(format!("tasks stream: {e}"))).await;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let _ = net_tx
+                    .send(NetEvent::TasksStreamStatus(StreamStatus::Disconnected))
+                    .await;
+
+                continue;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::TasksStreamStatus(StreamStatus::Error))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("tasks stream connect: {e}")))
+                    .await;
+            }
+        }
+
+        tokio::select! {
+            _ = tokio::time::sleep(backoff) => {}
+            changed = project_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+            changed = reconnect_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+        }
+        backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct WorkspaceDto {
+    id: Uuid,
+    branch: String,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+    setup_completed_at: Option<String>,
+}
+
+async fn load_attempts_task(base_url: String, task_id: Uuid, net_tx: mpsc::Sender<NetEvent>) {
+    let url = format!(
+        "{}/api/task-attempts?task_id={task_id}",
+        base_url.trim_end_matches('/')
+    );
+
+    let client = match reqwest::Client::builder().build() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = net_tx
+                .send(NetEvent::Error(format!("reqwest init: {e}")))
+                .await;
+            return;
+        }
+    };
+
+    match client.get(url).send().await {
+        Ok(resp) => match resp.json::<ApiResponse<Vec<WorkspaceDto>>>().await {
+            Ok(api) => {
+                if !api.is_success() {
+                    let _ = net_tx
+                        .send(NetEvent::Error("failed to load task attempts".to_string()))
+                        .await;
+                    return;
+                }
+                let attempts = api
+                    .into_data()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|w| AttemptRow {
+                        id: w.id,
+                        branch: w.branch,
+                        created_at: w.created_at,
+                        updated_at: w.updated_at,
+                        setup_completed_at: w.setup_completed_at,
+                    })
+                    .collect();
+
+                let _ = net_tx
+                    .send(NetEvent::AttemptsLoaded { task_id, attempts })
+                    .await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!(
+                        "failed to parse task attempts response: {e}"
+                    )))
+                    .await;
+            }
+        },
+        Err(e) => {
+            let _ = net_tx
+                .send(NetEvent::Error(format!(
+                    "failed to fetch task attempts: {e}"
+                )))
+                .await;
+        }
+    }
+}
+
+async fn exec_stream_task(
+    base_url: String,
+    mut attempt_rx: watch::Receiver<Option<Uuid>>,
+    mut reconnect_rx: watch::Receiver<u64>,
+    net_tx: mpsc::Sender<NetEvent>,
+) {
+    let max_backoff = Duration::from_secs(8);
+    let mut backoff = Duration::from_millis(250);
+
+    loop {
+        let attempt_id = *attempt_rx.borrow();
+        let Some(attempt_id) = attempt_id else {
+            let _ = net_tx.send(NetEvent::ExecReset).await;
+            let _ = net_tx
+                .send(NetEvent::ExecStreamStatus(StreamStatus::Disconnected))
+                .await;
+            tokio::select! {
+                changed = attempt_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+                changed = reconnect_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+            }
+            continue;
+        };
+
+        let endpoint = format!(
+            "{}/api/execution-processes/stream/ws?workspace_id={attempt_id}",
+            base_url.trim_end_matches('/')
+        );
+
+        let _ = net_tx
+            .send(NetEvent::ExecStreamStatus(StreamStatus::Connecting))
+            .await;
+        let _ = net_tx.send(NetEvent::ExecReset).await;
+
+        match connect_ws(&endpoint).await {
+            Ok(mut stream) => {
+                let _ = net_tx
+                    .send(NetEvent::ExecStreamStatus(StreamStatus::Connected))
+                    .await;
+                backoff = Duration::from_millis(250);
+
+                loop {
+                    tokio::select! {
+                        changed = attempt_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::ExecReset).await;
+                            break;
+                        }
+                        changed = reconnect_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::ExecReset).await;
+                            break;
+                        }
+                        msg = stream.next() => {
+                            let Some(msg) = msg else { break; };
+                            match msg {
+                                Ok(tungstenite::Message::Text(text)) => match parse_ws_message(&text) {
+                                    WsParsed::Patch(patch) => {
+                                        let _ = net_tx.send(NetEvent::ExecPatch(patch)).await;
+                                    }
+                                    WsParsed::Finished => {
+                                        let _ = net_tx.send(NetEvent::ExecStreamStatus(StreamStatus::Disconnected)).await;
+                                        return;
+                                    }
+                                    WsParsed::Ignored => {}
+                                    WsParsed::Error(e) => {
+                                        let _ = net_tx.send(NetEvent::Error(format!("exec stream message error: {e}"))).await;
+                                    }
+                                },
+                                Ok(tungstenite::Message::Close(_)) => break,
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let _ = net_tx.send(NetEvent::Error(format!("exec stream: {e}"))).await;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let _ = net_tx
+                    .send(NetEvent::ExecStreamStatus(StreamStatus::Disconnected))
+                    .await;
+
+                continue;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::ExecStreamStatus(StreamStatus::Error))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("exec stream connect: {e}")))
+                    .await;
+            }
+        }
+
+        tokio::select! {
+            _ = tokio::time::sleep(backoff) => {}
+            changed = attempt_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+            changed = reconnect_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+        }
+        backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
+async fn diff_stream_task(
+    base_url: String,
+    mut attempt_rx: watch::Receiver<Option<Uuid>>,
+    mut stats_only_rx: watch::Receiver<bool>,
+    mut reconnect_rx: watch::Receiver<u64>,
+    net_tx: mpsc::Sender<NetEvent>,
+) {
+    let max_backoff = Duration::from_secs(8);
+    let mut backoff = Duration::from_millis(250);
+
+    loop {
+        let attempt_id = *attempt_rx.borrow();
+        let Some(attempt_id) = attempt_id else {
+            let _ = net_tx.send(NetEvent::DiffReset).await;
+            let _ = net_tx
+                .send(NetEvent::DiffStreamStatus(StreamStatus::Disconnected))
+                .await;
+            tokio::select! {
+                changed = attempt_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+                changed = stats_only_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+                changed = reconnect_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+            }
+            continue;
+        };
+
+        let stats_only = *stats_only_rx.borrow();
+        let endpoint = format!(
+            "{}/api/task-attempts/{attempt_id}/diff/ws?stats_only={stats_only}",
+            base_url.trim_end_matches('/')
+        );
+
+        let _ = net_tx
+            .send(NetEvent::DiffStreamStatus(StreamStatus::Connecting))
+            .await;
+        let _ = net_tx.send(NetEvent::DiffReset).await;
+
+        match connect_ws(&endpoint).await {
+            Ok(mut stream) => {
+                let _ = net_tx
+                    .send(NetEvent::DiffStreamStatus(StreamStatus::Connected))
+                    .await;
+                backoff = Duration::from_millis(250);
+
+                loop {
+                    tokio::select! {
+                        changed = attempt_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::DiffReset).await;
+                            break;
+                        }
+                        changed = stats_only_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::DiffReset).await;
+                            break;
+                        }
+                        changed = reconnect_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::DiffReset).await;
+                            break;
+                        }
+                        msg = stream.next() => {
+                            let Some(msg) = msg else { break; };
+                            match msg {
+                                Ok(tungstenite::Message::Text(text)) => match parse_ws_message(&text) {
+                                    WsParsed::Patch(patch) => {
+                                        let _ = net_tx.send(NetEvent::DiffPatch(patch)).await;
+                                    }
+                                    WsParsed::Finished | WsParsed::Ignored => {}
+                                    WsParsed::Error(e) => {
+                                        let _ = net_tx.send(NetEvent::Error(format!("diff stream parse: {e}"))).await;
+                                    }
+                                },
+                                Ok(tungstenite::Message::Close(_)) => break,
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let _ = net_tx.send(NetEvent::Error(format!("diff stream: {e}"))).await;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let _ = net_tx
+                    .send(NetEvent::DiffStreamStatus(StreamStatus::Disconnected))
+                    .await;
+
+                continue;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::DiffStreamStatus(StreamStatus::Error))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("diff stream connect: {e}")))
+                    .await;
+            }
+        }
+
+        tokio::select! {
+            _ = tokio::time::sleep(backoff) => {}
+            changed = attempt_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+            changed = stats_only_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+            changed = reconnect_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+        }
+        backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
+async fn logs_stream_task(
+    base_url: String,
+    mut exec_rx: watch::Receiver<Option<Uuid>>,
+    mut log_mode_rx: watch::Receiver<LogMode>,
+    mut reconnect_rx: watch::Receiver<u64>,
+    net_tx: mpsc::Sender<NetEvent>,
+) {
+    let max_backoff = Duration::from_secs(8);
+    let mut backoff = Duration::from_millis(250);
+
+    loop {
+        let exec_id = *exec_rx.borrow();
+        let Some(exec_id) = exec_id else {
+            let _ = net_tx.send(NetEvent::LogReset).await;
+            let _ = net_tx
+                .send(NetEvent::LogStreamStatus(StreamStatus::Disconnected))
+                .await;
+            tokio::select! {
+                changed = exec_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+                changed = log_mode_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+                changed = reconnect_rx.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                }
+            }
+            continue;
+        };
+
+        let log_mode = *log_mode_rx.borrow();
+        let endpoint = format!(
+            "{}/api/execution-processes/{exec_id}/{}-logs/ws",
+            base_url.trim_end_matches('/'),
+            match log_mode {
+                LogMode::Normalized => "normalized",
+                LogMode::Raw => "raw",
+            }
+        );
+
+        let _ = net_tx
+            .send(NetEvent::LogStreamStatus(StreamStatus::Connecting))
+            .await;
+        let _ = net_tx.send(NetEvent::LogReset).await;
+
+        match connect_ws(&endpoint).await {
+            Ok(mut stream) => {
+                let _ = net_tx
+                    .send(NetEvent::LogStreamStatus(StreamStatus::Connected))
+                    .await;
+                backoff = Duration::from_millis(250);
+
+                let mut finished = false;
+                loop {
+                    tokio::select! {
+                        changed = exec_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::LogReset).await;
+                            break;
+                        }
+                        changed = log_mode_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::LogReset).await;
+                            break;
+                        }
+                        changed = reconnect_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                            let _ = net_tx.send(NetEvent::LogReset).await;
+                            break;
+                        }
+                        msg = stream.next() => {
+                            let Some(msg) = msg else { break; };
+                            match msg {
+                                Ok(tungstenite::Message::Text(text)) => match parse_ws_message(&text) {
+                                    WsParsed::Patch(patch) => {
+                                        let _ = net_tx.send(NetEvent::LogPatch(patch)).await;
+                                    }
+                                    WsParsed::Finished => {
+                                        finished = true;
+                                        break;
+                                    }
+                                    WsParsed::Ignored => {}
+                                    WsParsed::Error(e) => {
+                                        let _ = net_tx.send(NetEvent::Error(format!("log stream message error: {e}"))).await;
+                                    }
+                                },
+                                Ok(tungstenite::Message::Close(_)) => break,
+                                Ok(_) => {}
+                                Err(e) => {
+                                    let _ = net_tx.send(NetEvent::Error(format!("log stream: {e}"))).await;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if finished {
+                    let _ = net_tx
+                        .send(NetEvent::LogStreamStatus(StreamStatus::Completed))
+                        .await;
+                    tokio::select! {
+                        changed = exec_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                        }
+                        changed = log_mode_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                        }
+                        changed = reconnect_rx.changed() => {
+                            if changed.is_err() {
+                                return;
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                let _ = net_tx
+                    .send(NetEvent::LogStreamStatus(StreamStatus::Disconnected))
+                    .await;
+
+                continue;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::LogStreamStatus(StreamStatus::Error))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("log stream connect: {e}")))
+                    .await;
+            }
+        }
+
+        tokio::select! {
+            _ = tokio::time::sleep(backoff) => {}
+            changed = exec_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+            changed = log_mode_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+            changed = reconnect_rx.changed() => {
+                if changed.is_err() {
+                    return;
+                }
+                continue;
+            }
+        }
+        backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
+async fn connect_ws(
+    http_url: &str,
+) -> anyhow::Result<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+> {
+    let ws_url = if let Some(rest) = http_url.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else if let Some(rest) = http_url.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if http_url.starts_with("ws://") || http_url.starts_with("wss://") {
+        http_url.to_string()
+    } else {
+        anyhow::bail!("unsupported URL scheme: {http_url}");
+    };
+
+    let (ws, _resp) = tokio_tungstenite::connect_async(ws_url).await?;
+    Ok(ws)
+}
+
+enum WsParsed {
+    Patch(json_patch::Patch),
+    Finished,
+    Ignored,
+    Error(String),
+}
+
+fn parse_ws_message(text: &str) -> WsParsed {
+    let value: serde_json::Value = match serde_json::from_str(text) {
+        Ok(v) => v,
+        Err(e) => return WsParsed::Error(e.to_string()),
+    };
+
+    if value.get("finished").and_then(|v| v.as_bool()) == Some(true) {
+        return WsParsed::Finished;
+    }
+
+    let patch_value = match value.get("JsonPatch") {
+        Some(v) => v.clone(),
+        None => return WsParsed::Ignored,
+    };
+
+    let patch: json_patch::Patch = match serde_json::from_value(patch_value) {
+        Ok(p) => p,
+        Err(e) => return WsParsed::Error(e.to_string()),
+    };
+
+    WsParsed::Patch(patch)
+}
+
+fn reset_logs(app: &mut AppState) {
+    app.log_store = serde_json::json!({ "entries": [] });
+    app.log_lines.clear();
+    app.log_entry_line_starts.clear();
+    app.log_entry_end_states.clear();
+    app.log_assembler_state = LogAssemblerState::default();
+    app.pending_log_patch.0.clear();
+    app.pending_log_dirty_from_entry = None;
+    app.log_autoscroll = true;
+    app.log_scroll_offset = 0;
+}
+
+fn enqueue_log_patch(app: &mut AppState, patch: json_patch::Patch) {
+    if let Some(min_idx) = log_patch_min_entry_index(&patch) {
+        app.pending_log_dirty_from_entry = Some(
+            app.pending_log_dirty_from_entry
+                .map(|v| v.min(min_idx))
+                .unwrap_or(min_idx),
+        );
+    }
+    app.pending_log_patch.0.extend(patch.0);
+}
+
+fn flush_log_patches(app: &mut AppState, width: usize) -> bool {
+    let has_patch = !app.pending_log_patch.0.is_empty();
+    let has_dirty = app.pending_log_dirty_from_entry.is_some();
+    if !has_patch && !has_dirty {
+        return false;
+    }
+
+    let width = width.max(1);
+    let processed_entries_before = app.log_entry_line_starts.len();
+    let rebuild_from = app
+        .pending_log_dirty_from_entry
+        .take()
+        .unwrap_or(processed_entries_before);
+
+    if has_patch {
+        let patch = std::mem::take(&mut app.pending_log_patch);
+        if let Err(e) = json_patch::patch(&mut app.log_store, &patch).context("apply patch") {
+            app.last_error = Some(format!("failed to apply log patch: {e}"));
+            app.log_status = StreamStatus::Error;
+            return true;
+        }
+    } else {
+        app.pending_log_patch.0.clear();
+    }
+
+    let entries = app
+        .log_store
+        .get("entries")
+        .and_then(|v| v.as_array())
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+
+    let rebuild_from = rebuild_from.min(processed_entries_before);
+    if rebuild_from == 0 {
+        app.log_lines.clear();
+        app.log_entry_line_starts.clear();
+        app.log_entry_end_states.clear();
+        app.log_assembler_state = LogAssemblerState::default();
+    } else if rebuild_from < processed_entries_before {
+        let truncate_to = app.log_entry_line_starts[rebuild_from];
+        app.log_lines.truncate(truncate_to);
+        app.log_entry_line_starts.truncate(rebuild_from);
+        app.log_entry_end_states.truncate(rebuild_from);
+        app.log_assembler_state = app
+            .log_entry_end_states
+            .last()
+            .copied()
+            .unwrap_or_default();
+    }
+
+    let log_mode = app.log_mode;
+    let render_mode = app.log_render_mode;
+
+    let lines_before = app.log_lines.len();
+    for idx in rebuild_from..entries.len() {
+        let entry = &entries[idx];
+        app.log_entry_line_starts.push(app.log_lines.len());
+        append_log_entry(
+            &mut app.log_lines,
+            &mut app.log_assembler_state,
+            entry,
+            width,
+            log_mode,
+            render_mode,
+        );
+        app.log_entry_end_states.push(app.log_assembler_state);
+    }
+    let lines_added = app.log_lines.len().saturating_sub(lines_before);
+
+    if rebuild_from == processed_entries_before && lines_added > 0 && !app.log_autoscroll {
+        app.log_scroll_offset = app.log_scroll_offset.saturating_add(lines_added);
+    } else if app.log_autoscroll {
+        app.log_scroll_offset = 0;
+    }
+
+    true
+}
+
+fn log_patch_min_entry_index(patch: &json_patch::Patch) -> Option<usize> {
+    patch
+        .iter()
+        .filter_map(|op| {
+            let path = op.path().to_string();
+            let rest = path.strip_prefix("/entries/")?;
+            let idx = rest.split('/').next()?;
+            idx.parse::<usize>().ok()
+        })
+        .min()
+}
+
+fn style_for_log_kind(kind: LogKind) -> Style {
+    match kind {
+        LogKind::Stdout => Style::default(),
+        LogKind::Stderr => Style::default().fg(Color::Red),
+        LogKind::Info => Style::default().fg(Color::Cyan),
+    }
+}
+
+fn append_log_entry(
+    lines: &mut Vec<Line<'static>>,
+    state: &mut LogAssemblerState,
+    entry: &serde_json::Value,
+    width: usize,
+    log_mode: LogMode,
+    render_mode: LogRenderMode,
+) {
+    let Some(ty) = entry.get("type").and_then(|v| v.as_str()) else {
+        return;
+    };
+
+    match ty {
+        "STDOUT" => {
+            let Some(text) = entry.get("content").and_then(|v| v.as_str()) else {
+                return;
+            };
+            append_stream_text(
+                lines,
+                state,
+                LogKind::Stdout,
+                text,
+                style_for_log_kind(LogKind::Stdout),
+                true,
+            );
+        }
+        "STDERR" => {
+            let Some(text) = entry.get("content").and_then(|v| v.as_str()) else {
+                return;
+            };
+            append_stream_text(
+                lines,
+                state,
+                LogKind::Stderr,
+                text,
+                style_for_log_kind(LogKind::Stderr),
+                true,
+            );
+        }
+        "NORMALIZED_ENTRY" => {
+            let Some(content) = entry.get("content") else {
+                return;
+            };
+            let Some(text) = normalized_entry_text(content) else {
+                return;
+            };
+
+            // Don't join stdout/stderr across normalized entries.
+            state.open = false;
+            state.open_kind = None;
+
+            if log_mode == LogMode::Normalized && render_mode == LogRenderMode::Markdown {
+                let mut rendered = render_markdown(&text, width);
+                if rendered.is_empty() {
+                    rendered.push(Line::from(""));
+                }
+                lines.extend(rendered);
+            } else {
+                for l in text.lines() {
+                    lines.push(Line::from(Span::styled(
+                        l.to_string(),
+                        style_for_log_kind(LogKind::Info),
+                    )));
+                }
+                if text.lines().next().is_none() {
+                    lines.push(Line::from(Span::styled(
+                        "".to_string(),
+                        style_for_log_kind(LogKind::Info),
+                    )));
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn append_stream_text(
+    lines: &mut Vec<Line<'static>>,
+    state: &mut LogAssemblerState,
+    kind: LogKind,
+    text: &str,
+    style: Style,
+    allow_join: bool,
+) {
+    if text.is_empty() {
+        return;
+    }
+
+    let ends_with_newline = text.ends_with('\n');
+    let mut is_first = true;
+    for raw in text.split_terminator('\n') {
+        let seg = raw.strip_suffix('\r').unwrap_or(raw);
+
+        if allow_join
+            && is_first
+            && state.open
+            && state.open_kind == Some(kind)
+            && lines.last().is_some_and(|l| {
+                l.spans.len() == 1 && l.spans[0].style == style
+            })
+        {
+            if let Some(last) = lines.last_mut() {
+                if let Some(span) = last.spans.first_mut() {
+                    span.content.to_mut().push_str(seg);
+                }
+            }
+        } else {
+            lines.push(Line::from(Span::styled(seg.to_string(), style)));
+        }
+
+        is_first = false;
+    }
+
+    if allow_join && !ends_with_newline {
+        state.open = true;
+        state.open_kind = Some(kind);
+    } else {
+        state.open = false;
+        state.open_kind = None;
+    }
+}
+
+fn normalized_entry_text(entry: &serde_json::Value) -> Option<String> {
+    let content = entry
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if !content.trim().is_empty() {
+        return Some(content);
+    }
+
+    let entry_type = entry.get("entry_type")?;
+    let ty = entry_type.get("type").and_then(|v| v.as_str())?;
+    let label = match ty {
+        "tool_use" => {
+            let tool = entry_type
+                .get("tool_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("tool");
+            let status = entry_type
+                .get("status")
+                .and_then(|v| v.get("status"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("created");
+            format!("{tool} ({status})")
+        }
+        "next_action" => "next action".to_string(),
+        "loading" => "loading…".to_string(),
+        "thinking" => "thinking…".to_string(),
+        other => other.replace('_', " "),
+    };
+
+    Some(label)
+}
+
+#[derive(Debug, Clone)]
+enum MdToken {
+    Text(String, Style),
+    Newline,
+}
+
+fn display_width(s: &str) -> usize {
+    UnicodeWidthStr::width(s)
+}
+
+fn truncate_to_width(s: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    if display_width(s) <= max {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    for ch in s.chars() {
+        if display_width(&out) >= max.saturating_sub(1) {
+            break;
+        }
+        out.push(ch);
+    }
+    out.push('…');
+    out
+}
+
+fn hash_text_sample(hasher: &mut impl Hasher, s: &str) {
+    s.len().hash(hasher);
+    let bytes = s.as_bytes();
+    let take = bytes.len().min(4096);
+    bytes[..take].hash(hasher);
+    if bytes.len() > take {
+        bytes[bytes.len().saturating_sub(take)..].hash(hasher);
+    }
+}
+
+fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
+    let width_u16 = (width.min(u16::MAX as usize)) as u16;
+    if app.diff_preview_cache_width != width_u16 {
+        app.diff_preview_cache_width = width_u16;
+        app.diff_preview_cache_key = None;
+    }
+
+    let rows = diff_rows(&app.diff_store);
+    let selected = rows
+        .get(app.selected_diff_index.min(rows.len().saturating_sub(1)))
+        .cloned();
+
+    let Some(selected) = selected else {
+        if app.diff_preview_cache_key.is_none() && app.diff_preview_lines.len() == 1 {
+            return false;
+        }
+        app.diff_preview_cache_key = None;
+        app.diff_preview_cache_hash = 0;
+        app.diff_preview_lines = vec![Line::from("No diffs")];
+        return true;
+    };
+
+    let entry_content = app
+        .diff_store
+        .get("entries")
+        .and_then(|v| v.get(&selected.key))
+        .and_then(|v| v.get("content"))
+        .cloned();
+
+    let mut hasher = DefaultHasher::new();
+    selected.key.hash(&mut hasher);
+    width.hash(&mut hasher);
+    let omitted = entry_content
+        .as_ref()
+        .and_then(|c| c.get("contentOmitted"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    omitted.hash(&mut hasher);
+
+    let (old, new, adds, dels) = if let Some(content) = entry_content.as_ref() {
+        let old = content
+            .get("oldContent")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let new = content
+            .get("newContent")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let adds = content.get("additions").and_then(|v| v.as_u64()).unwrap_or(0);
+        let dels = content.get("deletions").and_then(|v| v.as_u64()).unwrap_or(0);
+        (old, new, adds, dels)
+    } else {
+        ("", "", 0, 0)
+    };
+
+    hash_text_sample(&mut hasher, old);
+    hash_text_sample(&mut hasher, new);
+    adds.hash(&mut hasher);
+    dels.hash(&mut hasher);
+    let content_hash = hasher.finish();
+
+    if app.diff_preview_cache_key.as_deref() == Some(&selected.key)
+        && app.diff_preview_cache_hash == content_hash
+        && app.diff_preview_cache_width == width_u16
+    {
+        return false;
+    }
+
+    app.diff_preview_cache_key = Some(selected.key.clone());
+    app.diff_preview_cache_hash = content_hash;
+
+    let mut lines: Vec<Line<'static>> = vec![];
+    if entry_content.is_none() {
+        lines.push(Line::from("No diff content"));
+        app.diff_preview_lines = lines;
+        return true;
+    }
+
+    let content = entry_content.unwrap();
+    if omitted {
+        let adds = content.get("additions").and_then(|v| v.as_u64()).unwrap_or(0);
+        let dels = content.get("deletions").and_then(|v| v.as_u64()).unwrap_or(0);
+        lines.push(Line::from(format!(
+            "{} (content omitted)  +{}/-{}",
+            selected.key, adds, dels
+        )));
+        app.diff_preview_lines = lines;
+        return true;
+    }
+
+    let old = content
+        .get("oldContent")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let new = content
+        .get("newContent")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let diff = utils::diff::create_unified_diff(&selected.key, old, new);
+    app.diff_preview_lines = highlight_unified_diff(&selected.key, &diff, width);
+    if app.diff_preview_lines.is_empty() {
+        app.diff_preview_lines = vec![Line::from("No diff content")];
+    }
+    true
+}
+
+fn syntect_syntax_set() -> &'static SyntaxSet {
+    static SET: OnceLock<SyntaxSet> = OnceLock::new();
+    SET.get_or_init(SyntaxSet::load_defaults_newlines)
+}
+
+fn syntect_theme() -> &'static Theme {
+    static THEME: OnceLock<Theme> = OnceLock::new();
+    THEME.get_or_init(|| {
+        let ts = ThemeSet::load_defaults();
+        ts.themes
+            .get("base16-ocean.dark")
+            .cloned()
+            .or_else(|| ts.themes.values().next().cloned())
+            .unwrap_or_default()
+    })
+}
+
+fn syntax_for_path<'a>(ps: &'a SyntaxSet, path: &str) -> &'a SyntaxReference {
+    let file_name = std::path::Path::new(path)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path);
+
+    if file_name == "Dockerfile" {
+        if let Some(s) = ps.find_syntax_by_name("Dockerfile") {
+            return s;
+        }
+    }
+    if file_name == "Makefile" {
+        if let Some(s) = ps.find_syntax_by_name("Makefile") {
+            return s;
+        }
+    }
+
+    let ext = std::path::Path::new(path).extension().and_then(|s| s.to_str());
+    if let Some(ext) = ext {
+        if let Some(syntax) = ps.find_syntax_by_extension(ext) {
+            return syntax;
+        }
+        // Common aliases
+        if ext == "rs" {
+            if let Some(syntax) = ps.find_syntax_by_extension("rust") {
+                return syntax;
+            }
+        }
+        if ext == "yml" {
+            if let Some(syntax) = ps.find_syntax_by_extension("yaml") {
+                return syntax;
+            }
+        }
+    }
+
+    ps.find_syntax_plain_text()
+}
+
+fn syntect_style_to_ratatui(style: syntect::highlighting::Style) -> Style {
+    let fg = style.foreground;
+    Style::default().fg(Color::Rgb(fg.r, fg.g, fg.b))
+}
+
+fn truncate_spans_to_width(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+    if width == 0 {
+        return vec![];
+    }
+
+    let mut out: Vec<Span<'static>> = vec![];
+    let mut used = 0usize;
+    for span in spans.drain(..) {
+        let w = display_width(span.content.as_ref());
+        if used + w <= width {
+            used += w;
+            out.push(span);
+            continue;
+        }
+
+        let remaining = width.saturating_sub(used);
+        if remaining == 0 {
+            break;
+        }
+
+        let truncated = truncate_to_width(span.content.as_ref(), remaining);
+        out.push(Span::styled(truncated, span.style));
+        break;
+    }
+    out
+}
+
+fn highlight_unified_diff(file_path: &str, diff: &str, width: usize) -> Vec<Line<'static>> {
+    let ps = syntect_syntax_set();
+    let theme = syntect_theme();
+    let syntax = syntax_for_path(ps, file_path);
+
+    let mut old_hl = HighlightLines::new(syntax, theme);
+    let mut new_hl = HighlightLines::new(syntax, theme);
+
+    let mut out: Vec<Line<'static>> = vec![];
+    for raw_line in diff.lines() {
+        if raw_line.starts_with("--- ") || raw_line.starts_with("+++ ") {
+            let spans = truncate_spans_to_width(
+                vec![Span::styled(
+                    raw_line.to_string(),
+                    Style::default().fg(Color::DarkGray),
+                )],
+                width,
+            );
+            out.push(Line::from(spans));
+            continue;
+        }
+
+        if raw_line.starts_with("@@") {
+            let spans = truncate_spans_to_width(
+                vec![Span::styled(
+                    raw_line.to_string(),
+                    Style::default().fg(Color::Cyan),
+                )],
+                width,
+            );
+            out.push(Line::from(spans));
+            continue;
+        }
+
+        let (marker, rest) = raw_line.split_at(1.min(raw_line.len()));
+        let marker_ch = marker.chars().next().unwrap_or(' ');
+        let marker_style = match marker_ch {
+            '+' => Style::default().fg(Color::Green),
+            '-' => Style::default().fg(Color::Red),
+            ' ' => Style::default().fg(Color::DarkGray),
+            _ => Style::default().fg(Color::DarkGray),
+        };
+
+        let mut spans: Vec<Span<'static>> = vec![Span::styled(marker.to_string(), marker_style)];
+        let rest_spans = match marker_ch {
+            '+' => new_hl
+                .highlight_line(rest, ps)
+                .map(|ranges| {
+                    ranges
+                        .into_iter()
+                        .map(|(s, t)| Span::styled(t.to_string(), syntect_style_to_ratatui(s)))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|_| vec![Span::raw(rest.to_string())]),
+            '-' => old_hl
+                .highlight_line(rest, ps)
+                .map(|ranges| {
+                    ranges
+                        .into_iter()
+                        .map(|(s, t)| Span::styled(t.to_string(), syntect_style_to_ratatui(s)))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_else(|_| vec![Span::raw(rest.to_string())]),
+            ' ' => {
+                // Advance both sides for better multi-line state.
+                let _ = new_hl.highlight_line(rest, ps);
+                old_hl
+                    .highlight_line(rest, ps)
+                    .map(|ranges| {
+                        ranges
+                            .into_iter()
+                            .map(|(s, t)| Span::styled(t.to_string(), syntect_style_to_ratatui(s)))
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_else(|_| vec![Span::raw(rest.to_string())])
+            }
+            _ => vec![Span::raw(rest.to_string())],
+        };
+        spans.extend(rest_spans);
+
+        let spans = truncate_spans_to_width(spans, width);
+        out.push(Line::from(spans));
+    }
+    out
+}
+
+fn split_by_width(s: &str, max: usize) -> (String, String) {
+    if max == 0 {
+        return (String::new(), s.to_string());
+    }
+    let mut chunk = String::new();
+    let mut last_byte = 0usize;
+    for (i, ch) in s.char_indices() {
+        let next = format!("{chunk}{ch}");
+        if display_width(&next) > max {
+            break;
+        }
+        chunk.push(ch);
+        last_byte = i + ch.len_utf8();
+    }
+    let rest = s.get(last_byte..).unwrap_or("").to_string();
+    (chunk, rest)
+}
+
+fn push_span_merged(spans: &mut Vec<Span<'static>>, text: String, style: Style) {
+    if text.is_empty() {
+        return;
+    }
+    if let Some(last) = spans.last_mut()
+        && last.style == style
+    {
+        last.content.to_mut().push_str(&text);
+        return;
+    }
+    spans.push(Span::styled(text, style));
+}
+
+fn wrap_md_tokens(
+    tokens: &[MdToken],
+    width: usize,
+    prefix_first: &str,
+    prefix_next: &str,
+    prefix_style: Style,
+) -> Vec<Line<'static>> {
+    let width = width.max(1);
+    let mut out: Vec<Line<'static>> = vec![];
+
+    let mut cur_spans: Vec<Span<'static>> = vec![];
+    let mut cur_w: usize = 0;
+    let mut cur_prefix_w: usize = 0;
+
+    let start_line = |spans: &mut Vec<Span<'static>>,
+                      cur_w: &mut usize,
+                      cur_prefix_w: &mut usize,
+                      first: bool| {
+        spans.clear();
+        let prefix = if first { prefix_first } else { prefix_next };
+        if !prefix.is_empty() {
+            spans.push(Span::styled(prefix.to_string(), prefix_style));
+            *cur_prefix_w = display_width(prefix);
+            *cur_w = *cur_prefix_w;
+        } else {
+            *cur_prefix_w = 0;
+            *cur_w = 0;
+        }
+    };
+
+    start_line(&mut cur_spans, &mut cur_w, &mut cur_prefix_w, true);
+
+    for token in tokens.iter().cloned() {
+        match token {
+            MdToken::Newline => {
+                out.push(Line::from(cur_spans.clone()));
+                start_line(&mut cur_spans, &mut cur_w, &mut cur_prefix_w, false);
+            }
+            MdToken::Text(mut text, style) => {
+                if text == " " && cur_w == cur_prefix_w {
+                    continue;
+                }
+                loop {
+                    let available = width.saturating_sub(cur_w);
+                    if available == 0 {
+                        out.push(Line::from(cur_spans.clone()));
+                        start_line(&mut cur_spans, &mut cur_w, &mut cur_prefix_w, false);
+                        continue;
+                    }
+
+                    let w = display_width(&text);
+                    if w <= available {
+                        push_span_merged(&mut cur_spans, text, style);
+                        cur_w += w;
+                        break;
+                    }
+
+                    let (chunk, rest) = split_by_width(&text, available);
+                    if chunk.is_empty() {
+                        out.push(Line::from(cur_spans.clone()));
+                        start_line(&mut cur_spans, &mut cur_w, &mut cur_prefix_w, false);
+                        continue;
+                    }
+                    let chunk_w = display_width(&chunk);
+                    push_span_merged(&mut cur_spans, chunk, style);
+                    cur_w += chunk_w;
+                    out.push(Line::from(cur_spans.clone()));
+                    start_line(&mut cur_spans, &mut cur_w, &mut cur_prefix_w, false);
+                    text = rest;
+                    if text.is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if !cur_spans.is_empty() {
+        out.push(Line::from(cur_spans));
+    }
+
+    // Trim trailing empty lines.
+    while out.last().is_some_and(|l| l.spans.is_empty()) {
+        out.pop();
+    }
+
+    out
+}
+
+fn render_markdown(md: &str, width: usize) -> Vec<Line<'static>> {
+    let width = width.max(1);
+
+    let mut options = MdOptions::empty();
+    options.insert(MdOptions::ENABLE_STRIKETHROUGH);
+    options.insert(MdOptions::ENABLE_TABLES);
+    options.insert(MdOptions::ENABLE_TASKLISTS);
+
+    let parser = MdParser::new_ext(md, options);
+
+    #[derive(Debug, Clone, Copy)]
+    struct ListCtx {
+        ordered: bool,
+        next_number: usize,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum BlockKind {
+        Paragraph,
+        Heading,
+        Item,
+    }
+
+    struct Block {
+        kind: BlockKind,
+        tokens: Vec<MdToken>,
+        prefix_first: String,
+        prefix_next: String,
+        prefix_style: Style,
+        trailing_blank_line: bool,
+    }
+
+    let mut out: Vec<Line<'static>> = vec![];
+    let mut style_stack: Vec<Style> = vec![Style::default()];
+    let mut quote_depth: usize = 0;
+    let mut lists: Vec<ListCtx> = vec![];
+    let mut block: Option<Block> = None;
+
+    let mut in_code_block = false;
+    let mut code_buf = String::new();
+
+    let prefix_style = Style::default().fg(Color::DarkGray);
+
+    fn base_prefix(quote_depth: usize, list_depth: usize) -> String {
+        let mut p = String::new();
+        if quote_depth > 0 {
+            p.push_str(&"│ ".repeat(quote_depth));
+        }
+        if list_depth > 1 {
+            p.push_str(&"  ".repeat(list_depth - 1));
+        }
+        p
+    }
+
+    let push_word = |block: &mut Block, word: &str, style: Style| {
+        if let Some(MdToken::Text(prev, _)) = block.tokens.last() {
+            if !prev.is_empty() && !prev.ends_with(' ') {
+                block.tokens.push(MdToken::Text(" ".to_string(), style));
+            }
+        }
+        block
+            .tokens
+            .push(MdToken::Text(word.to_string(), style));
+    };
+
+    let push_text = |block: &mut Block, text: &str, style: Style| {
+        for word in text.split_whitespace() {
+            push_word(block, word, style);
+        }
+    };
+
+    let flush_block = |out: &mut Vec<Line<'static>>, block: &mut Option<Block>| {
+        let Some(b) = block.take() else {
+            return;
+        };
+        if b.tokens.is_empty() {
+            return;
+        }
+        let lines = wrap_md_tokens(
+            &b.tokens,
+            width,
+            &b.prefix_first,
+            &b.prefix_next,
+            b.prefix_style,
+        );
+        out.extend(lines);
+        if b.trailing_blank_line {
+            out.push(Line::from(""));
+        }
+    };
+
+    for event in parser {
+        if in_code_block {
+            match event {
+                MdEvent::End(MdTagEnd::CodeBlock) => {
+                    let code_style = Style::default().bg(Color::DarkGray);
+                    for l in code_buf.lines() {
+                        out.push(Line::from(Span::styled(
+                            truncate_to_width(l, width),
+                            code_style,
+                        )));
+                    }
+                    code_buf.clear();
+                    in_code_block = false;
+                    out.push(Line::from(""));
+                }
+                MdEvent::Text(t) | MdEvent::Code(t) => code_buf.push_str(&t),
+                MdEvent::SoftBreak | MdEvent::HardBreak => code_buf.push('\n'),
+                _ => {}
+            }
+            continue;
+        }
+
+        match event {
+            MdEvent::Start(MdTag::Paragraph) => {
+                if block.as_ref().is_some_and(|b| b.kind == BlockKind::Item) {
+                    continue;
+                }
+                flush_block(&mut out, &mut block);
+                let base = base_prefix(quote_depth, lists.len());
+                block = Some(Block {
+                    kind: BlockKind::Paragraph,
+                    tokens: vec![],
+                    prefix_first: base.clone(),
+                    prefix_next: base,
+                    prefix_style,
+                    trailing_blank_line: true,
+                });
+            }
+            MdEvent::End(MdTagEnd::Paragraph) => {
+                if block.as_ref().is_some_and(|b| b.kind == BlockKind::Item) {
+                    continue;
+                }
+                flush_block(&mut out, &mut block);
+            }
+            MdEvent::Start(MdTag::Heading { .. }) => {
+                flush_block(&mut out, &mut block);
+                let base = base_prefix(quote_depth, lists.len());
+                block = Some(Block {
+                    kind: BlockKind::Heading,
+                    tokens: vec![],
+                    prefix_first: base.clone(),
+                    prefix_next: base,
+                    prefix_style,
+                    trailing_blank_line: true,
+                });
+                let h_style = Style::default()
+                    .add_modifier(Modifier::BOLD)
+                    .fg(Color::Cyan);
+                style_stack.push(h_style);
+            }
+            MdEvent::End(MdTagEnd::Heading(_)) => {
+                let _ = style_stack.pop();
+                flush_block(&mut out, &mut block);
+            }
+            MdEvent::Start(MdTag::BlockQuote) => {
+                quote_depth += 1;
+            }
+            MdEvent::End(MdTagEnd::BlockQuote) => {
+                quote_depth = quote_depth.saturating_sub(1);
+            }
+            MdEvent::Start(MdTag::List(start)) => {
+                let ordered = start.is_some();
+                let next_number = start.unwrap_or(1) as usize;
+                lists.push(ListCtx {
+                    ordered,
+                    next_number,
+                });
+            }
+            MdEvent::End(MdTagEnd::List(_)) => {
+                let _ = lists.pop();
+                // A list boundary is a decent place to add separation.
+                out.push(Line::from(""));
+            }
+            MdEvent::Start(MdTag::Item) => {
+                flush_block(&mut out, &mut block);
+                let base = base_prefix(quote_depth, lists.len());
+                let bullet = if let Some(list) = lists.last_mut() {
+                    if list.ordered {
+                        let b = format!("{}. ", list.next_number);
+                        list.next_number += 1;
+                        b
+                    } else {
+                        "- ".to_string()
+                    }
+                } else {
+                    "- ".to_string()
+                };
+                let cont = " ".repeat(display_width(&bullet));
+                block = Some(Block {
+                    kind: BlockKind::Item,
+                    tokens: vec![],
+                    prefix_first: format!("{base}{bullet}"),
+                    prefix_next: format!("{base}{cont}"),
+                    prefix_style,
+                    trailing_blank_line: false,
+                });
+            }
+            MdEvent::End(MdTagEnd::Item) => {
+                flush_block(&mut out, &mut block);
+            }
+            MdEvent::Start(MdTag::CodeBlock(CodeBlockKind::Fenced(_)))
+            | MdEvent::Start(MdTag::CodeBlock(CodeBlockKind::Indented)) => {
+                flush_block(&mut out, &mut block);
+                in_code_block = true;
+                code_buf.clear();
+            }
+            MdEvent::Start(MdTag::Emphasis) => {
+                let next = style_stack
+                    .last()
+                    .copied()
+                    .unwrap_or_default()
+                    .add_modifier(Modifier::ITALIC);
+                style_stack.push(next);
+            }
+            MdEvent::End(MdTagEnd::Emphasis) => {
+                let _ = style_stack.pop();
+            }
+            MdEvent::Start(MdTag::Strong) => {
+                let next = style_stack
+                    .last()
+                    .copied()
+                    .unwrap_or_default()
+                    .add_modifier(Modifier::BOLD);
+                style_stack.push(next);
+            }
+            MdEvent::End(MdTagEnd::Strong) => {
+                let _ = style_stack.pop();
+            }
+            MdEvent::Start(MdTag::Link { .. }) => {
+                let next = style_stack
+                    .last()
+                    .copied()
+                    .unwrap_or_default()
+                    .add_modifier(Modifier::UNDERLINED);
+                style_stack.push(next);
+            }
+            MdEvent::End(MdTagEnd::Link) => {
+                let _ = style_stack.pop();
+            }
+            MdEvent::Code(t) => {
+                let code_style = style_stack
+                    .last()
+                    .copied()
+                    .unwrap_or_default()
+                    .fg(Color::Yellow);
+                if block.is_none() {
+                    let base = base_prefix(quote_depth, lists.len());
+                    block = Some(Block {
+                        kind: BlockKind::Paragraph,
+                        tokens: vec![],
+                        prefix_first: base.clone(),
+                        prefix_next: base,
+                        prefix_style,
+                        trailing_blank_line: true,
+                    });
+                }
+                if let Some(b) = block.as_mut() {
+                    if let Some(MdToken::Text(prev, _)) = b.tokens.last() {
+                        if !prev.is_empty() && !prev.ends_with(' ') {
+                            b.tokens.push(MdToken::Text(" ".to_string(), Style::default()));
+                        }
+                    }
+                    b.tokens.push(MdToken::Text(t.to_string(), code_style));
+                }
+            }
+            MdEvent::Text(t) => {
+                let style = style_stack.last().copied().unwrap_or_default();
+                if block.is_none() {
+                    let base = base_prefix(quote_depth, lists.len());
+                    block = Some(Block {
+                        kind: BlockKind::Paragraph,
+                        tokens: vec![],
+                        prefix_first: base.clone(),
+                        prefix_next: base,
+                        prefix_style,
+                        trailing_blank_line: true,
+                    });
+                }
+                if let Some(b) = block.as_mut() {
+                    push_text(b, &t, style);
+                }
+            }
+            MdEvent::SoftBreak => {
+                if let Some(b) = block.as_mut() {
+                    b.tokens.push(MdToken::Text(" ".to_string(), Style::default()));
+                }
+            }
+            MdEvent::HardBreak => {
+                if let Some(b) = block.as_mut() {
+                    b.tokens.push(MdToken::Newline);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    flush_block(&mut out, &mut block);
+
+    while out.last().is_some_and(|l| l.spans.is_empty()) {
+        out.pop();
+    }
+
+    out
+}
+
+fn short_time(iso: &str) -> Option<&str> {
+    // Best-effort extraction of "HH:MM:SS" from RFC3339 timestamps.
+    // Example: "2026-01-02T09:31:00.123Z" -> "09:31:00"
+    let t = iso.split('T').nth(1)?;
+    let time = t.split(['.', 'Z', '+', '-']).next()?;
+    if time.len() >= 8 {
+        Some(&time[..8])
+    } else {
+        Some(time)
+    }
+}
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let mut out = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i >= max.saturating_sub(1) {
+            break;
+        }
+        out.push(ch);
+    }
+    out.push('…');
+    out
+}
+
+fn contains_ci(haystack: &str, needle: &str) -> bool {
+    let needle = needle.trim();
+    if needle.is_empty() {
+        return true;
+    }
+    haystack.to_lowercase().contains(&needle.to_lowercase())
+}
+
+#[derive(Debug, Clone)]
+struct ProjectRow {
+    id: Uuid,
+    name: String,
+}
+
+fn filtered_projects(app: &AppState) -> Vec<ProjectRow> {
+    let mut list = projects_list(&app.projects_store);
+    let q = app.project_filter.trim();
+    if !q.is_empty() {
+        list.retain(|p| contains_ci(&p.name, q));
+    }
+    list
+}
+
+fn projects_list(store: &serde_json::Value) -> Vec<ProjectRow> {
+    let projects_obj = store.get("projects").and_then(|v| v.as_object());
+    let Some(projects_obj) = projects_obj else {
+        return vec![];
+    };
+
+    let mut rows = Vec::with_capacity(projects_obj.len());
+    for (id_str, project) in projects_obj.iter() {
+        let Ok(id) = Uuid::parse_str(id_str) else {
+            continue;
+        };
+        let name = project
+            .get("name")
+            .and_then(|v| v.as_str())
+            .or_else(|| project.get("title").and_then(|v| v.as_str()))
+            .unwrap_or("(unnamed)")
+            .to_string();
+        rows.push(ProjectRow { id, name });
+    }
+
+    rows.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    rows
+}
+
+fn exec_list(store: &serde_json::Value) -> Vec<ExecRow> {
+    let exec_obj = store.get("execution_processes").and_then(|v| v.as_object());
+    let Some(exec_obj) = exec_obj else {
+        return vec![];
+    };
+
+    let mut rows = Vec::with_capacity(exec_obj.len());
+    for (id_str, exec) in exec_obj.iter() {
+        let Ok(id) = Uuid::parse_str(id_str) else {
+            continue;
+        };
+        let session_id = exec
+            .get("session_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
+        let run_reason = exec
+            .get("run_reason")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let status = exec
+            .get("status")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let created_at = exec
+            .get("created_at")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let dropped = exec
+            .get("dropped")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        rows.push(ExecRow {
+            id,
+            session_id,
+            run_reason,
+            status,
+            created_at,
+            dropped,
+        });
+    }
+
+    rows.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    rows
+}
+
+fn active_exec_id(execs: &[ExecRow]) -> Option<Uuid> {
+    let mut filtered: Vec<&ExecRow> = execs.iter().filter(|e| !e.dropped).collect();
+    if filtered.is_empty() {
+        return None;
+    }
+    // exec_list is sorted oldest -> newest, keep that invariant for selection.
+    filtered.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+    let running: Vec<&ExecRow> = filtered
+        .iter()
+        .copied()
+        .filter(|e| e.status.as_deref() == Some("running"))
+        .collect();
+    if !running.is_empty() {
+        if let Some(non_dev) = running
+            .iter()
+            .copied()
+            .find(|e| e.run_reason.as_deref() != Some("dev_server"))
+        {
+            return Some(non_dev.id);
+        }
+        return Some(running[running.len() - 1].id);
+    }
+
+    if let Some(agent) = filtered
+        .iter()
+        .rev()
+        .copied()
+        .find(|e| e.run_reason.as_deref() == Some("coding_agent"))
+    {
+        return Some(agent.id);
+    }
+
+    Some(filtered[filtered.len() - 1].id)
+}
+
+fn spawn_input_reader(ui_tx: mpsc::Sender<UiEvent>) {
+    std::thread::spawn(move || {
+        loop {
+            if crossterm::event::poll(Duration::from_millis(50)).unwrap_or(false) {
+                if let Ok(ev) = crossterm::event::read() {
+                    if ui_tx.blocking_send(UiEvent::Crossterm(ev)).is_err() {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+}
+
+fn spawn_tick(ui_tx: mpsc::Sender<UiEvent>, period: Duration) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(period);
+        loop {
+            interval.tick().await;
+            if ui_tx.send(UiEvent::Tick).await.is_err() {
+                break;
+            }
+        }
+    });
+}
+
+fn set_selected_project(app: &mut AppState, project_id: Option<Uuid>) {
+    if app.selected_project_id == project_id {
+        return;
+    }
+    app.selected_project_id = project_id;
+    let _ = app.project_sel_tx.send(project_id);
+    app.prefs.selected_project_id = project_id;
+    save_prefs(&app.prefs);
+    // Project switch invalidates task/attempt/exec/log selections immediately.
+    set_selected_task(app, None);
+}
+
+fn set_selected_task(app: &mut AppState, task_id: Option<Uuid>) {
+    if app.selected_task_id == task_id {
+        return;
+    }
+
+    app.selected_task_id = task_id;
+
+    // Clear dependent panes.
+    app.attempts.clear();
+    app.selected_attempt_index = 0;
+    set_selected_attempt(app, None);
+
+    // Fetch attempts for the new task selection.
+    if let Some(task_id) = task_id {
+        let base_url = app.backend_url.clone();
+        let net_tx = app.net_tx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            load_attempts_task(base_url, task_id, net_tx).await;
+        });
+    }
+}
+
+fn set_selected_attempt(app: &mut AppState, attempt_id: Option<Uuid>) {
+    if app.selected_attempt_id == attempt_id {
+        return;
+    }
+
+    app.selected_attempt_id = attempt_id;
+
+    app.exec_store = serde_json::json!({ "execution_processes": {} });
+    set_selected_exec(app, None);
+
+    app.diff_store = serde_json::json!({ "entries": {} });
+    app.selected_diff_index = 0;
+    app.diff_scroll_offset = 0;
+
+    let _ = app.attempt_sel_tx.send(attempt_id);
+}
+
+fn set_selected_exec(app: &mut AppState, exec_id: Option<Uuid>) {
+    if app.selected_exec_id == exec_id {
+        return;
+    }
+
+    app.selected_exec_id = exec_id;
+    reset_logs(app);
+    let _ = app.exec_sel_tx.send(exec_id);
+}
+
+fn handle_confirm_action(app: &mut AppState, action: ConfirmAction) {
+    match action {
+        ConfirmAction::StopExec { exec_id } => {
+            let base_url = app.backend_url.clone();
+            let net_tx = app.net_tx.clone();
+            tokio::spawn(async move {
+                match stop_exec_http(&base_url, exec_id).await {
+                    Ok(()) => {}
+                    Err(e) => {
+                        let _ = net_tx
+                            .send(NetEvent::Error(format!("stop exec failed: {e}")))
+                            .await;
+                    }
+                }
+            });
+        }
+    }
+}
+
+fn submit_composer(app: &mut AppState) {
+    let msg = app.composer_buffer.trim().to_string();
+    if msg.is_empty() {
+        app.composer_active = false;
+        app.composer_buffer.clear();
+        return;
+    }
+
+    app.composer_active = false;
+    app.composer_buffer.clear();
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    let attempt_id = app.selected_attempt_id;
+
+    let execs = exec_list(&app.exec_store);
+    let active = app
+        .selected_exec_id
+        .and_then(|id| execs.iter().find(|e| e.id == id));
+    let session_id = active.and_then(|e| e.session_id);
+    let is_running = active.and_then(|e| e.status.as_deref()) == Some("running");
+
+    tokio::spawn(async move {
+        let session_id = match session_id {
+            Some(id) => Some(id),
+            None => match attempt_id {
+                Some(workspace_id) => match latest_session_id_http(&base_url, workspace_id).await {
+                    Ok(id) => id,
+                    Err(e) => {
+                        let _ = net_tx
+                            .send(NetEvent::Error(format!("failed to load sessions: {e}")))
+                            .await;
+                        return;
+                    }
+                },
+                None => None,
+            },
+        };
+
+        let Some(session_id) = session_id else {
+            let _ = net_tx
+                .send(NetEvent::Error(
+                    "no session available for this attempt".to_string(),
+                ))
+                .await;
+            return;
+        };
+
+        let result = if is_running {
+            queue_follow_up_http(&base_url, session_id, &msg).await
+        } else {
+            follow_up_http(&base_url, session_id, &msg).await
+        };
+
+        match result {
+            Ok(()) => {}
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("follow-up failed: {e}")))
+                    .await;
+            }
+        }
+    });
+}
+
+fn select_adjacent_attempt(app: &mut AppState, delta: i32) {
+    if app.attempts.is_empty() {
+        return;
+    }
+
+    let cur = app
+        .selected_attempt_id
+        .and_then(|id| app.attempts.iter().position(|a| a.id == id))
+        .unwrap_or(app.selected_attempt_index.min(app.attempts.len() - 1));
+
+    let next = clamp_index(cur, delta, app.attempts.len());
+    if next == cur {
+        return;
+    }
+
+    app.selected_attempt_index = next;
+    let id = app.attempts.get(next).map(|a| a.id);
+    set_selected_attempt(app, id);
+}
+
+fn move_active_status(app: &mut AppState, delta: i32) {
+    let statuses = board_statuses(app);
+    if statuses.is_empty() {
+        return;
+    }
+
+    let cur = statuses
+        .iter()
+        .position(|s| *s == app.tasks_active_column)
+        .unwrap_or(0);
+    let next = clamp_index(cur, delta, statuses.len());
+    app.tasks_active_column = statuses[next];
+    ensure_selected_task_in_active_column(app);
+}
+
+fn select_adjacent_diff_file(app: &mut AppState, delta: i32) {
+    let rows = diff_rows(&app.diff_store);
+    if rows.is_empty() {
+        app.selected_diff_index = 0;
+        return;
+    }
+
+    let cur = app.selected_diff_index.min(rows.len() - 1);
+    let next = clamp_index(cur, delta, rows.len());
+    if next == cur {
+        return;
+    }
+
+    app.selected_diff_index = next;
+    app.diff_scroll_offset = 0;
+}
+
+fn ensure_selection_visible(app: &mut AppState) {
+    ensure_project_selection(app);
+    ensure_task_selection(app);
+    ensure_attempt_selection(app);
+    ensure_exec_selection(app);
+}
+
+fn ensure_project_selection(app: &mut AppState) {
+    let projects = filtered_projects(app);
+    if projects.is_empty() {
+        app.selected_project_index = 0;
+        set_selected_project(app, None);
+        return;
+    }
+
+    if let Some(id) = app.selected_project_id
+        && let Some(idx) = projects.iter().position(|p| p.id == id)
+    {
+        app.selected_project_index = idx;
+        return;
+    }
+
+    app.selected_project_index = 0;
+    set_selected_project(app, Some(projects[0].id));
+}
+
+fn ensure_task_selection(app: &mut AppState) {
+    if app.selected_project_id.is_none() {
+        set_selected_task(app, None);
+        return;
+    }
+
+    let list = tasks_filtered_by_status(app, app.tasks_active_column);
+    if list.is_empty() {
+        set_selected_task(app, None);
+        return;
+    }
+
+    if let Some(id) = app.selected_task_id
+        && let Some(idx) = list.iter().position(|t| t.id == id)
+    {
+        app.board_index_by_status[app.tasks_active_column.idx()] = idx;
+        return;
+    }
+
+    let idx = app.board_index_by_status[app.tasks_active_column.idx()].min(list.len() - 1);
+    set_selected_task(app, Some(list[idx].id));
+}
+
+fn ensure_attempt_selection(app: &mut AppState) {
+    if app.attempts.is_empty() {
+        app.selected_attempt_index = 0;
+        set_selected_attempt(app, None);
+        return;
+    }
+
+    if let Some(id) = app.selected_attempt_id
+        && let Some(idx) = app.attempts.iter().position(|a| a.id == id)
+    {
+        app.selected_attempt_index = idx;
+        return;
+    }
+
+    app.selected_attempt_index = app.selected_attempt_index.min(app.attempts.len() - 1);
+    set_selected_attempt(app, Some(app.attempts[app.selected_attempt_index].id));
+}
+
+fn ensure_exec_selection(app: &mut AppState) {
+    let execs = exec_list(&app.exec_store);
+    set_selected_exec(app, active_exec_id(&execs));
+}
+
+fn sync_tasks_active_column(app: &mut AppState) {
+    let Some(task_id) = app.selected_task_id else {
+        return;
+    };
+    let Some(task) = find_task(&app.tasks_store, task_id) else {
+        return;
+    };
+    app.tasks_active_column = match task.status {
+        TaskStatus::Cancelled if !app.show_cancelled => TaskStatus::Done,
+        other => other,
+    };
+}
+
+fn prev_board_column(col: TaskStatus) -> TaskStatus {
+    match col {
+        TaskStatus::Todo => TaskStatus::Todo,
+        TaskStatus::InProgress => TaskStatus::Todo,
+        TaskStatus::InReview => TaskStatus::InProgress,
+        TaskStatus::Done => TaskStatus::InReview,
+        TaskStatus::Cancelled => TaskStatus::Done,
+    }
+}
+
+fn next_board_column(col: TaskStatus) -> TaskStatus {
+    match col {
+        TaskStatus::Todo => TaskStatus::InProgress,
+        TaskStatus::InProgress => TaskStatus::InReview,
+        TaskStatus::InReview => TaskStatus::Done,
+        TaskStatus::Done => TaskStatus::Done,
+        TaskStatus::Cancelled => TaskStatus::Cancelled,
+    }
+}
+
+struct TasksByStatus {
+    todo: Vec<TaskRow>,
+    inprogress: Vec<TaskRow>,
+    inreview: Vec<TaskRow>,
+    done: Vec<TaskRow>,
+    cancelled: Vec<TaskRow>,
+}
+
+fn tasks_by_status(tasks: &[TaskRow]) -> TasksByStatus {
+    let mut out = TasksByStatus {
+        todo: vec![],
+        inprogress: vec![],
+        inreview: vec![],
+        done: vec![],
+        cancelled: vec![],
+    };
+
+    for t in tasks {
+        match t.status {
+            TaskStatus::Todo => out.todo.push(t.clone()),
+            TaskStatus::InProgress => out.inprogress.push(t.clone()),
+            TaskStatus::InReview => out.inreview.push(t.clone()),
+            TaskStatus::Done => out.done.push(t.clone()),
+            TaskStatus::Cancelled => out.cancelled.push(t.clone()),
+        }
+    }
+
+    let sort = |a: &TaskRow, b: &TaskRow| {
+        b.updated_at
+            .cmp(&a.updated_at)
+            .then_with(|| a.title.cmp(&b.title))
+    };
+    out.todo.sort_by(sort);
+    out.inprogress.sort_by(sort);
+    out.inreview.sort_by(sort);
+    out.done.sort_by(sort);
+    out.cancelled.sort_by(sort);
+
+    out
+}
+
+fn tasks_list(store: &serde_json::Value) -> Vec<TaskRow> {
+    let tasks_obj = store.get("tasks").and_then(|v| v.as_object());
+    let Some(tasks_obj) = tasks_obj else {
+        return vec![];
+    };
+
+    let mut rows = Vec::with_capacity(tasks_obj.len());
+    for (id_str, task_val) in tasks_obj.iter() {
+        let Ok(id) = Uuid::parse_str(id_str) else {
+            continue;
+        };
+        let status_str = task_val.get("status").and_then(|v| v.as_str());
+        let Some(status) = status_str.and_then(TaskStatus::from_str) else {
+            continue;
+        };
+        let title = task_val
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("(untitled)")
+            .to_string();
+        let updated_at = task_val
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let has_in_progress_attempt = task_val
+            .get("has_in_progress_attempt")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let last_attempt_failed = task_val
+            .get("last_attempt_failed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let executor = task_val
+            .get("executor")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let description = task_val
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        rows.push(TaskRow {
+            id,
+            title,
+            status,
+            updated_at,
+            has_in_progress_attempt,
+            last_attempt_failed,
+            executor,
+            description,
+        });
+    }
+
+    rows
+}
+
+fn tasks_filtered_base(app: &AppState) -> Vec<TaskRow> {
+    let mut tasks = tasks_list(&app.tasks_store);
+    let q = app.task_filter.trim();
+    if !q.is_empty() {
+        tasks.retain(|t| contains_ci(&t.title, q));
+    }
+    tasks
+}
+
+fn tasks_filtered_table(app: &AppState) -> Vec<TaskRow> {
+    tasks_filtered_base(app)
+}
+
+fn tasks_filtered_by_status(app: &AppState, status: TaskStatus) -> Vec<TaskRow> {
+    let mut tasks = tasks_filtered_base(app);
+    tasks.retain(|t| t.status == status);
+    tasks.sort_by(|a, b| {
+        b.updated_at
+            .cmp(&a.updated_at)
+            .then_with(|| a.title.cmp(&b.title))
+    });
+    tasks
+}
+
+fn find_task(store: &serde_json::Value, task_id: Uuid) -> Option<TaskRow> {
+    let task_val = store
+        .get("tasks")
+        .and_then(|v| v.as_object())?
+        .get(&task_id.to_string())?;
+
+    let status_str = task_val.get("status").and_then(|v| v.as_str())?;
+    let status = TaskStatus::from_str(status_str)?;
+    let title = task_val
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(untitled)")
+        .to_string();
+
+    let updated_at = task_val
+        .get("updated_at")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let has_in_progress_attempt = task_val
+        .get("has_in_progress_attempt")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let last_attempt_failed = task_val
+        .get("last_attempt_failed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let executor = task_val
+        .get("executor")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let description = task_val
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    Some(TaskRow {
+        id: task_id,
+        title,
+        status,
+        updated_at,
+        has_in_progress_attempt,
+        last_attempt_failed,
+        executor,
+        description,
+    })
+}
+
+fn task_index_in(list: &[TaskRow], selected_id: Option<Uuid>) -> Option<usize> {
+    let selected_id = selected_id?;
+    list.iter().position(|t| t.id == selected_id)
+}
+
+fn render_task_line(task: &TaskRow) -> Line<'static> {
+    let mut spans: Vec<Span<'static>> = vec![];
+    if task.has_in_progress_attempt {
+        spans.push(Span::styled("RUN ", Style::default().fg(Color::Green)));
+    } else if task.last_attempt_failed {
+        spans.push(Span::styled("FAIL ", Style::default().fg(Color::Red)));
+    }
+    spans.push(Span::raw(task.title.clone()));
+    Line::from(spans)
+}
+
+fn select_adjacent_task(app: &mut AppState, delta: i32) {
+    let tasks = tasks_filtered_base(app);
+    if tasks.is_empty() {
+        set_selected_task(app, None);
+        return;
+    }
+
+    let by_status = tasks_by_status(&tasks);
+    let list: &[TaskRow] = match app.tasks_active_column {
+        TaskStatus::Todo => &by_status.todo,
+        TaskStatus::InProgress => &by_status.inprogress,
+        TaskStatus::InReview => &by_status.inreview,
+        TaskStatus::Done => &by_status.done,
+        TaskStatus::Cancelled => &by_status.cancelled,
+    };
+    if list.is_empty() {
+        set_selected_task(app, None);
+        return;
+    }
+
+    let cur_idx = task_index_in(list, app.selected_task_id).unwrap_or(0);
+    let next_idx = clamp_index(cur_idx, delta, list.len());
+    app.board_index_by_status[app.tasks_active_column.idx()] = next_idx;
+    set_selected_task(app, Some(list[next_idx].id));
+}
+
+fn clamp_index(cur: usize, delta: i32, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    if delta < 0 {
+        cur.saturating_sub(delta.unsigned_abs() as usize)
+    } else {
+        (cur + delta as usize).min(len - 1)
+    }
+}
+
+fn request_move_selected_task(app: &mut AppState, direction: i32) {
+    let Some(task_id) = app.selected_task_id else {
+        return;
+    };
+    let Some(task) = find_task(&app.tasks_store, task_id) else {
+        return;
+    };
+    let Some(next) = next_status(task.status, direction) else {
+        return;
+    };
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        if let Err(e) = update_task_status_http(&base_url, task_id, next).await {
+            let _ = net_tx
+                .send(NetEvent::Error(format!("status update failed: {e}")))
+                .await;
+        }
+    });
+}
+
+fn ensure_selected_task_in_active_column(app: &mut AppState) {
+    let tasks = tasks_filtered_base(app);
+    if tasks.is_empty() {
+        set_selected_task(app, None);
+        return;
+    }
+
+    let by_status = tasks_by_status(&tasks);
+    let list: &[TaskRow] = match app.tasks_active_column {
+        TaskStatus::Todo => &by_status.todo,
+        TaskStatus::InProgress => &by_status.inprogress,
+        TaskStatus::InReview => &by_status.inreview,
+        TaskStatus::Done => &by_status.done,
+        TaskStatus::Cancelled => &by_status.cancelled,
+    };
+    if list.is_empty() {
+        set_selected_task(app, None);
+        return;
+    }
+
+    if let Some(selected_id) = app.selected_task_id
+        && let Some(idx) = list.iter().position(|t| t.id == selected_id)
+    {
+        app.board_index_by_status[app.tasks_active_column.idx()] = idx;
+        return;
+    }
+
+    let idx = app.board_index_by_status[app.tasks_active_column.idx()].min(list.len() - 1);
+    set_selected_task(app, Some(list[idx].id));
+}
+
+fn next_status(status: TaskStatus, direction: i32) -> Option<TaskStatus> {
+    let chain = [
+        TaskStatus::Todo,
+        TaskStatus::InProgress,
+        TaskStatus::InReview,
+        TaskStatus::Done,
+    ];
+    let idx = chain.iter().position(|s| *s == status)?;
+    if direction < 0 {
+        idx.checked_sub(1).map(|i| chain[i])
+    } else {
+        chain.get(idx + 1).copied()
+    }
+}
+
+async fn update_task_status_http(
+    base_url: &str,
+    task_id: Uuid,
+    status: TaskStatus,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!("{}/api/tasks/{}", base_url.trim_end_matches('/'), task_id);
+    let body = serde_json::json!({ "status": status.as_api_str() });
+
+    let resp = client.put(url).json(&body).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected status update");
+    }
+    Ok(())
+}
+
+async fn stop_exec_http(base_url: &str, exec_id: Uuid) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/execution-processes/{}/stop",
+        base_url.trim_end_matches('/'),
+        exec_id
+    );
+
+    let resp = client.post(url).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected stop request");
+    }
+    Ok(())
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct SessionDto {
+    id: Uuid,
+}
+
+async fn latest_session_id_http(base_url: &str, workspace_id: Uuid) -> anyhow::Result<Option<Uuid>> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/sessions?workspace_id={workspace_id}",
+        base_url.trim_end_matches('/')
+    );
+
+    let resp = client.get(url).send().await?;
+    let api = resp.json::<ApiResponse<Vec<SessionDto>>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected sessions request");
+    }
+    Ok(api
+        .into_data()
+        .unwrap_or_default()
+        .into_iter()
+        .next()
+        .map(|s| s.id))
+}
+
+async fn queue_follow_up_http(
+    base_url: &str,
+    session_id: Uuid,
+    message: &str,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/sessions/{session_id}/queue",
+        base_url.trim_end_matches('/')
+    );
+    let body = serde_json::json!({ "message": message, "variant": null });
+
+    let resp = client.post(url).json(&body).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected queue request");
+    }
+    Ok(())
+}
+
+async fn follow_up_http(base_url: &str, session_id: Uuid, prompt: &str) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/sessions/{session_id}/follow-up",
+        base_url.trim_end_matches('/')
+    );
+    let body = serde_json::json!({
+        "prompt": prompt,
+        "variant": null,
+        "retry_process_id": null,
+        "force_when_dirty": null,
+        "perform_git_reset": null,
+    });
+
+    let resp = client.post(url).json(&body).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected follow-up request");
+    }
+    Ok(())
+}
