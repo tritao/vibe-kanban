@@ -3741,7 +3741,7 @@ fn sanitize_tui_text(s: &str) -> std::borrow::Cow<'_, str> {
     fn needs_sanitize(s: &str) -> bool {
         s.as_bytes()
             .iter()
-            .any(|&b| b == b'\x1b' || b == b'\r' || b < 0x20 || b == 0x7f)
+            .any(|&b| b == b'\x1b' || b == b'\r' || (b < 0x20 && b != b'\n') || b == 0x7f)
     }
 
     if !needs_sanitize(s) {
@@ -3766,6 +3766,10 @@ fn sanitize_tui_text(s: &str) -> std::borrow::Cow<'_, str> {
                 '\x1b' => state = State::Esc,
                 '\r' => {
                     // Drop CR to avoid carriage-return overwrites.
+                }
+                '\n' => {
+                    // Preserve newlines for Markdown parsing and multi-line rendering.
+                    out.push('\n');
                 }
                 '\t' => {
                     // Expand tabs to spaces for consistent width handling.
