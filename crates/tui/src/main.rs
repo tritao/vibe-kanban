@@ -2245,7 +2245,7 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                 .title(title)
                 .border_style(border_style),
         )
-        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
         .highlight_symbol(
             if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files {
                 "▶ "
