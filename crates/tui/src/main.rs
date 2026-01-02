@@ -1,5 +1,5 @@
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{HashMap, hash_map::DefaultHasher},
     fs,
     hash::{Hash, Hasher},
     io,
@@ -89,6 +89,12 @@ enum NetEvent {
     DiffReset,
     DiffPatch(json_patch::Patch),
     DiffReconnect,
+    GitOpFinished {
+        repo_id: Option<Uuid>,
+        kind: GitOpKind,
+        ok: bool,
+        message: String,
+    },
     LogStreamStatus(StreamStatus),
     LogReset,
     LogPatch(json_patch::Patch),
@@ -104,6 +110,50 @@ enum StreamStatus {
     Completed,
     Disconnected,
     Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum GitOpKind {
+    Status,
+    Merge,
+    Rebase,
+    CreatePr,
+    Abort,
+    Push,
+    ForcePush,
+    AttachPr,
+    PrComments,
+}
+
+impl GitOpKind {
+    fn label(&self) -> &'static str {
+        match self {
+            GitOpKind::Status => "Status",
+            GitOpKind::Merge => "Merge",
+            GitOpKind::Rebase => "Rebase",
+            GitOpKind::CreatePr => "Create PR",
+            GitOpKind::Abort => "Abort",
+            GitOpKind::Push => "Push",
+            GitOpKind::ForcePush => "Force push",
+            GitOpKind::AttachPr => "Attach PR",
+            GitOpKind::PrComments => "PR comments",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct GitOpState {
+    kind: GitOpKind,
+    started_at: Instant,
+    finished_at: Option<Instant>,
+    ok: Option<bool>,
+}
+
+#[derive(Debug, Clone)]
+struct ToastState {
+    message: String,
+    color: Color,
+    expires_at: Option<Instant>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -513,6 +563,10 @@ struct AppState {
     repo_statuses: Vec<RepoBranchStatus>,
     selected_repo_index: usize,
 
+    git_ops: HashMap<Uuid, GitOpState>,
+    git_op_global: Option<GitOpState>,
+    toast: Option<ToastState>,
+
     net_tx: mpsc::Sender<NetEvent>,
     project_sel_tx: watch::Sender<Option<Uuid>>,
     attempt_sel_tx: watch::Sender<Option<Uuid>>,
@@ -614,6 +668,10 @@ impl AppState {
 
             repo_statuses: vec![],
             selected_repo_index: 0,
+
+            git_ops: HashMap::new(),
+            git_op_global: None,
+            toast: None,
 
             net_tx,
             project_sel_tx,
@@ -763,6 +821,9 @@ async fn main() -> anyhow::Result<()> {
                             app.diff_preview_next_refresh_at = None;
                         }
                         if clamp_scroll_offsets(&mut app, layout) {
+                            dirty = true;
+                        }
+                        if update_git_activity_indicators(&mut app, now) {
                             dirty = true;
                         }
                         if dirty {
@@ -972,6 +1033,14 @@ fn handle_net_event(app: &mut AppState, event: NetEvent) {
         }
         NetEvent::DiffReconnect => {
             request_diff_reconnect(app);
+        }
+        NetEvent::GitOpFinished {
+            repo_id,
+            kind,
+            ok,
+            message,
+        } => {
+            finish_git_op(app, repo_id, kind, ok, message);
         }
         NetEvent::BranchStatusLoaded(statuses) => {
             app.repo_statuses = statuses;
@@ -1898,10 +1967,19 @@ fn render_bottom_bar(app: &AppState) -> Paragraph<'static> {
             "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | w wrap | M merge | P PR | R rebase | S status | q quit"
         }
     };
-    Paragraph::new(Line::from(Span::styled(
-        text,
-        Style::default().add_modifier(Modifier::DIM),
-    )))
+    if let Some(toast) = app.toast.as_ref() {
+        let line = Line::from(vec![
+            Span::styled(toast.message.clone(), Style::default().fg(toast.color)),
+            Span::raw("  |  "),
+            Span::styled(text, Style::default().add_modifier(Modifier::DIM)),
+        ]);
+        Paragraph::new(line)
+    } else {
+        Paragraph::new(Line::from(Span::styled(
+            text,
+            Style::default().add_modifier(Modifier::DIM),
+        )))
+    }
 }
 
 fn board_statuses(app: &AppState) -> Vec<TaskStatus> {
@@ -2838,6 +2916,112 @@ enum DiffRepoAction {
     RefreshStatus,
 }
 
+fn git_kind_for_diff_action(action: DiffRepoAction) -> GitOpKind {
+    match action {
+        DiffRepoAction::RefreshStatus => GitOpKind::Status,
+        DiffRepoAction::Merge => GitOpKind::Merge,
+        DiffRepoAction::Rebase => GitOpKind::Rebase,
+        DiffRepoAction::CreatePr => GitOpKind::CreatePr,
+    }
+}
+
+#[derive(Clone)]
+struct RepoBarButtonSpec {
+    action: DiffRepoAction,
+    label: String,
+    style: Style,
+}
+
+const GIT_SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+fn repo_bar_button_specs(
+    app: &AppState,
+    repo_id: Option<Uuid>,
+    now: Instant,
+) -> Vec<RepoBarButtonSpec> {
+    let running_kind = repo_id
+        .and_then(|id| app.git_ops.get(&id))
+        .filter(|s| s.finished_at.is_none())
+        .map(|s| s.kind)
+        .or_else(|| {
+            app.git_op_global
+                .as_ref()
+                .filter(|s| s.finished_at.is_none())
+                .map(|s| s.kind)
+        });
+
+    let done_for_repo: Option<(GitOpKind, bool, Instant)> = repo_id
+        .and_then(|id| app.git_ops.get(&id))
+        .and_then(|s| s.finished_at.map(|t| (s.kind, s.ok.unwrap_or(false), t)));
+
+    let done_global: Option<(GitOpKind, bool, Instant)> = app
+        .git_op_global
+        .as_ref()
+        .and_then(|s| s.finished_at.map(|t| (s.kind, s.ok.unwrap_or(false), t)));
+    let done = done_for_repo.or(done_global);
+
+    let base = [
+        (DiffRepoAction::Merge, "[M]erge", Color::Green),
+        (DiffRepoAction::CreatePr, "[P]R", Color::Blue),
+        (DiffRepoAction::Rebase, "[R]ebase", Color::Yellow),
+        (DiffRepoAction::RefreshStatus, "[S]tatus", Color::Cyan),
+    ];
+
+    base.into_iter()
+        .map(|(action, label, color)| {
+            let kind = git_kind_for_diff_action(action);
+
+            let recently_done = done.is_some_and(|(done_kind, _, done_at)| {
+                done_kind == kind && now.saturating_duration_since(done_at) < Duration::from_secs(2)
+            });
+
+            let is_running = running_kind == Some(kind);
+            let any_running = running_kind.is_some();
+            let enabled = !any_running || is_running;
+
+            let mut rendered_label = label.to_string();
+            if is_running {
+                let started_at = repo_id
+                    .and_then(|id| app.git_ops.get(&id))
+                    .and_then(|s| (s.kind == kind).then_some(s.started_at))
+                    .or_else(|| {
+                        app.git_op_global
+                            .as_ref()
+                            .and_then(|s| (s.kind == kind).then_some(s.started_at))
+                    })
+                    .unwrap_or(now);
+                let elapsed = now.saturating_duration_since(started_at);
+                let secs = elapsed.as_secs().max(1);
+                let frame = GIT_SPINNER_FRAMES
+                    [((elapsed.as_millis() / 90) as usize) % GIT_SPINNER_FRAMES.len()];
+                rendered_label = format!("{label}… {frame} {secs}s");
+            } else if recently_done {
+                let ok = done.map(|(_, ok, _)| ok).unwrap_or(true);
+                rendered_label = if ok {
+                    format!("{label} ✓")
+                } else {
+                    format!("{label} !")
+                };
+            }
+
+            let mut style = Style::default().fg(color).add_modifier(Modifier::BOLD);
+            if !enabled {
+                style = style.add_modifier(Modifier::DIM);
+            }
+            let done_ok = done.map(|(_, ok, _)| ok).unwrap_or(true);
+            if recently_done && !done_ok {
+                style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
+            }
+
+            RepoBarButtonSpec {
+                action,
+                label: rendered_label,
+                style,
+            }
+        })
+        .collect()
+}
+
 fn diff_repo_bar_action_at(
     app: &AppState,
     area: ratatui::layout::Rect,
@@ -2891,6 +3075,9 @@ fn diff_repo_bar_action_at(
         "(no attempt)".to_string()
     };
 
+    let now = Instant::now();
+    let buttons = repo_bar_button_specs(app, repo.map(|r| r.repo_id), now);
+
     let mut right_plain = String::new();
     let mut any_badge = false;
     if ahead > 0 {
@@ -2921,7 +3108,13 @@ fn diff_repo_bar_action_at(
     if any_badge {
         right_plain.push_str("  ");
     }
-    right_plain.push_str("[M]erge [P]R [R]ebase [S]tatus");
+    right_plain.push_str(
+        &buttons
+            .iter()
+            .map(|b| b.label.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
     let right_w = display_width(&right_plain);
 
     let can_show_right = w > right_w + 2;
@@ -2960,17 +3153,11 @@ fn diff_repo_bar_action_at(
         cursor = cursor.saturating_add(2); // before buttons
     }
 
-    let buttons: [(&str, DiffRepoAction); 4] = [
-        ("[M]erge", DiffRepoAction::Merge),
-        ("[P]R", DiffRepoAction::CreatePr),
-        ("[R]ebase", DiffRepoAction::Rebase),
-        ("[S]tatus", DiffRepoAction::RefreshStatus),
-    ];
-    for (idx, (label, action)) in buttons.iter().enumerate() {
+    for (idx, b) in buttons.iter().enumerate() {
         let start = cursor;
-        let end = start.saturating_add(display_width(label));
+        let end = start.saturating_add(display_width(&b.label));
         if inner_col >= start && inner_col < end {
-            return Some(*action);
+            return Some(b.action);
         }
         cursor = end;
         if idx + 1 < buttons.len() {
@@ -2984,7 +3171,63 @@ fn diff_repo_bar_action_at(
 fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoAction) {
     match action {
         DiffRepoAction::RefreshStatus => {
-            request_branch_status_refresh(app);
+            let Some(attempt_id) = app.selected_attempt_id else {
+                set_toast(
+                    app,
+                    "Git: no attempt selected".to_string(),
+                    Color::Red,
+                    Some(Instant::now() + Duration::from_secs(2)),
+                );
+                return;
+            };
+
+            let repo = app.repo_statuses.get(
+                app.selected_repo_index
+                    .min(app.repo_statuses.len().saturating_sub(1)),
+            );
+            let (repo_id, repo_name) = match repo {
+                Some(r) => (Some(r.repo_id), r.repo_name.clone()),
+                None => (None, String::new()),
+            };
+
+            if !begin_git_op(app, repo_id, GitOpKind::Status, &repo_name) {
+                return;
+            }
+
+            let base_url = app.backend_url.clone();
+            let net_tx = app.net_tx.clone();
+            tokio::spawn(async move {
+                match branch_status_http(&base_url, attempt_id).await {
+                    Ok(statuses) => {
+                        let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                        let _ = net_tx
+                            .send(NetEvent::GitOpFinished {
+                                repo_id,
+                                kind: GitOpKind::Status,
+                                ok: true,
+                                message: if repo_name.is_empty() {
+                                    "Git: status updated".to_string()
+                                } else {
+                                    format!("Git: status updated ({repo_name})")
+                                },
+                            })
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = net_tx
+                            .send(NetEvent::Error(format!("branch status failed: {e}")))
+                            .await;
+                        let _ = net_tx
+                            .send(NetEvent::GitOpFinished {
+                                repo_id,
+                                kind: GitOpKind::Status,
+                                ok: false,
+                                message: "Git: status failed".to_string(),
+                            })
+                            .await;
+                    }
+                }
+            });
         }
         DiffRepoAction::Merge => {
             let Ok((repo_id, repo_name)) = resolve_repo_for_command(app, None) else {
@@ -2993,6 +3236,9 @@ fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoAction) {
             let Some(attempt_id) = app.selected_attempt_id else {
                 return;
             };
+            if !begin_git_op(app, Some(repo_id), GitOpKind::Merge, &repo_name) {
+                return;
+            }
             let base_url = app.backend_url.clone();
             let net_tx = app.net_tx.clone();
             tokio::spawn(async move {
@@ -3004,10 +3250,26 @@ fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoAction) {
                         if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                             let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                         }
+                        let _ = net_tx
+                            .send(NetEvent::GitOpFinished {
+                                repo_id: Some(repo_id),
+                                kind: GitOpKind::Merge,
+                                ok: true,
+                                message: format!("Git: merge finished ({repo_name})"),
+                            })
+                            .await;
                     }
                     Err(e) => {
                         let _ = net_tx
                             .send(NetEvent::Error(format!("merge failed: {e}")))
+                            .await;
+                        let _ = net_tx
+                            .send(NetEvent::GitOpFinished {
+                                repo_id: Some(repo_id),
+                                kind: GitOpKind::Merge,
+                                ok: false,
+                                message: format!("Git: merge failed ({repo_name})"),
+                            })
                             .await;
                     }
                 }
@@ -3020,6 +3282,9 @@ fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoAction) {
             let Some(attempt_id) = app.selected_attempt_id else {
                 return;
             };
+            if !begin_git_op(app, Some(repo_id), GitOpKind::Rebase, &repo_name) {
+                return;
+            }
             let base_url = app.backend_url.clone();
             let net_tx = app.net_tx.clone();
             tokio::spawn(async move {
@@ -3032,10 +3297,26 @@ fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoAction) {
                             let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                         }
                         let _ = net_tx.send(NetEvent::DiffReconnect).await;
+                        let _ = net_tx
+                            .send(NetEvent::GitOpFinished {
+                                repo_id: Some(repo_id),
+                                kind: GitOpKind::Rebase,
+                                ok: true,
+                                message: format!("Git: rebase finished ({repo_name})"),
+                            })
+                            .await;
                     }
                     Err(e) => {
                         let _ = net_tx
                             .send(NetEvent::Error(format!("rebase failed: {e}")))
+                            .await;
+                        let _ = net_tx
+                            .send(NetEvent::GitOpFinished {
+                                repo_id: Some(repo_id),
+                                kind: GitOpKind::Rebase,
+                                ok: false,
+                                message: format!("Git: rebase failed ({repo_name})"),
+                            })
                             .await;
                     }
                 }
@@ -3048,6 +3329,9 @@ fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoAction) {
             let Some(attempt_id) = app.selected_attempt_id else {
                 return;
             };
+            if !begin_git_op(app, Some(repo_id), GitOpKind::CreatePr, &repo_name) {
+                return;
+            }
             let title = app
                 .selected_task_id
                 .and_then(|id| find_task(&app.tasks_store, id).map(|t| t.title))
@@ -3078,10 +3362,26 @@ fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoAction) {
                         if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                             let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                         }
+                        let _ = net_tx
+                            .send(NetEvent::GitOpFinished {
+                                repo_id: Some(repo_id),
+                                kind: GitOpKind::CreatePr,
+                                ok: true,
+                                message: format!("Git: PR created ({repo_name})"),
+                            })
+                            .await;
                     }
                     Err(e) => {
                         let _ = net_tx
                             .send(NetEvent::Error(format!("pr create failed: {e}")))
+                            .await;
+                        let _ = net_tx
+                            .send(NetEvent::GitOpFinished {
+                                repo_id: Some(repo_id),
+                                kind: GitOpKind::CreatePr,
+                                ok: false,
+                                message: format!("Git: PR create failed ({repo_name})"),
+                            })
                             .await;
                     }
                 }
@@ -3133,6 +3433,9 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: ratatui::layout::Re
         "(no attempt)".to_string()
     };
 
+    let now = Instant::now();
+    let buttons = repo_bar_button_specs(app, repo.map(|r| r.repo_id), now);
+
     // Compute right-side width based on what we actually render (badges + buttons),
     // so we don't truncate the left segment unnecessarily.
     let mut right_plain = String::new();
@@ -3165,7 +3468,13 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: ratatui::layout::Re
     if any_badge {
         right_plain.push_str("  ");
     }
-    right_plain.push_str("[M]erge [P]R [R]ebase [S]tatus");
+    right_plain.push_str(
+        &buttons
+            .iter()
+            .map(|b| b.label.as_str())
+            .collect::<Vec<_>>()
+            .join(" "),
+    );
     let right_w = display_width(&right_plain);
 
     let can_show_right = w > right_w + 2;
@@ -3210,33 +3519,12 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: ratatui::layout::Re
         if !first {
             spans.push(Span::raw("  "));
         }
-        spans.push(Span::styled(
-            "[M]erge".to_string(),
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(
-            "[P]R".to_string(),
-            Style::default()
-                .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(
-            "[R]ebase".to_string(),
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(
-            "[S]tatus".to_string(),
-            Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
-        ));
+        for (idx, b) in buttons.iter().enumerate() {
+            spans.push(Span::styled(b.label.clone(), b.style));
+            if idx + 1 < buttons.len() {
+                spans.push(Span::raw(" "));
+            }
+        }
     }
 
     let p = Paragraph::new(Line::from(spans)).block(
@@ -8013,6 +8301,136 @@ fn request_diff_reconnect(app: &mut AppState) {
     let _ = app.diff_reconnect_tx.send(next);
 }
 
+fn set_toast(app: &mut AppState, message: String, color: Color, expires_at: Option<Instant>) {
+    app.toast = Some(ToastState {
+        message,
+        color,
+        expires_at,
+    });
+}
+
+fn begin_git_op(
+    app: &mut AppState,
+    repo_id: Option<Uuid>,
+    kind: GitOpKind,
+    repo_name: &str,
+) -> bool {
+    let now = Instant::now();
+
+    let already_running = match repo_id {
+        Some(id) => app
+            .git_ops
+            .get(&id)
+            .is_some_and(|s| s.finished_at.is_none()),
+        None => app
+            .git_op_global
+            .as_ref()
+            .is_some_and(|s| s.finished_at.is_none()),
+    };
+    if already_running {
+        app.last_notice = Some(format!("Git: {} already running.", kind.label()));
+        return false;
+    }
+
+    let state = GitOpState {
+        kind,
+        started_at: now,
+        finished_at: None,
+        ok: None,
+    };
+    match repo_id {
+        Some(id) => {
+            app.git_ops.insert(id, state);
+        }
+        None => {
+            app.git_op_global = Some(state);
+        }
+    }
+
+    let scope = if repo_name.is_empty() {
+        "".to_string()
+    } else {
+        format!(" ({repo_name})")
+    };
+    set_toast(
+        app,
+        format!("Git: {}…{scope}", kind.label()),
+        Color::Yellow,
+        None,
+    );
+    true
+}
+
+fn finish_git_op(
+    app: &mut AppState,
+    repo_id: Option<Uuid>,
+    kind: GitOpKind,
+    ok: bool,
+    message: String,
+) {
+    let now = Instant::now();
+    let finished = match repo_id {
+        Some(id) => app.git_ops.get_mut(&id),
+        None => app.git_op_global.as_mut(),
+    };
+    if let Some(state) = finished {
+        if state.kind == kind && state.finished_at.is_none() {
+            state.finished_at = Some(now);
+            state.ok = Some(ok);
+        }
+    }
+
+    set_toast(
+        app,
+        message,
+        if ok { Color::Green } else { Color::Red },
+        Some(now + Duration::from_secs(3)),
+    );
+}
+
+fn update_git_activity_indicators(app: &mut AppState, now: Instant) -> bool {
+    let mut dirty = false;
+
+    // Animate while any op is running (spinner/elapsed).
+    let any_running_repo = app.git_ops.values().any(|s| s.finished_at.is_none());
+    let any_running_global = app
+        .git_op_global
+        .as_ref()
+        .is_some_and(|s| s.finished_at.is_none());
+    if any_running_repo || any_running_global {
+        dirty = true;
+    }
+
+    // Drop completed repo ops after a short grace period (for ✓ feedback).
+    let keep_for = Duration::from_secs(2);
+    let before = app.git_ops.len();
+    app.git_ops.retain(|_, s| {
+        s.finished_at.is_none() || now.saturating_duration_since(s.finished_at.unwrap()) < keep_for
+    });
+    if app.git_ops.len() != before {
+        dirty = true;
+    }
+
+    if let Some(s) = app.git_op_global.as_ref().and_then(|s| s.finished_at) {
+        if now.saturating_duration_since(s) >= keep_for {
+            app.git_op_global = None;
+            dirty = true;
+        }
+    }
+
+    // Expire toast (only those with an expiry; running toasts are sticky).
+    if let Some(t) = app.toast.as_ref() {
+        if let Some(exp) = t.expires_at {
+            if now >= exp {
+                app.toast = None;
+                dirty = true;
+            }
+        }
+    }
+
+    dirty
+}
+
 fn submit_composer(app: &mut AppState) {
     let msg = app.composer_buffer.trim().to_string();
     if msg.is_empty() {
@@ -8114,8 +8532,7 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
             Ok(())
         }
         "status" => {
-            request_branch_status_refresh(app);
-            app.last_notice = Some("Refreshing branch status…".to_string());
+            trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
             Ok(())
         }
         "repo" => handle_repo_command(app, tokens.get(1).map(|s| s.as_str())),
@@ -8148,6 +8565,10 @@ fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
         .ok_or_else(|| "no attempt selected".to_string())?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
+    if !begin_git_op(app, Some(repo_id), GitOpKind::Abort, &repo_name) {
+        return Ok(());
+    }
+
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
     tokio::spawn(async move {
@@ -8161,10 +8582,26 @@ fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                     let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                 }
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::Abort,
+                        ok: true,
+                        message: format!("Git: abort finished ({repo_name})"),
+                    })
+                    .await;
             }
             Err(e) => {
                 let _ = net_tx
                     .send(NetEvent::Error(format!("abort failed: {e}")))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::Abort,
+                        ok: false,
+                        message: format!("Git: abort failed ({repo_name})"),
+                    })
                     .await;
             }
         }
@@ -8250,6 +8687,10 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
         .ok_or_else(|| "no attempt selected".to_string())?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
+    if !begin_git_op(app, Some(repo_id), GitOpKind::Rebase, &repo_name) {
+        return Ok(());
+    }
+
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
     tokio::spawn(async move {
@@ -8262,10 +8703,26 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
                     let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                 }
                 let _ = net_tx.send(NetEvent::DiffReconnect).await;
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::Rebase,
+                        ok: true,
+                        message: format!("Git: rebase finished ({repo_name})"),
+                    })
+                    .await;
             }
             Err(e) => {
                 let _ = net_tx
                     .send(NetEvent::Error(format!("rebase failed: {e}")))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::Rebase,
+                        ok: false,
+                        message: format!("Git: rebase failed ({repo_name})"),
+                    })
                     .await;
             }
         }
@@ -8292,6 +8749,10 @@ fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
         .ok_or_else(|| "no attempt selected".to_string())?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
+    if !begin_git_op(app, Some(repo_id), GitOpKind::Merge, &repo_name) {
+        return Ok(());
+    }
+
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
     tokio::spawn(async move {
@@ -8303,10 +8764,26 @@ fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                     let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                 }
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::Merge,
+                        ok: true,
+                        message: format!("Git: merge finished ({repo_name})"),
+                    })
+                    .await;
             }
             Err(e) => {
                 let _ = net_tx
                     .send(NetEvent::Error(format!("merge failed: {e}")))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::Merge,
+                        ok: false,
+                        message: format!("Git: merge failed ({repo_name})"),
+                    })
                     .await;
             }
         }
@@ -8336,6 +8813,15 @@ fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
         .ok_or_else(|| "no attempt selected".to_string())?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
+    let kind = if force {
+        GitOpKind::ForcePush
+    } else {
+        GitOpKind::Push
+    };
+    if !begin_git_op(app, Some(repo_id), kind, &repo_name) {
+        return Ok(());
+    }
+
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
     tokio::spawn(async move {
@@ -8355,10 +8841,29 @@ fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                     let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                 }
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind,
+                        ok: true,
+                        message: format!(
+                            "Git: push finished ({repo_name}{})",
+                            if force { ", force" } else { "" }
+                        ),
+                    })
+                    .await;
             }
             Err(e) => {
                 let _ = net_tx
                     .send(NetEvent::Error(format!("push failed: {e}")))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind,
+                        ok: false,
+                        message: format!("Git: push failed ({repo_name})"),
+                    })
                     .await;
             }
         }
@@ -8421,6 +8926,10 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
         .ok_or_else(|| "no attempt selected".to_string())?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
+    if !begin_git_op(app, Some(repo_id), GitOpKind::CreatePr, &repo_name) {
+        return Ok(());
+    }
+
     let title = title
         .or_else(|| {
             app.selected_task_id
@@ -8456,10 +8965,26 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                     let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                 }
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::CreatePr,
+                        ok: true,
+                        message: format!("Git: PR created ({repo_name})"),
+                    })
+                    .await;
             }
             Err(e) => {
                 let _ = net_tx
                     .send(NetEvent::Error(format!("pr create failed: {e}")))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::CreatePr,
+                        ok: false,
+                        message: format!("Git: PR create failed ({repo_name})"),
+                    })
                     .await;
             }
         }
@@ -8486,6 +9011,10 @@ fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(),
         .ok_or_else(|| "no attempt selected".to_string())?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
+    if !begin_git_op(app, Some(repo_id), GitOpKind::AttachPr, &repo_name) {
+        return Ok(());
+    }
+
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
     tokio::spawn(async move {
@@ -8504,10 +9033,26 @@ fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(),
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                     let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                 }
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::AttachPr,
+                        ok: true,
+                        message: format!("Git: attach PR finished ({repo_name})"),
+                    })
+                    .await;
             }
             Err(e) => {
                 let _ = net_tx
                     .send(NetEvent::Error(format!("pr attach failed: {e}")))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::AttachPr,
+                        ok: false,
+                        message: format!("Git: attach PR failed ({repo_name})"),
+                    })
                     .await;
             }
         }
@@ -8534,6 +9079,10 @@ fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(
         .ok_or_else(|| "no attempt selected".to_string())?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
+    if !begin_git_op(app, Some(repo_id), GitOpKind::PrComments, &repo_name) {
+        return Ok(());
+    }
+
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
     tokio::spawn(async move {
@@ -8544,10 +9093,26 @@ fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(
                         "Fetched {count} PR comments for {repo_name}."
                     )))
                     .await;
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::PrComments,
+                        ok: true,
+                        message: format!("Git: PR comments fetched ({repo_name})"),
+                    })
+                    .await;
             }
             Err(e) => {
                 let _ = net_tx
                     .send(NetEvent::Error(format!("pr comments failed: {e}")))
+                    .await;
+                let _ = net_tx
+                    .send(NetEvent::GitOpFinished {
+                        repo_id: Some(repo_id),
+                        kind: GitOpKind::PrComments,
+                        ok: false,
+                        message: format!("Git: PR comments failed ({repo_name})"),
+                    })
                     .await;
             }
         }
