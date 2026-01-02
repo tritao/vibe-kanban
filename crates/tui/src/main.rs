@@ -5783,7 +5783,35 @@ fn highlight_unified_diff(
         };
         spans.extend(rest_spans);
 
-        let spans = truncate_spans_to_width(spans, width);
+        // GitHub-like backgrounds for additions/removals (light green / light red).
+        // Also pad with spaces so the background covers the full visible line width.
+        let line_bg = if marker_ch == '+' {
+            Some(Color::Rgb(230, 255, 237)) // #e6ffed
+        } else if marker_ch == '-' {
+            Some(Color::Rgb(255, 238, 240)) // #ffeef0
+        } else {
+            None
+        };
+
+        if let Some(bg) = line_bg {
+            for s in spans.iter_mut() {
+                s.style = s.style.bg(bg);
+            }
+        }
+
+        let mut spans = truncate_spans_to_width(spans, width);
+        if let Some(bg) = line_bg {
+            let used = spans
+                .iter()
+                .map(|s| display_width(s.content.as_ref()))
+                .sum::<usize>();
+            if used < width {
+                spans.push(Span::styled(
+                    " ".repeat(width - used),
+                    Style::default().bg(bg),
+                ));
+            }
+        }
         out.push(Line::from(spans));
     }
     out
