@@ -2120,12 +2120,18 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                         spans.push(Span::raw(" "));
                         spans.push(Span::styled(
                             format!("+{adds}"),
-                            Style::default().fg(Color::Green),
+                            Style::default()
+                                .fg(Color::Black)
+                                .bg(Color::Green)
+                                .add_modifier(Modifier::BOLD),
                         ));
                         spans.push(Span::raw("/"));
                         spans.push(Span::styled(
                             format!("-{dels}"),
-                            Style::default().fg(Color::Red),
+                            Style::default()
+                                .fg(Color::White)
+                                .bg(Color::Red)
+                                .add_modifier(Modifier::BOLD),
                         ));
                     }
 
@@ -2194,24 +2200,36 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
                         format!("+{a}"),
-                        Style::default().fg(Color::Green),
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
                     ));
                     spans.push(Span::raw("/"));
                     spans.push(Span::styled(
                         format!("-{b}"),
-                        Style::default().fg(Color::Red),
+                        Style::default()
+                            .fg(Color::White)
+                            .bg(Color::Red)
+                            .add_modifier(Modifier::BOLD),
                     ));
                 } else if let Some(a) = d.additions {
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
                         format!("+{a}"),
-                        Style::default().fg(Color::Green),
+                        Style::default()
+                            .fg(Color::Black)
+                            .bg(Color::Green)
+                            .add_modifier(Modifier::BOLD),
                     ));
                 } else if let Some(b) = d.deletions {
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
                         format!("-{b}"),
-                        Style::default().fg(Color::Red),
+                        Style::default()
+                            .fg(Color::White)
+                            .bg(Color::Red)
+                            .add_modifier(Modifier::BOLD),
                     ));
                 }
 
