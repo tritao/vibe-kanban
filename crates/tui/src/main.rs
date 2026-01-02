@@ -91,6 +91,8 @@ enum NetEvent {
     LogStreamStatus(StreamStatus),
     LogReset,
     LogPatch(json_patch::Patch),
+    BranchStatusLoaded(Vec<RepoBranchStatus>),
+    Notice(String),
     Error(String),
 }
 
@@ -342,6 +344,72 @@ struct ExecRow {
     dropped: bool,
 }
 
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ConflictOp {
+    Rebase,
+    Merge,
+    CherryPick,
+    Revert,
+}
+
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum MergeStatus {
+    Open,
+    Merged,
+    Closed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct PullRequestInfo {
+    number: i64,
+    url: String,
+    status: MergeStatus,
+    #[allow(dead_code)]
+    merged_at: Option<String>,
+    #[allow(dead_code)]
+    merge_commit_sha: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct PrMerge {
+    pr_info: PullRequestInfo,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum Merge {
+    #[allow(dead_code)]
+    Direct(serde_json::Value),
+    Pr(PrMerge),
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct BranchStatus {
+    commits_behind: Option<usize>,
+    commits_ahead: Option<usize>,
+    has_uncommitted_changes: Option<bool>,
+    uncommitted_count: Option<usize>,
+    untracked_count: Option<usize>,
+    target_branch_name: String,
+    remote_commits_behind: Option<usize>,
+    remote_commits_ahead: Option<usize>,
+    merges: Vec<Merge>,
+    is_rebase_in_progress: bool,
+    conflict_op: Option<ConflictOp>,
+    conflicted_files: Vec<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+struct RepoBranchStatus {
+    repo_id: Uuid,
+    repo_name: String,
+    #[serde(flatten)]
+    status: BranchStatus,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LogKind {
     Stdout,
@@ -436,8 +504,13 @@ struct AppState {
 
     composer_active: bool,
     composer_buffer: String,
+    composer_suggest_index: usize,
 
     last_error: Option<String>,
+    last_notice: Option<String>,
+
+    repo_statuses: Vec<RepoBranchStatus>,
+    selected_repo_index: usize,
 
     net_tx: mpsc::Sender<NetEvent>,
     project_sel_tx: watch::Sender<Option<Uuid>>,
@@ -531,8 +604,13 @@ impl AppState {
 
             composer_active: false,
             composer_buffer: String::new(),
+            composer_suggest_index: 0,
 
             last_error: None,
+            last_notice: None,
+
+            repo_statuses: vec![],
+            selected_repo_index: 0,
 
             net_tx,
             project_sel_tx,
@@ -878,6 +956,17 @@ fn handle_net_event(app: &mut AppState, event: NetEvent) {
         NetEvent::LogPatch(patch) => {
             enqueue_log_patch(app, patch);
         }
+        NetEvent::BranchStatusLoaded(statuses) => {
+            app.repo_statuses = statuses;
+            if app.repo_statuses.is_empty() {
+                app.selected_repo_index = 0;
+            } else {
+                app.selected_repo_index = app.selected_repo_index.min(app.repo_statuses.len() - 1);
+            }
+        }
+        NetEvent::Notice(msg) => {
+            app.last_notice = Some(msg);
+        }
         NetEvent::Error(msg) => {
             app.last_error = Some(msg);
         }
@@ -952,18 +1041,33 @@ fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Result<bool> {
                         (KeyCode::Esc, _) => {
                             app.composer_active = false;
                             app.composer_buffer.clear();
+                            app.composer_suggest_index = 0;
                         }
                         (KeyCode::Enter, _) => {
                             submit_composer(app);
                         }
+                        (KeyCode::Tab, _) => {
+                            if apply_composer_autocomplete(app) {
+                                // keep composing
+                            }
+                        }
+                        (KeyCode::Up, _) => {
+                            move_composer_autocomplete(app, -1);
+                        }
+                        (KeyCode::Down, _) => {
+                            move_composer_autocomplete(app, 1);
+                        }
                         (KeyCode::Backspace, _) => {
                             app.composer_buffer.pop();
+                            app.composer_suggest_index = 0;
                         }
                         (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
                             app.composer_buffer.clear();
+                            app.composer_suggest_index = 0;
                         }
                         (KeyCode::Char(c), KeyModifiers::NONE) => {
                             app.composer_buffer.push(c);
+                            app.composer_suggest_index = 0;
                         }
                         _ => {}
                     }
@@ -1029,6 +1133,7 @@ fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Result<bool> {
                     }
                     (KeyCode::Char('i'), _) if app.focus == FocusPane::Execution => {
                         app.composer_active = true;
+                        app.composer_suggest_index = 0;
                     }
                     (KeyCode::Char('x'), _) => {
                         if let Some(exec_id) = app.selected_exec_id {
@@ -1631,6 +1736,7 @@ fn render(f: &mut Frame, app: &AppState) {
     render_board_pane(f, app, main[0]);
     render_execution_pane(f, app, main[1]);
     render_diff_pane(f, app, main[2]);
+    render_composer_autocomplete(f, app, compute_main_layout(f.area()).exec_input);
 
     let bottom = render_bottom_bar(app);
     f.render_widget(bottom, root[2]);
@@ -1741,7 +1847,7 @@ fn render_bottom_bar(app: &AppState) -> Paragraph<'static> {
             "Tab next | j/k move | J/K status | ←/→ move | / search | [/] attempts | x stop | o log mode | q quit"
         }
         FocusPane::Execution => {
-            "Tab next | i compose | Enter send | e expand | PgUp/PgDn scroll | End bottom | m md view | x stop | o log mode | q quit"
+            "Tab next | i compose (/cmd) | Enter send | e expand | PgUp/PgDn scroll | End bottom | m md view | x stop | o log mode | q quit"
         }
         FocusPane::Diff => {
             "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | w wrap | q quit"
@@ -1975,6 +2081,16 @@ fn render_logs_viewer(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect
             Style::default().fg(Color::Red),
         )])
     });
+    let notice_lines = app.last_notice.as_ref().map(|m| {
+        m.lines()
+            .map(|line| {
+                Line::from(vec![Span::styled(
+                    line.to_string(),
+                    Style::default().fg(Color::Green),
+                )])
+            })
+            .collect::<Vec<_>>()
+    });
 
     let len = app.log_lines.len();
     let max_render = area.height.saturating_sub(2) as usize;
@@ -1996,6 +2112,11 @@ fn render_logs_viewer(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect
         text.push(Line::from(""));
         text.push(Line::from("Last error:"));
         text.push(line);
+    }
+    if let Some(lines) = notice_lines {
+        text.push(Line::from(""));
+        text.push(Line::from("Last notice:"));
+        text.extend(lines);
     }
 
     let title = format!(
@@ -2029,7 +2150,7 @@ fn render_composer(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
     let hint = if app.composer_active {
         format!("> {}", app.composer_buffer)
     } else {
-        "Press i to type a follow-up…".to_string()
+        "Press i to type a follow-up or /command…".to_string()
     };
 
     let w = Paragraph::new(Line::from(hint))
@@ -2041,6 +2162,440 @@ fn render_composer(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
         )
         .wrap(Wrap { trim: true });
     f.render_widget(w, area);
+}
+
+#[derive(Debug, Clone)]
+struct CompletionItem {
+    insert: String,
+    desc: String,
+}
+
+fn composer_is_slash_mode(s: &str) -> bool {
+    s.trim_start().starts_with('/')
+}
+
+fn split_for_completion(s: &str) -> (Vec<&str>, &str, bool) {
+    let trimmed = s.trim_start();
+    let Some(rest) = trimmed.strip_prefix('/') else {
+        return (vec![], "", true);
+    };
+    let ends_with_space = rest.chars().last().is_some_and(|c| c.is_whitespace());
+    let mut tokens: Vec<&str> = rest.split_whitespace().collect();
+    if ends_with_space {
+        return (tokens, "", true);
+    }
+    let current = tokens.pop().unwrap_or("");
+    (tokens, current, false)
+}
+
+fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
+    if !app.composer_active || !composer_is_slash_mode(&app.composer_buffer) {
+        return vec![];
+    }
+
+    const COMMANDS: &[(&str, &str)] = &[
+        ("help", "show help"),
+        ("status", "refresh branch status"),
+        ("repo", "select repo for git ops"),
+        ("rebase", "rebase attempt branch"),
+        ("abort", "abort conflicts/rebase"),
+        ("merge", "squash-merge into target"),
+        ("push", "push attempt branch"),
+        ("pr", "PR actions"),
+        ("open", "open file in editor"),
+    ];
+
+    const REBASE_FLAGS: &[(&str, &str)] = &[
+        ("--onto", "new base branch"),
+        ("--old", "old base branch"),
+        ("--repo", "repo name or index"),
+    ];
+    const MERGE_FLAGS: &[(&str, &str)] = &[("--repo", "repo name or index")];
+    const PUSH_FLAGS: &[(&str, &str)] =
+        &[("--force", "force push"), ("--repo", "repo name or index")];
+    const ABORT_FLAGS: &[(&str, &str)] = &[("--repo", "repo name or index")];
+    const PR_SUB: &[(&str, &str)] = &[
+        ("create", "create a PR"),
+        ("attach", "attach existing PR"),
+        ("comments", "fetch PR comments count"),
+    ];
+    const PR_CREATE_FLAGS: &[(&str, &str)] = &[
+        ("--title", "PR title (required)"),
+        ("--body", "PR body"),
+        ("--base", "target branch"),
+        ("--draft", "create as draft"),
+        ("--auto-desc", "auto-generate description"),
+        ("--repo", "repo name or index"),
+    ];
+    const PR_ATTACH_FLAGS: &[(&str, &str)] = &[("--repo", "repo name or index")];
+    const PR_COMMENTS_FLAGS: &[(&str, &str)] = &[("--repo", "repo name or index")];
+
+    let (tokens, current, ends_with_space) = split_for_completion(&app.composer_buffer);
+
+    let current_lower = current.to_ascii_lowercase();
+    let used_flags: std::collections::HashSet<&str> = tokens
+        .iter()
+        .copied()
+        .filter(|t| t.starts_with("--"))
+        .collect();
+
+    let mut out: Vec<CompletionItem> = vec![];
+
+    fn push_flags(
+        out: &mut Vec<CompletionItem>,
+        flags: &[(&'static str, &'static str)],
+        used: &std::collections::HashSet<&str>,
+        current_lower: &str,
+        current_is_empty: bool,
+    ) {
+        for (flag, desc) in flags {
+            if used.contains(*flag) {
+                continue;
+            }
+            if current_is_empty || flag.starts_with(current_lower) {
+                out.push(CompletionItem {
+                    insert: format!("{flag} "),
+                    desc: desc.to_string(),
+                });
+            }
+        }
+    }
+
+    fn push_repos(
+        out: &mut Vec<CompletionItem>,
+        repos: &[RepoBranchStatus],
+        current_lower: &str,
+        current_is_empty: bool,
+    ) {
+        for (idx, r) in repos.iter().enumerate() {
+            let name = r.repo_name.as_str();
+            let name_l = name.to_ascii_lowercase();
+            if current_is_empty
+                || name_l.starts_with(current_lower)
+                || name_l.contains(current_lower)
+            {
+                out.push(CompletionItem {
+                    insert: format!("{name} "),
+                    desc: "repo".to_string(),
+                });
+            }
+            let n = format!("{}", idx + 1);
+            if current_is_empty || n.starts_with(current_lower) {
+                out.push(CompletionItem {
+                    insert: format!("{n} "),
+                    desc: "repo index".to_string(),
+                });
+            }
+        }
+    }
+
+    if tokens.is_empty() {
+        for (cmd, desc) in COMMANDS {
+            if current.is_empty() || cmd.starts_with(&current_lower) {
+                out.push(CompletionItem {
+                    insert: format!("{cmd} "),
+                    desc: (*desc).to_string(),
+                });
+            }
+        }
+        return out;
+    }
+
+    let cmd = tokens[0];
+    if !COMMANDS.iter().any(|(c, _)| *c == cmd) {
+        for (c, desc) in COMMANDS {
+            if c.starts_with(&cmd.to_ascii_lowercase()) {
+                out.push(CompletionItem {
+                    insert: format!("{c} "),
+                    desc: (*desc).to_string(),
+                });
+            }
+        }
+        return out;
+    }
+
+    let current_is_empty = current.is_empty();
+
+    match cmd {
+        "repo" => {
+            push_repos(
+                &mut out,
+                &app.repo_statuses,
+                &current_lower,
+                current_is_empty,
+            );
+        }
+        "rebase" => {
+            if current.starts_with("--") || ends_with_space {
+                push_flags(
+                    &mut out,
+                    REBASE_FLAGS,
+                    &used_flags,
+                    &current_lower,
+                    current_is_empty,
+                );
+            } else if tokens.last().is_some_and(|t| *t == "--repo") {
+                push_repos(
+                    &mut out,
+                    &app.repo_statuses,
+                    &current_lower,
+                    current_is_empty,
+                );
+            }
+        }
+        "abort" => {
+            if current.starts_with("--") || ends_with_space {
+                push_flags(
+                    &mut out,
+                    ABORT_FLAGS,
+                    &used_flags,
+                    &current_lower,
+                    current_is_empty,
+                );
+            } else if tokens.last().is_some_and(|t| *t == "--repo") {
+                push_repos(
+                    &mut out,
+                    &app.repo_statuses,
+                    &current_lower,
+                    current_is_empty,
+                );
+            }
+        }
+        "merge" => {
+            if current.starts_with("--") || ends_with_space {
+                push_flags(
+                    &mut out,
+                    MERGE_FLAGS,
+                    &used_flags,
+                    &current_lower,
+                    current_is_empty,
+                );
+            } else if tokens.last().is_some_and(|t| *t == "--repo") {
+                push_repos(
+                    &mut out,
+                    &app.repo_statuses,
+                    &current_lower,
+                    current_is_empty,
+                );
+            }
+        }
+        "push" => {
+            if current.starts_with("--") || ends_with_space {
+                push_flags(
+                    &mut out,
+                    PUSH_FLAGS,
+                    &used_flags,
+                    &current_lower,
+                    current_is_empty,
+                );
+            } else if tokens.last().is_some_and(|t| *t == "--repo") {
+                push_repos(
+                    &mut out,
+                    &app.repo_statuses,
+                    &current_lower,
+                    current_is_empty,
+                );
+            }
+        }
+        "pr" => {
+            if tokens.len() == 1 {
+                for (sub, desc) in PR_SUB {
+                    if current.is_empty() || sub.starts_with(&current_lower) {
+                        out.push(CompletionItem {
+                            insert: format!("{sub} "),
+                            desc: (*desc).to_string(),
+                        });
+                    }
+                }
+            } else {
+                let sub = tokens.get(1).copied().unwrap_or("");
+                match sub {
+                    "create" => {
+                        if current.starts_with("--") || ends_with_space {
+                            push_flags(
+                                &mut out,
+                                PR_CREATE_FLAGS,
+                                &used_flags,
+                                &current_lower,
+                                current_is_empty,
+                            );
+                        } else if tokens.last().is_some_and(|t| *t == "--repo") {
+                            push_repos(
+                                &mut out,
+                                &app.repo_statuses,
+                                &current_lower,
+                                current_is_empty,
+                            );
+                        }
+                    }
+                    "attach" => {
+                        if current.starts_with("--") || ends_with_space {
+                            push_flags(
+                                &mut out,
+                                PR_ATTACH_FLAGS,
+                                &used_flags,
+                                &current_lower,
+                                current_is_empty,
+                            );
+                        } else if tokens.last().is_some_and(|t| *t == "--repo") {
+                            push_repos(
+                                &mut out,
+                                &app.repo_statuses,
+                                &current_lower,
+                                current_is_empty,
+                            );
+                        }
+                    }
+                    "comments" => {
+                        if current.starts_with("--") || ends_with_space {
+                            push_flags(
+                                &mut out,
+                                PR_COMMENTS_FLAGS,
+                                &used_flags,
+                                &current_lower,
+                                current_is_empty,
+                            );
+                        } else if tokens.last().is_some_and(|t| *t == "--repo") {
+                            push_repos(
+                                &mut out,
+                                &app.repo_statuses,
+                                &current_lower,
+                                current_is_empty,
+                            );
+                        }
+                    }
+                    _ => {
+                        for (sub, desc) in PR_SUB {
+                            out.push(CompletionItem {
+                                insert: format!("{sub} "),
+                                desc: (*desc).to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        "open" | "status" | "help" => {}
+        _ => {}
+    }
+
+    out
+}
+
+fn move_composer_autocomplete(app: &mut AppState, delta: i32) {
+    if !composer_is_slash_mode(&app.composer_buffer) {
+        return;
+    }
+    let items = composer_completion_items(app);
+    if items.is_empty() {
+        return;
+    }
+    let len = items.len();
+    let cur = app.composer_suggest_index.min(len - 1);
+    let next = clamp_index(cur, delta, len);
+    app.composer_suggest_index = next;
+}
+
+fn apply_composer_autocomplete(app: &mut AppState) -> bool {
+    if !composer_is_slash_mode(&app.composer_buffer) {
+        return false;
+    }
+
+    let items = composer_completion_items(app);
+    if items.is_empty() {
+        return false;
+    }
+
+    let idx = app.composer_suggest_index.min(items.len() - 1);
+    let insert = items[idx].insert.as_str();
+
+    let buf = app.composer_buffer.clone();
+    let token_start = buf
+        .char_indices()
+        .rev()
+        .find(|(_, c)| c.is_whitespace())
+        .map(|(i, c)| i + c.len_utf8())
+        .unwrap_or(0);
+
+    app.composer_buffer.truncate(token_start);
+    app.composer_buffer.push_str(insert);
+    app.composer_suggest_index = 0;
+    true
+}
+
+fn render_composer_autocomplete(f: &mut Frame, app: &AppState, input_area: ratatui::layout::Rect) {
+    if !app.composer_active || !composer_is_slash_mode(&app.composer_buffer) {
+        return;
+    }
+
+    let items = composer_completion_items(app);
+    if items.is_empty() {
+        return;
+    }
+
+    let max_items = 6usize;
+    let visible = items.len().min(max_items);
+    let height = (visible + 2).min(input_area.y as usize);
+    if height < 3 {
+        return;
+    }
+    let height_u16 = height as u16;
+    let y = input_area.y.saturating_sub(height_u16);
+    let area = ratatui::layout::Rect {
+        x: input_area.x,
+        y,
+        width: input_area.width,
+        height: height_u16,
+    };
+
+    f.render_widget(Clear, area);
+
+    let start = app
+        .composer_suggest_index
+        .saturating_sub(visible.saturating_sub(1));
+    let end = (start + visible).min(items.len());
+    let window = &items[start..end];
+
+    let list_items: Vec<ListItem> = window
+        .iter()
+        .cloned()
+        .map(|it| {
+            let mut spans: Vec<Span<'static>> = vec![Span::styled(
+                it.insert.trim().to_string(),
+                Style::default().add_modifier(Modifier::BOLD),
+            )];
+            if !it.desc.is_empty() {
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(
+                    it.desc,
+                    Style::default().add_modifier(Modifier::DIM),
+                ));
+            }
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+
+    let mut state = ratatui::widgets::ListState::default();
+    let selected_in_window = app.composer_suggest_index.saturating_sub(start);
+    state.select(Some(
+        selected_in_window.min(list_items.len().saturating_sub(1)),
+    ));
+
+    let w = List::new(list_items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Commands")
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .highlight_style(
+            Style::default()
+                .add_modifier(Modifier::REVERSED)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol("› ");
+
+    f.render_stateful_widget(w, area, &mut state);
 }
 
 #[derive(Debug, Clone)]
@@ -2762,12 +3317,26 @@ fn render_help_modal(f: &mut Frame) {
         Line::from("Execution (center)"),
         Line::from("  i           compose follow-up"),
         Line::from("  Enter       send follow-up (while composing)"),
+        Line::from("  /<cmd>      run slash command (while composing)"),
+        Line::from("  Tab         autocomplete (slash mode)"),
+        Line::from("  ↑/↓         select suggestion (slash mode)"),
         Line::from("  e / Enter   expand/collapse entry"),
         Line::from("  Esc         cancel compose"),
         Line::from("  o           toggle raw/normalized"),
         Line::from("  PgUp/PgDn   scroll logs"),
         Line::from("  End         jump bottom"),
         Line::from("  x           stop active run"),
+        Line::from(""),
+        Line::from("Slash commands"),
+        Line::from("  /status                 refresh repo branch status"),
+        Line::from("  /repo [name|n]           select repo for git ops"),
+        Line::from("  /rebase [--onto B]       rebase attempt branch"),
+        Line::from("  /merge                   squash-merge into target"),
+        Line::from("  /push [--force]          push branch"),
+        Line::from("  /abort                   abort conflicts/rebase"),
+        Line::from("  /pr create --title T     create PR (server-side)"),
+        Line::from("  /pr attach               attach existing PR"),
+        Line::from("  /open <file>             open file in editor"),
         Line::from(""),
         Line::from("Diff (right)"),
         Line::from("  j/k         select file"),
@@ -6816,7 +7385,11 @@ fn set_selected_attempt(app: &mut AppState, attempt_id: Option<Uuid>) {
     app.selected_diff_index = 0;
     app.diff_scroll_offset = 0;
 
+    app.repo_statuses.clear();
+    app.selected_repo_index = 0;
+
     let _ = app.attempt_sel_tx.send(attempt_id);
+    request_branch_status_refresh(app);
 }
 
 fn set_selected_exec(app: &mut AppState, exec_id: Option<Uuid>) {
@@ -6848,6 +7421,27 @@ fn handle_confirm_action(app: &mut AppState, action: ConfirmAction) {
     }
 }
 
+fn request_branch_status_refresh(app: &mut AppState) {
+    let Some(attempt_id) = app.selected_attempt_id else {
+        return;
+    };
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match branch_status_http(&base_url, attempt_id).await {
+            Ok(statuses) => {
+                let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("branch status failed: {e}")))
+                    .await;
+            }
+        }
+    });
+}
+
 fn submit_composer(app: &mut AppState) {
     let msg = app.composer_buffer.trim().to_string();
     if msg.is_empty() {
@@ -6858,6 +7452,11 @@ fn submit_composer(app: &mut AppState) {
 
     app.composer_active = false;
     app.composer_buffer.clear();
+
+    if msg.trim_start().starts_with('/') {
+        submit_slash_command(app, &msg);
+        return;
+    }
 
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
@@ -6911,6 +7510,580 @@ fn submit_composer(app: &mut AppState) {
             }
         }
     });
+}
+
+fn submit_slash_command(app: &mut AppState, raw: &str) {
+    let cmdline = raw.trim_start().trim_start_matches('/');
+    let tokens = match tokenize_command_line(cmdline) {
+        Ok(t) => t,
+        Err(e) => {
+            app.last_error = Some(format!("invalid command: {e}"));
+            return;
+        }
+    };
+
+    if tokens.is_empty() {
+        app.last_error = Some("invalid command: empty".to_string());
+        return;
+    }
+
+    match parse_slash_command(app, &tokens) {
+        Ok(()) => {}
+        Err(e) => {
+            app.last_error = Some(e);
+        }
+    }
+}
+
+fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    match tokens[0].as_str() {
+        "help" | "?" => {
+            app.show_help = true;
+            app.last_notice = Some("Opened help. (Press Esc to close)".to_string());
+            Ok(())
+        }
+        "status" => {
+            request_branch_status_refresh(app);
+            app.last_notice = Some("Refreshing branch status…".to_string());
+            Ok(())
+        }
+        "repo" => handle_repo_command(app, tokens.get(1).map(|s| s.as_str())),
+        "rebase" => handle_rebase_command(app, tokens),
+        "abort" => handle_abort_command(app, tokens),
+        "merge" => handle_merge_command(app, tokens),
+        "push" => handle_push_command(app, tokens),
+        "pr" => handle_pr_command(app, tokens),
+        "open" => handle_open_command(app, tokens),
+        other => Err(format!("unknown command: /{other} (try /help)")),
+    }
+}
+
+fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let mut repo_arg: Option<String> = None;
+    let mut i = 1;
+    while i < tokens.len() {
+        match tokens[i].as_str() {
+            "--repo" => {
+                i += 1;
+                repo_arg = tokens.get(i).cloned();
+            }
+            other => return Err(format!("unexpected arg: {other}")),
+        }
+        i += 1;
+    }
+
+    let attempt_id = app
+        .selected_attempt_id
+        .ok_or_else(|| "no attempt selected".to_string())?;
+    let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match abort_conflicts_http(&base_url, attempt_id, repo_id).await {
+            Ok(()) => {
+                let _ = net_tx
+                    .send(NetEvent::Notice(format!(
+                        "Aborted conflicts for {repo_name}."
+                    )))
+                    .await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("abort failed: {e}")))
+                    .await;
+            }
+        }
+    });
+    Ok(())
+}
+
+fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), String> {
+    if app.repo_statuses.is_empty() {
+        request_branch_status_refresh(app);
+        app.last_notice = Some("Loading repos…".to_string());
+        return Ok(());
+    }
+
+    let Some(arg) = arg.filter(|s| !s.trim().is_empty()) else {
+        let mut msg = String::new();
+        msg.push_str("Repos:\n");
+        for (idx, repo) in app.repo_statuses.iter().enumerate() {
+            let marker = if idx == app.selected_repo_index {
+                "*"
+            } else {
+                " "
+            };
+            msg.push_str(&format!("  {marker} {}. {}\n", idx + 1, repo.repo_name));
+        }
+        app.last_notice = Some(msg.trim_end().to_string());
+        return Ok(());
+    };
+
+    let idx = if let Ok(n) = arg.parse::<usize>() {
+        n.saturating_sub(1)
+    } else {
+        let needle = arg.to_ascii_lowercase();
+        app.repo_statuses
+            .iter()
+            .position(|r| r.repo_name.to_ascii_lowercase() == needle)
+            .or_else(|| {
+                app.repo_statuses
+                    .iter()
+                    .position(|r| r.repo_name.to_ascii_lowercase().contains(&needle))
+            })
+            .ok_or_else(|| format!("unknown repo: {arg}"))?
+    };
+
+    if idx >= app.repo_statuses.len() {
+        return Err(format!("repo index out of range: {arg}"));
+    }
+    app.selected_repo_index = idx;
+    app.last_notice = Some(format!(
+        "Selected repo: {}",
+        app.repo_statuses[idx].repo_name
+    ));
+    Ok(())
+}
+
+fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let mut repo_arg: Option<String> = None;
+    let mut onto: Option<String> = None;
+    let mut old: Option<String> = None;
+
+    let mut i = 1;
+    while i < tokens.len() {
+        match tokens[i].as_str() {
+            "--repo" => {
+                i += 1;
+                repo_arg = tokens.get(i).cloned();
+            }
+            "--onto" => {
+                i += 1;
+                onto = tokens.get(i).cloned();
+            }
+            "--old" => {
+                i += 1;
+                old = tokens.get(i).cloned();
+            }
+            other => return Err(format!("unexpected arg: {other}")),
+        }
+        i += 1;
+    }
+
+    let attempt_id = app
+        .selected_attempt_id
+        .ok_or_else(|| "no attempt selected".to_string())?;
+    let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match rebase_task_attempt_http(&base_url, attempt_id, repo_id, old, onto).await {
+            Ok(()) => {
+                let _ = net_tx
+                    .send(NetEvent::Notice(format!("Rebase started for {repo_name}.")))
+                    .await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("rebase failed: {e}")))
+                    .await;
+            }
+        }
+    });
+    Ok(())
+}
+
+fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let mut repo_arg: Option<String> = None;
+    let mut i = 1;
+    while i < tokens.len() {
+        match tokens[i].as_str() {
+            "--repo" => {
+                i += 1;
+                repo_arg = tokens.get(i).cloned();
+            }
+            other => return Err(format!("unexpected arg: {other}")),
+        }
+        i += 1;
+    }
+
+    let attempt_id = app
+        .selected_attempt_id
+        .ok_or_else(|| "no attempt selected".to_string())?;
+    let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match merge_task_attempt_http(&base_url, attempt_id, repo_id).await {
+            Ok(()) => {
+                let _ = net_tx
+                    .send(NetEvent::Notice(format!("Merged {repo_name}.")))
+                    .await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("merge failed: {e}")))
+                    .await;
+            }
+        }
+    });
+    Ok(())
+}
+
+fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let mut repo_arg: Option<String> = None;
+    let mut force = false;
+
+    let mut i = 1;
+    while i < tokens.len() {
+        match tokens[i].as_str() {
+            "--repo" => {
+                i += 1;
+                repo_arg = tokens.get(i).cloned();
+            }
+            "--force" => force = true,
+            other => return Err(format!("unexpected arg: {other}")),
+        }
+        i += 1;
+    }
+
+    let attempt_id = app
+        .selected_attempt_id
+        .ok_or_else(|| "no attempt selected".to_string())?;
+    let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        let result = if force {
+            force_push_task_attempt_branch_http(&base_url, attempt_id, repo_id).await
+        } else {
+            push_task_attempt_branch_http(&base_url, attempt_id, repo_id).await
+        };
+        match result {
+            Ok(()) => {
+                let _ = net_tx
+                    .send(NetEvent::Notice(format!(
+                        "Pushed {repo_name}{}.",
+                        if force { " (force)" } else { "" }
+                    )))
+                    .await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("push failed: {e}")))
+                    .await;
+            }
+        }
+    });
+    Ok(())
+}
+
+fn handle_pr_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    if tokens.len() < 2 {
+        return Err("usage: /pr <create|attach|comments>".to_string());
+    }
+    match tokens[1].as_str() {
+        "create" => handle_pr_create_command(app, tokens),
+        "attach" => handle_pr_attach_command(app, tokens),
+        "comments" => handle_pr_comments_command(app, tokens),
+        other => Err(format!("unknown subcommand: pr {other}")),
+    }
+}
+
+fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let mut repo_arg: Option<String> = None;
+    let mut title: Option<String> = None;
+    let mut body: Option<String> = None;
+    let mut base: Option<String> = None;
+    let mut draft: Option<bool> = None;
+    let mut auto_desc = false;
+
+    let mut i = 2;
+    while i < tokens.len() {
+        match tokens[i].as_str() {
+            "--repo" => {
+                i += 1;
+                repo_arg = tokens.get(i).cloned();
+            }
+            "--title" => {
+                i += 1;
+                title = tokens.get(i).cloned();
+            }
+            "--body" => {
+                i += 1;
+                body = tokens.get(i).cloned();
+            }
+            "--base" => {
+                i += 1;
+                base = tokens.get(i).cloned();
+            }
+            "--draft" => {
+                draft = Some(true);
+            }
+            "--auto-desc" => {
+                auto_desc = true;
+            }
+            other => return Err(format!("unexpected arg: {other}")),
+        }
+        i += 1;
+    }
+
+    let attempt_id = app
+        .selected_attempt_id
+        .ok_or_else(|| "no attempt selected".to_string())?;
+    let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
+
+    let title = title
+        .or_else(|| {
+            app.selected_task_id
+                .and_then(|id| find_task(&app.tasks_store, id).map(|t| t.title))
+        })
+        .ok_or_else(|| "missing --title and no task selected".to_string())?;
+
+    let draft = draft.or(Some(false));
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match create_pr_http(
+            &base_url,
+            attempt_id,
+            CreateGitHubPrRequest {
+                title,
+                body,
+                target_branch: base,
+                draft,
+                repo_id,
+                auto_generate_description: auto_desc,
+            },
+        )
+        .await
+        {
+            Ok(url) => {
+                let _ = net_tx
+                    .send(NetEvent::Notice(format!(
+                        "PR created for {repo_name}: {url}"
+                    )))
+                    .await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("pr create failed: {e}")))
+                    .await;
+            }
+        }
+    });
+    Ok(())
+}
+
+fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let mut repo_arg: Option<String> = None;
+    let mut i = 2;
+    while i < tokens.len() {
+        match tokens[i].as_str() {
+            "--repo" => {
+                i += 1;
+                repo_arg = tokens.get(i).cloned();
+            }
+            other => return Err(format!("unexpected arg: {other}")),
+        }
+        i += 1;
+    }
+
+    let attempt_id = app
+        .selected_attempt_id
+        .ok_or_else(|| "no attempt selected".to_string())?;
+    let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match attach_pr_http(&base_url, attempt_id, repo_id).await {
+            Ok(resp) => {
+                let msg = if resp.pr_attached {
+                    if let Some(url) = resp.pr_url {
+                        format!("Attached PR for {repo_name}: {url}")
+                    } else {
+                        format!("Attached PR for {repo_name}.")
+                    }
+                } else {
+                    format!("No PR found to attach for {repo_name}.")
+                };
+                let _ = net_tx.send(NetEvent::Notice(msg)).await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("pr attach failed: {e}")))
+                    .await;
+            }
+        }
+    });
+    Ok(())
+}
+
+fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let mut repo_arg: Option<String> = None;
+    let mut i = 2;
+    while i < tokens.len() {
+        match tokens[i].as_str() {
+            "--repo" => {
+                i += 1;
+                repo_arg = tokens.get(i).cloned();
+            }
+            other => return Err(format!("unexpected arg: {other}")),
+        }
+        i += 1;
+    }
+
+    let attempt_id = app
+        .selected_attempt_id
+        .ok_or_else(|| "no attempt selected".to_string())?;
+    let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match get_pr_comments_http(&base_url, attempt_id, repo_id).await {
+            Ok(count) => {
+                let _ = net_tx
+                    .send(NetEvent::Notice(format!(
+                        "Fetched {count} PR comments for {repo_name}."
+                    )))
+                    .await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("pr comments failed: {e}")))
+                    .await;
+            }
+        }
+    });
+    Ok(())
+}
+
+fn handle_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    if tokens.len() < 2 {
+        return Err("usage: /open <file_path>".to_string());
+    }
+    let attempt_id = app
+        .selected_attempt_id
+        .ok_or_else(|| "no attempt selected".to_string())?;
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    let file_path = tokens[1].clone();
+
+    tokio::spawn(async move {
+        match open_editor_http(&base_url, attempt_id, Some(file_path.clone())).await {
+            Ok(url) => {
+                let msg = match url {
+                    Some(url) => format!("Opened editor for {file_path}: {url}"),
+                    None => format!("Opened editor for {file_path}."),
+                };
+                let _ = net_tx.send(NetEvent::Notice(msg)).await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("open editor failed: {e}")))
+                    .await;
+            }
+        }
+    });
+    Ok(())
+}
+
+fn resolve_repo_for_command(
+    app: &mut AppState,
+    repo_arg: Option<&str>,
+) -> Result<(Uuid, String), String> {
+    if app.repo_statuses.is_empty() {
+        request_branch_status_refresh(app);
+        return Err("no repo status loaded yet (run /status)".to_string());
+    }
+
+    if let Some(arg) = repo_arg.filter(|s| !s.trim().is_empty()) {
+        if let Ok(n) = arg.parse::<usize>() {
+            let idx = n.saturating_sub(1);
+            let repo = app
+                .repo_statuses
+                .get(idx)
+                .ok_or_else(|| format!("repo index out of range: {arg}"))?;
+            return Ok((repo.repo_id, repo.repo_name.clone()));
+        }
+
+        let needle = arg.to_ascii_lowercase();
+        let idx = app
+            .repo_statuses
+            .iter()
+            .position(|r| r.repo_name.to_ascii_lowercase() == needle)
+            .or_else(|| {
+                app.repo_statuses
+                    .iter()
+                    .position(|r| r.repo_name.to_ascii_lowercase().contains(&needle))
+            })
+            .ok_or_else(|| format!("unknown repo: {arg}"))?;
+        app.selected_repo_index = idx;
+    }
+
+    let repo = app
+        .repo_statuses
+        .get(app.selected_repo_index)
+        .ok_or_else(|| "no repo selected".to_string())?;
+    Ok((repo.repo_id, repo.repo_name.clone()))
+}
+
+fn tokenize_command_line(s: &str) -> Result<Vec<String>, String> {
+    let mut out: Vec<String> = vec![];
+    let mut cur = String::new();
+    let mut chars = s.chars().peekable();
+    let mut quote: Option<char> = None;
+
+    while let Some(ch) = chars.next() {
+        match quote {
+            Some(q) => {
+                if ch == q {
+                    quote = None;
+                    continue;
+                }
+                if ch == '\\' && q == '"' {
+                    if let Some(next) = chars.next() {
+                        cur.push(next);
+                    }
+                    continue;
+                }
+                cur.push(ch);
+            }
+            None => match ch {
+                '\'' | '"' => quote = Some(ch),
+                '\\' => {
+                    if let Some(next) = chars.next() {
+                        cur.push(next);
+                    }
+                }
+                c if c.is_whitespace() => {
+                    if !cur.is_empty() {
+                        out.push(std::mem::take(&mut cur));
+                    }
+                    while matches!(chars.peek(), Some(p) if p.is_whitespace()) {
+                        chars.next();
+                    }
+                }
+                _ => cur.push(ch),
+            },
+        }
+    }
+
+    if quote.is_some() {
+        return Err("unterminated quote".to_string());
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    Ok(out)
 }
 
 fn select_adjacent_attempt(app: &mut AppState, delta: i32) {
@@ -7573,4 +8746,430 @@ async fn follow_up_http(base_url: &str, session_id: Uuid, prompt: &str) -> anyho
         anyhow::bail!("backend rejected follow-up request");
     }
     Ok(())
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ApiResponseWire<T, E = serde_json::Value> {
+    success: bool,
+    data: Option<T>,
+    error_data: Option<E>,
+    message: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct RepoIdRequest {
+    repo_id: Uuid,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct RebaseTaskAttemptRequest {
+    repo_id: Uuid,
+    old_base_branch: Option<String>,
+    new_base_branch: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum GitOperationErrorWire {
+    MergeConflicts { message: String, op: ConflictOp },
+    RebaseInProgress,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PushErrorWire {
+    ForcePushRequired,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct CreateGitHubPrRequest {
+    title: String,
+    body: Option<String>,
+    target_branch: Option<String>,
+    draft: Option<bool>,
+    repo_id: Uuid,
+    #[serde(default)]
+    auto_generate_description: bool,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum CreatePrErrorWire {
+    GithubCliNotInstalled,
+    GithubCliNotLoggedIn,
+    GitCliNotLoggedIn,
+    GitCliNotInstalled,
+    TargetBranchNotFound { branch: String },
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct AttachPrResponse {
+    pr_attached: bool,
+    pr_url: Option<String>,
+    #[allow(dead_code)]
+    pr_number: Option<i64>,
+    #[allow(dead_code)]
+    pr_status: Option<MergeStatus>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum GetPrCommentsErrorWire {
+    NoPrAttached,
+    GithubCliNotInstalled,
+    GithubCliNotLoggedIn,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct PrCommentsResponse {
+    comments: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, serde::Serialize)]
+struct OpenEditorRequest {
+    editor_type: Option<String>,
+    file_path: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct OpenEditorResponse {
+    url: Option<String>,
+}
+
+async fn branch_status_http(
+    base_url: &str,
+    attempt_id: Uuid,
+) -> anyhow::Result<Vec<RepoBranchStatus>> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/branch-status",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client.get(url).send().await?;
+    let api = resp
+        .json::<ApiResponseWire<Vec<RepoBranchStatus>>>()
+        .await?;
+    if !api.success {
+        anyhow::bail!(
+            "{}",
+            api.message
+                .as_deref()
+                .unwrap_or("backend rejected branch status request")
+        );
+    }
+    Ok(api.data.unwrap_or_default())
+}
+
+async fn rebase_task_attempt_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+    old_base_branch: Option<String>,
+    new_base_branch: Option<String>,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/rebase",
+        base_url.trim_end_matches('/')
+    );
+    let body = RebaseTaskAttemptRequest {
+        repo_id,
+        old_base_branch,
+        new_base_branch,
+    };
+
+    let resp = client.post(url).json(&body).send().await?;
+    let api = resp
+        .json::<ApiResponseWire<serde_json::Value, GitOperationErrorWire>>()
+        .await?;
+    if api.success {
+        return Ok(());
+    }
+
+    if let Some(msg) = api.message {
+        anyhow::bail!("{msg}");
+    }
+    if let Some(err) = api.error_data {
+        match err {
+            GitOperationErrorWire::MergeConflicts { message, .. } => anyhow::bail!("{message}"),
+            GitOperationErrorWire::RebaseInProgress => {
+                anyhow::bail!("rebase already in progress")
+            }
+        }
+    }
+    anyhow::bail!("backend rejected rebase request");
+}
+
+async fn abort_conflicts_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/conflicts/abort",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client
+        .post(url)
+        .json(&RepoIdRequest { repo_id })
+        .send()
+        .await?;
+    let api = resp.json::<ApiResponseWire<serde_json::Value>>().await?;
+    if !api.success {
+        anyhow::bail!(
+            "{}",
+            api.message
+                .as_deref()
+                .unwrap_or("backend rejected abort request")
+        );
+    }
+    Ok(())
+}
+
+async fn merge_task_attempt_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/merge",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client
+        .post(url)
+        .json(&RepoIdRequest { repo_id })
+        .send()
+        .await?;
+    let api = resp.json::<ApiResponseWire<serde_json::Value>>().await?;
+    if !api.success {
+        anyhow::bail!(
+            "{}",
+            api.message
+                .as_deref()
+                .unwrap_or("backend rejected merge request")
+        );
+    }
+    Ok(())
+}
+
+async fn push_task_attempt_branch_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/push",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client
+        .post(url)
+        .json(&RepoIdRequest { repo_id })
+        .send()
+        .await?;
+    let api = resp
+        .json::<ApiResponseWire<serde_json::Value, PushErrorWire>>()
+        .await?;
+    if api.success {
+        return Ok(());
+    }
+    if let Some(PushErrorWire::ForcePushRequired) = api.error_data {
+        anyhow::bail!("push rejected (use /push --force)");
+    }
+    anyhow::bail!(
+        "{}",
+        api.message
+            .as_deref()
+            .unwrap_or("backend rejected push request")
+    );
+}
+
+async fn force_push_task_attempt_branch_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/push/force",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client
+        .post(url)
+        .json(&RepoIdRequest { repo_id })
+        .send()
+        .await?;
+    let api = resp
+        .json::<ApiResponseWire<serde_json::Value, PushErrorWire>>()
+        .await?;
+    if !api.success {
+        anyhow::bail!(
+            "{}",
+            api.message
+                .as_deref()
+                .unwrap_or("backend rejected force-push request")
+        );
+    }
+    Ok(())
+}
+
+async fn create_pr_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    request: CreateGitHubPrRequest,
+) -> anyhow::Result<String> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/pr",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client.post(url).json(&request).send().await?;
+    let api = resp
+        .json::<ApiResponseWire<String, CreatePrErrorWire>>()
+        .await?;
+    if api.success {
+        return Ok(api.data.unwrap_or_default());
+    }
+    if let Some(msg) = api.message {
+        anyhow::bail!("{msg}");
+    }
+    if let Some(err) = api.error_data {
+        let msg = match err {
+            CreatePrErrorWire::GithubCliNotInstalled => {
+                "GitHub CLI (gh) not installed on the server"
+            }
+            CreatePrErrorWire::GithubCliNotLoggedIn => "GitHub CLI (gh) not logged in",
+            CreatePrErrorWire::GitCliNotLoggedIn => "git not authenticated (CLI auth failed)",
+            CreatePrErrorWire::GitCliNotInstalled => "git not available on the server",
+            CreatePrErrorWire::TargetBranchNotFound { branch } => {
+                return Err(anyhow::anyhow!("target branch not found: {branch}"));
+            }
+        };
+        anyhow::bail!("{msg}");
+    }
+    anyhow::bail!("backend rejected PR create request");
+}
+
+async fn attach_pr_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<AttachPrResponse> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/pr/attach",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client
+        .post(url)
+        .json(&RepoIdRequest { repo_id })
+        .send()
+        .await?;
+    let api = resp.json::<ApiResponseWire<AttachPrResponse>>().await?;
+    if !api.success {
+        anyhow::bail!(
+            "{}",
+            api.message
+                .as_deref()
+                .unwrap_or("backend rejected PR attach request")
+        );
+    }
+    Ok(api.data.unwrap_or(AttachPrResponse {
+        pr_attached: false,
+        pr_url: None,
+        pr_number: None,
+        pr_status: None,
+    }))
+}
+
+async fn get_pr_comments_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<usize> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/pr/comments?repo_id={repo_id}",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client.get(url).send().await?;
+    let api = resp
+        .json::<ApiResponseWire<PrCommentsResponse, GetPrCommentsErrorWire>>()
+        .await?;
+    if api.success {
+        return Ok(api.data.map(|d| d.comments.len()).unwrap_or(0));
+    }
+    if let Some(msg) = api.message {
+        anyhow::bail!("{msg}");
+    }
+    if let Some(err) = api.error_data {
+        let msg = match err {
+            GetPrCommentsErrorWire::NoPrAttached => "no PR attached",
+            GetPrCommentsErrorWire::GithubCliNotInstalled => {
+                "GitHub CLI (gh) not installed on the server"
+            }
+            GetPrCommentsErrorWire::GithubCliNotLoggedIn => "GitHub CLI (gh) not logged in",
+        };
+        anyhow::bail!("{msg}");
+    }
+    anyhow::bail!("backend rejected PR comments request");
+}
+
+async fn open_editor_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    file_path: Option<String>,
+) -> anyhow::Result<Option<String>> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/open-editor",
+        base_url.trim_end_matches('/')
+    );
+    let body = OpenEditorRequest {
+        editor_type: None,
+        file_path,
+    };
+    let resp = client.post(url).json(&body).send().await?;
+    let api = resp.json::<ApiResponseWire<OpenEditorResponse>>().await?;
+    if !api.success {
+        anyhow::bail!(
+            "{}",
+            api.message
+                .as_deref()
+                .unwrap_or("backend rejected open-editor request")
+        );
+    }
+    Ok(api.data.and_then(|d| d.url))
 }
