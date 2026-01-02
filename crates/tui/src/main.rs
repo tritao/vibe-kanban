@@ -1105,8 +1105,8 @@ fn compute_main_layout(area: ratatui::layout::Rect) -> MainLayoutRects {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Percentage(18),
-            Constraint::Percentage(57),
-            Constraint::Percentage(25),
+            Constraint::Percentage(54),
+            Constraint::Percentage(28),
         ])
         .split(root[1]);
 
@@ -1524,8 +1524,8 @@ fn render(f: &mut Frame, app: &AppState) {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Percentage(18),
-            Constraint::Percentage(57),
-            Constraint::Percentage(25),
+            Constraint::Percentage(54),
+            Constraint::Percentage(28),
         ])
         .split(root[1]);
 
