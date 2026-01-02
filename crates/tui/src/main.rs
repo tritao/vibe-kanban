@@ -1162,6 +1162,132 @@ fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Result<bool> {
                         save_prefs(&app.prefs);
                         app.diff_preview_cache_key = None;
                     }
+                    (KeyCode::Char('S'), _) if app.focus == FocusPane::Diff => {
+                        request_branch_status_refresh(app);
+                    }
+                    (KeyCode::Char('M'), _) if app.focus == FocusPane::Diff => {
+                        if app.selected_attempt_id.is_some() {
+                            if let Ok((repo_id, repo_name)) = resolve_repo_for_command(app, None) {
+                                let attempt_id = app.selected_attempt_id.unwrap();
+                                let base_url = app.backend_url.clone();
+                                let net_tx = app.net_tx.clone();
+                                tokio::spawn(async move {
+                                    match merge_task_attempt_http(&base_url, attempt_id, repo_id)
+                                        .await
+                                    {
+                                        Ok(()) => {
+                                            let _ = net_tx
+                                                .send(NetEvent::Notice(format!(
+                                                    "Merged {repo_name}."
+                                                )))
+                                                .await;
+                                            if let Ok(statuses) =
+                                                branch_status_http(&base_url, attempt_id).await
+                                            {
+                                                let _ = net_tx
+                                                    .send(NetEvent::BranchStatusLoaded(statuses))
+                                                    .await;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let _ = net_tx
+                                                .send(NetEvent::Error(format!("merge failed: {e}")))
+                                                .await;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    (KeyCode::Char('R'), _) if app.focus == FocusPane::Diff => {
+                        if app.selected_attempt_id.is_some() {
+                            if let Ok((repo_id, repo_name)) = resolve_repo_for_command(app, None) {
+                                let attempt_id = app.selected_attempt_id.unwrap();
+                                let base_url = app.backend_url.clone();
+                                let net_tx = app.net_tx.clone();
+                                tokio::spawn(async move {
+                                    match rebase_task_attempt_http(
+                                        &base_url, attempt_id, repo_id, None, None,
+                                    )
+                                    .await
+                                    {
+                                        Ok(()) => {
+                                            let _ = net_tx
+                                                .send(NetEvent::Notice(format!(
+                                                    "Rebase started for {repo_name}."
+                                                )))
+                                                .await;
+                                            if let Ok(statuses) =
+                                                branch_status_http(&base_url, attempt_id).await
+                                            {
+                                                let _ = net_tx
+                                                    .send(NetEvent::BranchStatusLoaded(statuses))
+                                                    .await;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let _ = net_tx
+                                                .send(NetEvent::Error(format!(
+                                                    "rebase failed: {e}"
+                                                )))
+                                                .await;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    (KeyCode::Char('P'), _) if app.focus == FocusPane::Diff => {
+                        if app.selected_attempt_id.is_some() {
+                            if let Ok((repo_id, repo_name)) = resolve_repo_for_command(app, None) {
+                                let attempt_id = app.selected_attempt_id.unwrap();
+                                let title = app
+                                    .selected_task_id
+                                    .and_then(|id| find_task(&app.tasks_store, id).map(|t| t.title))
+                                    .unwrap_or_else(|| "Vibe Kanban PR".to_string());
+                                let base_url = app.backend_url.clone();
+                                let net_tx = app.net_tx.clone();
+                                tokio::spawn(async move {
+                                    match create_pr_http(
+                                        &base_url,
+                                        attempt_id,
+                                        CreateGitHubPrRequest {
+                                            title,
+                                            body: None,
+                                            target_branch: None,
+                                            draft: Some(false),
+                                            repo_id,
+                                            auto_generate_description: false,
+                                        },
+                                    )
+                                    .await
+                                    {
+                                        Ok(url) => {
+                                            let _ = net_tx
+                                                .send(NetEvent::Notice(format!(
+                                                    "PR created for {repo_name}: {url}"
+                                                )))
+                                                .await;
+                                            if let Ok(statuses) =
+                                                branch_status_http(&base_url, attempt_id).await
+                                            {
+                                                let _ = net_tx
+                                                    .send(NetEvent::BranchStatusLoaded(statuses))
+                                                    .await;
+                                            }
+                                        }
+                                        Err(e) => {
+                                            let _ = net_tx
+                                                .send(NetEvent::Error(format!(
+                                                    "pr create failed: {e}"
+                                                )))
+                                                .await;
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    }
                     (KeyCode::Char('c'), _) if app.focus == FocusPane::Board => {
                         app.show_cancelled = !app.show_cancelled;
                         if !app.show_cancelled && app.tasks_active_column == TaskStatus::Cancelled {
@@ -1257,6 +1383,8 @@ struct MainLayoutRects {
     diff: ratatui::layout::Rect,
     exec_logs: ratatui::layout::Rect,
     exec_input: ratatui::layout::Rect,
+    #[allow(dead_code)]
+    diff_repo_bar: ratatui::layout::Rect,
     diff_files: ratatui::layout::Rect,
     diff_preview: ratatui::layout::Rect,
 }
@@ -1287,7 +1415,11 @@ fn compute_main_layout(area: ratatui::layout::Rect) -> MainLayoutRects {
 
     let diff_sections = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(10), Constraint::Min(3)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(10),
+            Constraint::Min(3),
+        ])
         .split(main[2]);
 
     MainLayoutRects {
@@ -1296,8 +1428,9 @@ fn compute_main_layout(area: ratatui::layout::Rect) -> MainLayoutRects {
         diff: main[2],
         exec_logs: exec_sections[0],
         exec_input: exec_sections[1],
-        diff_files: diff_sections[0],
-        diff_preview: diff_sections[1],
+        diff_repo_bar: diff_sections[0],
+        diff_files: diff_sections[1],
+        diff_preview: diff_sections[2],
     }
 }
 
@@ -1690,6 +1823,7 @@ fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
                         if idx != app.selected_diff_index {
                             app.selected_diff_index = idx;
                             app.diff_scroll_offset = 0;
+                            sync_selected_repo_from_diff_selection(app);
                             schedule_diff_preview_refresh(app, Duration::from_millis(0));
                         }
                     }
@@ -1850,7 +1984,7 @@ fn render_bottom_bar(app: &AppState) -> Paragraph<'static> {
             "Tab next | i compose (/cmd) | Enter send | e expand | PgUp/PgDn scroll | End bottom | m md view | x stop | o log mode | q quit"
         }
         FocusPane::Diff => {
-            "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | w wrap | q quit"
+            "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | w wrap | M merge | P PR | R rebase | S status | q quit"
         }
     };
     Paragraph::new(Line::from(Span::styled(
@@ -2698,11 +2832,189 @@ fn diff_rows_with_all(store: &serde_json::Value) -> Vec<DiffRow> {
 fn render_diff_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
     let sections = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(10), Constraint::Min(3)])
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(10),
+            Constraint::Min(3),
+        ])
         .split(area);
 
-    render_diff_files(f, app, sections[0]);
-    render_diff_preview(f, app, sections[1]);
+    render_diff_repo_bar(f, app, sections[0]);
+    render_diff_files(f, app, sections[1]);
+    render_diff_preview(f, app, sections[2]);
+}
+
+fn selected_attempt_branch(app: &AppState) -> String {
+    app.selected_attempt_id
+        .and_then(|id| app.attempts.iter().find(|a| a.id == id))
+        .map(|a| a.branch.clone())
+        .unwrap_or_else(|| "—".to_string())
+}
+
+fn repo_name_from_path(path: &str) -> Option<&str> {
+    let first = path.split('/').next()?;
+    if first.is_empty() { None } else { Some(first) }
+}
+
+fn selected_repo_status_from_diff(app: &AppState) -> Option<usize> {
+    if app.repo_statuses.is_empty() {
+        return None;
+    }
+    let rows = diff_rows_with_all(&app.diff_store);
+    let selected = rows.get(app.selected_diff_index)?;
+    let path = selected
+        .new_path
+        .as_deref()
+        .or(selected.old_path.as_deref())
+        .unwrap_or(&selected.key);
+    let repo = repo_name_from_path(path)?;
+    app.repo_statuses.iter().position(|r| r.repo_name == repo)
+}
+
+fn sync_selected_repo_from_diff_selection(app: &mut AppState) {
+    if let Some(idx) = selected_repo_status_from_diff(app) {
+        app.selected_repo_index = idx;
+    }
+}
+
+fn badge(text: impl Into<String>, fg: Color, bg: Color) -> Span<'static> {
+    Span::styled(
+        format!(" {} ", text.into()),
+        Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
+    )
+}
+
+fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
+    let border_style = if app.focus == FocusPane::Diff {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default()
+    };
+
+    let w = area.width.saturating_sub(2) as usize;
+
+    let repo = app.repo_statuses.get(
+        app.selected_repo_index
+            .min(app.repo_statuses.len().saturating_sub(1)),
+    );
+    let branch = selected_attempt_branch(app);
+    let mut right_parts: Vec<String> = vec![];
+
+    let (repo_name, target_branch, ahead, behind, conflicts, pr_open) = if let Some(r) = repo {
+        let ahead = r.status.commits_ahead.unwrap_or(0);
+        let behind = r.status.commits_behind.unwrap_or(0);
+        let conflicts = r.status.conflicted_files.len();
+        let pr_open = r.status.merges.iter().find_map(|m| match m {
+            Merge::Pr(pr) => Some(pr.pr_info.number),
+            _ => None,
+        });
+        (
+            r.repo_name.clone(),
+            r.status.target_branch_name.clone(),
+            ahead,
+            behind,
+            conflicts,
+            pr_open,
+        )
+    } else {
+        ("(repo)".to_string(), "—".to_string(), 0, 0, 0, None)
+    };
+
+    if ahead > 0 {
+        right_parts.push(format!("+{ahead} ahead"));
+    }
+    if behind > 0 {
+        right_parts.push(format!("{behind} behind"));
+    }
+    if conflicts > 0 {
+        right_parts.push(format!("{conflicts} conflicts"));
+    }
+    if let Some(n) = pr_open {
+        right_parts.push(format!("PR #{n}"));
+    }
+
+    // Action hints (keyboard "buttons")
+    right_parts.push("M Merge".to_string());
+    right_parts.push("P PR".to_string());
+    right_parts.push("R Rebase".to_string());
+
+    let right_text = right_parts.join("  ");
+    let right_w = display_width(&right_text);
+
+    let left_base = if repo.is_some() {
+        format!("{repo_name}  {branch} → {target_branch}")
+    } else if app.selected_attempt_id.is_some() {
+        format!("{branch}  (press S for repo status)")
+    } else {
+        "(no attempt)".to_string()
+    };
+    let left_w = if w > right_w + 2 { w - right_w - 2 } else { w };
+    let left = truncate_to_width(&left_base, left_w);
+
+    let mut spans: Vec<Span<'static>> = vec![Span::styled(
+        left,
+        Style::default().add_modifier(Modifier::BOLD),
+    )];
+
+    if w > right_w + 2 {
+        spans.push(Span::raw("  "));
+        // Render badges + buttons with colors.
+        let mut first = true;
+        if ahead > 0 {
+            spans.push(badge(format!("+{ahead}"), Color::Black, Color::LightGreen));
+            first = false;
+        }
+        if behind > 0 {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(badge(format!("{behind}"), Color::Black, Color::LightYellow));
+            first = false;
+        }
+        if conflicts > 0 {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(badge(format!("!{conflicts}"), Color::White, Color::Red));
+            first = false;
+        }
+        if let Some(n) = pr_open {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(badge(format!("PR#{n}"), Color::Black, Color::LightBlue));
+        }
+
+        spans.push(Span::raw("  "));
+        spans.push(Span::styled(
+            "[M]erge".to_string(),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            "[P]R".to_string(),
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            "[R]ebase".to_string(),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    let p = Paragraph::new(Line::from(spans)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Repo")
+            .border_style(border_style),
+    );
+    f.render_widget(p, area);
 }
 
 fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
@@ -3344,6 +3656,10 @@ fn render_help_modal(f: &mut Frame) {
         Line::from("  PgUp/PgDn   scroll diff preview"),
         Line::from("  d           toggle stats-only"),
         Line::from("  t           cycle theme"),
+        Line::from("  M           merge (selected repo)"),
+        Line::from("  P           create PR (selected repo)"),
+        Line::from("  R           rebase (selected repo)"),
+        Line::from("  S           refresh branch status"),
     ];
 
     let p = Paragraph::new(lines)
@@ -7587,6 +7903,9 @@ fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
                         "Aborted conflicts for {repo_name}."
                     )))
                     .await;
+                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                }
             }
             Err(e) => {
                 let _ = net_tx
@@ -7684,6 +8003,9 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
                 let _ = net_tx
                     .send(NetEvent::Notice(format!("Rebase started for {repo_name}.")))
                     .await;
+                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                }
             }
             Err(e) => {
                 let _ = net_tx
@@ -7722,6 +8044,9 @@ fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
                 let _ = net_tx
                     .send(NetEvent::Notice(format!("Merged {repo_name}.")))
                     .await;
+                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                }
             }
             Err(e) => {
                 let _ = net_tx
@@ -7771,6 +8096,9 @@ fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
                         if force { " (force)" } else { "" }
                     )))
                     .await;
+                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                }
             }
             Err(e) => {
                 let _ = net_tx
@@ -7869,6 +8197,9 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
                         "PR created for {repo_name}: {url}"
                     )))
                     .await;
+                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                }
             }
             Err(e) => {
                 let _ = net_tx
@@ -7914,6 +8245,9 @@ fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(),
                     format!("No PR found to attach for {repo_name}.")
                 };
                 let _ = net_tx.send(NetEvent::Notice(msg)).await;
+                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                }
             }
             Err(e) => {
                 let _ = net_tx
@@ -8136,6 +8470,7 @@ fn select_adjacent_diff_file(app: &mut AppState, delta: i32) {
 
     app.selected_diff_index = next;
     app.diff_scroll_offset = 0;
+    sync_selected_repo_from_diff_selection(app);
     schedule_diff_preview_refresh(app, Duration::from_millis(0));
 }
 
