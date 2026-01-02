@@ -2898,7 +2898,6 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: ratatui::layout::Re
             .min(app.repo_statuses.len().saturating_sub(1)),
     );
     let branch = selected_attempt_branch(app);
-    let mut right_parts: Vec<String> = vec![];
 
     let (repo_name, target_branch, ahead, behind, conflicts, pr_open) = if let Some(r) = repo {
         let ahead = r.status.commits_ahead.unwrap_or(0);
@@ -2920,27 +2919,6 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: ratatui::layout::Re
         ("(repo)".to_string(), "—".to_string(), 0, 0, 0, None)
     };
 
-    if ahead > 0 {
-        right_parts.push(format!("+{ahead} ahead"));
-    }
-    if behind > 0 {
-        right_parts.push(format!("{behind} behind"));
-    }
-    if conflicts > 0 {
-        right_parts.push(format!("{conflicts} conflicts"));
-    }
-    if let Some(n) = pr_open {
-        right_parts.push(format!("PR #{n}"));
-    }
-
-    // Action hints (keyboard "buttons")
-    right_parts.push("M Merge".to_string());
-    right_parts.push("P PR".to_string());
-    right_parts.push("R Rebase".to_string());
-
-    let right_text = right_parts.join("  ");
-    let right_w = display_width(&right_text);
-
     let left_base = if repo.is_some() {
         format!("{repo_name}  {branch} → {target_branch}")
     } else if app.selected_attempt_id.is_some() {
@@ -2948,7 +2926,44 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: ratatui::layout::Re
     } else {
         "(no attempt)".to_string()
     };
-    let left_w = if w > right_w + 2 { w - right_w - 2 } else { w };
+
+    // Compute right-side width based on what we actually render (badges + buttons),
+    // so we don't truncate the left segment unnecessarily.
+    let mut right_plain = String::new();
+    let mut any_badge = false;
+    if ahead > 0 {
+        right_plain.push_str(&format!(" +{ahead} "));
+        any_badge = true;
+    }
+    if behind > 0 {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(&format!(" {behind} "));
+        any_badge = true;
+    }
+    if conflicts > 0 {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(&format!(" !{conflicts} "));
+        any_badge = true;
+    }
+    if let Some(n) = pr_open {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(&format!(" PR#{n} "));
+        any_badge = true;
+    }
+    if any_badge {
+        right_plain.push_str("  ");
+    }
+    right_plain.push_str("[M]erge [P]R [R]ebase");
+    let right_w = display_width(&right_plain);
+
+    let can_show_right = w > right_w + 2;
+    let left_w = if can_show_right { w - right_w - 2 } else { w };
     let left = truncate_to_width(&left_base, left_w);
 
     let mut spans: Vec<Span<'static>> = vec![Span::styled(
@@ -2956,7 +2971,7 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: ratatui::layout::Re
         Style::default().add_modifier(Modifier::BOLD),
     )];
 
-    if w > right_w + 2 {
+    if can_show_right {
         spans.push(Span::raw("  "));
         // Render badges + buttons with colors.
         let mut first = true;
