@@ -213,6 +213,13 @@ impl Default for DiffTheme {
 }
 
 impl DiffTheme {
+    fn is_light(self) -> bool {
+        matches!(
+            self,
+            Self::Base16OceanLight | Self::InspiredGithub | Self::SolarizedLight
+        )
+    }
+
     fn syntect_key(self) -> &'static str {
         match self {
             Self::Base16OceanDark => "base16-ocean.dark",
@@ -5676,11 +5683,11 @@ fn highlight_unified_diff(
     theme: DiffTheme,
 ) -> Vec<Line<'static>> {
     let ps = syntect_syntax_set();
-    let theme = syntect_theme(theme);
+    let syntect_theme = syntect_theme(theme);
     let syntax = syntax_for_path(ps, file_path);
 
-    let mut old_hl = HighlightLines::new(syntax, theme);
-    let mut new_hl = HighlightLines::new(syntax, theme);
+    let mut old_hl = HighlightLines::new(syntax, syntect_theme);
+    let mut new_hl = HighlightLines::new(syntax, syntect_theme);
 
     let mut out: Vec<Line<'static>> = vec![];
     for raw_line in diff.lines() {
@@ -5779,14 +5786,43 @@ fn highlight_unified_diff(
         };
         spans.extend(rest_spans);
 
-        // GitHub-like backgrounds for additions/removals (light green / light red).
-        // Also pad with spaces so the background covers the full visible line width.
-        let line_bg = if marker_ch == '+' {
-            Some(Color::Rgb(205, 225, 210)) // desaturated green
-        } else if marker_ch == '-' {
-            Some(Color::Rgb(235, 210, 212)) // desaturated red
-        } else {
-            None
+        // Semi-transparent GitHub-like backgrounds for additions/removals:
+        // - added: hsl(138 69% 45% / .4)
+        // - removed: hsl(5 100% 69% / .4)
+        //
+        // Terminals don't support alpha backgrounds, so we approximate by blending the HSL color
+        // against the theme's "likely" background (white for light themes; #1e1e1e for dark).
+        let line_bg = {
+            fn blend_2_5(fg: u8, bg: u8) -> u8 {
+                // 0.4*fg + 0.6*bg == (2/5)*fg + (3/5)*bg
+                let v = (fg as u16) * 2 + (bg as u16) * 3;
+                ((v + 2) / 5) as u8
+            }
+
+            let (bg_r, bg_g, bg_b) = if theme.is_light() {
+                (255u8, 255u8, 255u8)
+            } else {
+                (30u8, 30u8, 30u8)
+            };
+
+            // Precomputed from HSL:
+            // - hsl(138 69% 45%) => rgb(36, 194, 83)
+            // - hsl(5 100% 69%)  => rgb(255, 110, 97)
+            if marker_ch == '+' {
+                Some(Color::Rgb(
+                    blend_2_5(36, bg_r),
+                    blend_2_5(194, bg_g),
+                    blend_2_5(83, bg_b),
+                ))
+            } else if marker_ch == '-' {
+                Some(Color::Rgb(
+                    blend_2_5(255, bg_r),
+                    blend_2_5(110, bg_g),
+                    blend_2_5(97, bg_b),
+                ))
+            } else {
+                None
+            }
         };
 
         if let Some(bg) = line_bg {
