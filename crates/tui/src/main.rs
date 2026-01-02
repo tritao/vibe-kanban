@@ -1738,6 +1738,8 @@ struct DiffRow {
     additions: Option<usize>,
     deletions: Option<usize>,
     content_omitted: bool,
+    old_path: Option<String>,
+    new_path: Option<String>,
 }
 
 fn diff_rows(store: &serde_json::Value) -> Vec<DiffRow> {
@@ -1764,6 +1766,14 @@ fn diff_rows(store: &serde_json::Value) -> Vec<DiffRow> {
             .get("contentOmitted")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let old_path = content
+            .get("oldPath")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        let new_path = content
+            .get("newPath")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         rows.push(DiffRow {
             key: key.clone(),
@@ -1771,6 +1781,8 @@ fn diff_rows(store: &serde_json::Value) -> Vec<DiffRow> {
             additions,
             deletions,
             content_omitted,
+            old_path,
+            new_path,
         });
     }
 
@@ -1826,20 +1838,73 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
         visible
             .iter()
             .map(|d| {
-                let mut left = d.key.clone();
-                if d.content_omitted {
-                    left.push_str(" (omitted)");
-                }
-
-                let stats = match (d.additions, d.deletions) {
-                    (Some(a), Some(b)) => format!(" +{a}/-{b}"),
-                    (Some(a), None) => format!(" +{a}"),
-                    (None, Some(b)) => format!(" -{b}"),
-                    (None, None) => "".to_string(),
+                let change = d.change.as_deref().unwrap_or("unknown");
+                let (label, change_style) = match change {
+                    "added" | "Added" => ("ADD", Style::default().fg(Color::Green)),
+                    "deleted" | "Deleted" => ("DEL", Style::default().fg(Color::Red)),
+                    "modified" | "Modified" => ("MOD", Style::default().fg(Color::Yellow)),
+                    "renamed" | "Renamed" => ("REN", Style::default().fg(Color::Cyan)),
+                    "copied" | "Copied" => ("CPY", Style::default().fg(Color::Blue)),
+                    "permission_change" | "PermissionChange" | "Permission Change" => {
+                        ("CHMOD", Style::default().fg(Color::Magenta))
+                    }
+                    _ => ("?", Style::default().fg(Color::DarkGray)),
                 };
 
-                let kind = d.change.clone().unwrap_or_else(|| "?".to_string());
-                ListItem::new(Line::from(format!("{kind:>8} {left}{stats}")))
+                let name = if label.len() >= 5 {
+                    format!("{label:>8}")
+                } else {
+                    format!("{label:>8}")
+                };
+
+                let path_display = if label == "REN" {
+                    match (d.old_path.as_deref(), d.new_path.as_deref()) {
+                        (Some(old), Some(new)) if !old.is_empty() && !new.is_empty() => {
+                            format!("{old} → {new}")
+                        }
+                        _ => d.key.clone(),
+                    }
+                } else {
+                    d.key.clone()
+                };
+
+                let (dir_part, base_part) = match path_display.rsplit_once('/') {
+                    Some((dir, base)) if !dir.is_empty() => (Some(dir.to_string()), base.to_string()),
+                    _ => (None, path_display),
+                };
+
+                let mut spans: Vec<Span<'static>> = vec![
+                    Span::styled(name, change_style),
+                    Span::raw(" "),
+                ];
+
+                if let Some(dir) = dir_part {
+                    spans.push(Span::styled(format!("{dir}/"), Style::default().fg(Color::DarkGray)));
+                }
+                spans.push(Span::styled(
+                    base_part,
+                    Style::default().add_modifier(Modifier::BOLD),
+                ));
+
+                if d.content_omitted {
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled("[omitted]", Style::default().fg(Color::DarkGray)));
+                }
+
+                if let (Some(a), Some(b)) = (d.additions, d.deletions) {
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(format!("+{a}"), Style::default().fg(Color::Green)));
+                    spans.push(Span::raw("/"));
+                    spans.push(Span::styled(format!("-{b}"), Style::default().fg(Color::Red)));
+                } else if let Some(a) = d.additions {
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(format!("+{a}"), Style::default().fg(Color::Green)));
+                } else if let Some(b) = d.deletions {
+                    spans.push(Span::raw(" "));
+                    spans.push(Span::styled(format!("-{b}"), Style::default().fg(Color::Red)));
+                }
+
+                ListItem::new(Line::from(spans))
             })
             .collect()
     };
@@ -1852,7 +1917,11 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                 .border_style(border_style),
         )
         .highlight_style(Style::default().bg(Color::DarkGray))
-        .highlight_symbol("▶ ");
+        .highlight_symbol(if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files {
+            "▶ "
+        } else {
+            "  "
+        });
 
     let mut state = ratatui::widgets::ListState::default();
     if !visible.is_empty() {
