@@ -6909,7 +6909,7 @@ fn render_task_line(task: &TaskRow) -> Line<'static> {
         spans.push(Span::styled(
             "FAIL",
             Style::default()
-                .fg(Color::Black)
+                .fg(Color::White)
                 .bg(Color::Red)
                 .add_modifier(Modifier::BOLD),
         ));
