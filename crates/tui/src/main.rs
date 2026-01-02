@@ -2100,7 +2100,7 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                     spans.extend(label_spans(
                         "ALL",
                         Style::default()
-                            .fg(Color::Magenta)
+                            .fg(Color::Cyan)
                             .add_modifier(Modifier::BOLD),
                     ));
                     spans.push(Span::styled(
