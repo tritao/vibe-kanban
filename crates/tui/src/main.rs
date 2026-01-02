@@ -340,11 +340,20 @@ enum LogKind {
     Info,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProgressKind {
+    Thinking,
+    Loading,
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct LogAssemblerState {
     open: bool,
     open_kind: Option<LogKind>,
     attach_to_entry: Option<usize>,
+    progress_kind: Option<ProgressKind>,
+    progress_count: usize,
+    progress_line_pos: Option<usize>,
 }
 
 struct AppState {
@@ -4138,12 +4147,26 @@ fn append_log_entry(
                 return;
             }
 
-            // Visual separation between "cards"/blocks, without breaking stdout/stderr
-            // attachments which arrive after the tool event.
-            if let Some(last) = lines.last() {
-                if !line_is_blank(last) {
-                    let sep_owner = map.last().copied().unwrap_or(entry_idx);
-                    push_line(lines, map, sep_owner, Line::from(""), width);
+            let entry_type_tag = content
+                .get("entry_type")
+                .and_then(|v| v.get("type"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let is_progress = matches!(entry_type_tag, "thinking" | "loading");
+
+            // Visual separation between "cards"/blocks, but don't spam blank lines for
+            // ephemeral progress entries (thinking/loading).
+            if !is_progress {
+                // When a "real" entry arrives, stop coalescing progress.
+                state.progress_kind = None;
+                state.progress_count = 0;
+                state.progress_line_pos = None;
+
+                if let Some(last) = lines.last() {
+                    if !line_is_blank(last) {
+                        let sep_owner = map.last().copied().unwrap_or(entry_idx);
+                        push_line(lines, map, sep_owner, Line::from(""), width);
+                    }
                 }
             }
 
@@ -4241,6 +4264,27 @@ fn append_normalized_entry(
     diff_theme: DiffTheme,
     collapsed: bool,
 ) {
+    fn progress_line(kind: ProgressKind, count: usize, width: usize) -> Line<'static> {
+        let label = match kind {
+            ProgressKind::Thinking => "thinking…",
+            ProgressKind::Loading => "loading…",
+        };
+        let text = if count > 1 {
+            format!("{label} (x{count})")
+        } else {
+            label.to_string()
+        };
+
+        // Keep this to a single line to make in-place updates easy.
+        let max = width.saturating_sub(2).max(1);
+        let text = truncate_to_width(&text, max);
+        Line::from(vec![
+            Span::styled("▌", Style::default().add_modifier(Modifier::DIM)),
+            Span::raw(" "),
+            Span::styled(text, Style::default().add_modifier(Modifier::DIM)),
+        ])
+    }
+
     fn append_text_block(
         lines: &mut Vec<Line<'static>>,
         map: &mut Vec<usize>,
@@ -4364,28 +4408,36 @@ fn append_normalized_entry(
             );
         }
         "thinking" => {
-            push_line(
-                lines,
-                map,
-                entry_idx,
-                Line::from(Span::styled(
-                    "thinking…".to_string(),
-                    Style::default().add_modifier(Modifier::DIM),
-                )),
-                width,
-            );
+            let kind = ProgressKind::Thinking;
+            if state.progress_kind == Some(kind)
+                && let Some(pos) = state.progress_line_pos
+                && pos < lines.len()
+            {
+                state.progress_count = state.progress_count.saturating_add(1);
+                lines[pos] = progress_line(kind, state.progress_count, width);
+                map[pos] = entry_idx;
+            } else {
+                state.progress_kind = Some(kind);
+                state.progress_count = 1;
+                state.progress_line_pos = Some(lines.len());
+                push_line(lines, map, entry_idx, progress_line(kind, 1, width), width);
+            }
         }
         "loading" => {
-            push_line(
-                lines,
-                map,
-                entry_idx,
-                Line::from(Span::styled(
-                    "loading…".to_string(),
-                    Style::default().add_modifier(Modifier::DIM),
-                )),
-                width,
-            );
+            let kind = ProgressKind::Loading;
+            if state.progress_kind == Some(kind)
+                && let Some(pos) = state.progress_line_pos
+                && pos < lines.len()
+            {
+                state.progress_count = state.progress_count.saturating_add(1);
+                lines[pos] = progress_line(kind, state.progress_count, width);
+                map[pos] = entry_idx;
+            } else {
+                state.progress_kind = Some(kind);
+                state.progress_count = 1;
+                state.progress_line_pos = Some(lines.len());
+                push_line(lines, map, entry_idx, progress_line(kind, 1, width), width);
+            }
         }
         "next_action" => {
             let failed = entry_type
