@@ -5649,6 +5649,62 @@ fn syntect_style_to_ratatui(style: syntect::highlighting::Style) -> Style {
     Style::default().fg(Color::Rgb(fg.r, fg.g, fg.b))
 }
 
+fn color_to_rgb(c: Color) -> Option<(u8, u8, u8)> {
+    match c {
+        Color::Rgb(r, g, b) => Some((r, g, b)),
+        Color::Black => Some((0, 0, 0)),
+        Color::Red => Some((205, 49, 49)),
+        Color::Green => Some((13, 188, 121)),
+        Color::Yellow => Some((229, 229, 16)),
+        Color::Blue => Some((36, 114, 200)),
+        Color::Magenta => Some((188, 63, 188)),
+        Color::Cyan => Some((17, 168, 205)),
+        Color::Gray => Some((204, 204, 204)),
+        Color::DarkGray => Some((118, 118, 118)),
+        Color::LightRed => Some((241, 76, 76)),
+        Color::LightGreen => Some((35, 209, 139)),
+        Color::LightYellow => Some((245, 245, 67)),
+        Color::LightBlue => Some((59, 142, 234)),
+        Color::LightMagenta => Some((214, 112, 214)),
+        Color::LightCyan => Some((41, 184, 219)),
+        Color::White => Some((255, 255, 255)),
+        _ => None,
+    }
+}
+
+fn srgb_to_linear(c: f64) -> f64 {
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
+}
+
+fn relative_luminance(rgb: (u8, u8, u8)) -> f64 {
+    let (r, g, b) = rgb;
+    let r = srgb_to_linear(r as f64 / 255.0);
+    let g = srgb_to_linear(g as f64 / 255.0);
+    let b = srgb_to_linear(b as f64 / 255.0);
+    0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+fn contrast_ratio(a: (u8, u8, u8), b: (u8, u8, u8)) -> f64 {
+    let la = relative_luminance(a);
+    let lb = relative_luminance(b);
+    let (l1, l2) = if la >= lb { (la, lb) } else { (lb, la) };
+    (l1 + 0.05) / (l2 + 0.05)
+}
+
+fn best_contrast_bw(bg: (u8, u8, u8)) -> Color {
+    let black = (0, 0, 0);
+    let white = (255, 255, 255);
+    if contrast_ratio(white, bg) >= contrast_ratio(black, bg) {
+        Color::White
+    } else {
+        Color::Black
+    }
+}
+
 fn truncate_spans_to_width(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
     if width == 0 {
         return vec![];
@@ -5833,6 +5889,23 @@ fn highlight_unified_diff(
 
         let mut spans = truncate_spans_to_width(spans, width);
         if let Some(bg) = line_bg {
+            // Post-process syntect colors so they keep contrast against the line background.
+            // We only touch the "content" spans (skip the gutter + +/- marker at the start).
+            if let Some(bg_rgb) = color_to_rgb(bg) {
+                const MIN_CONTRAST: f64 = 3.0;
+                for span in spans.iter_mut().skip(2) {
+                    let Some(fg) = span.style.fg else {
+                        continue;
+                    };
+                    let Some(fg_rgb) = color_to_rgb(fg) else {
+                        continue;
+                    };
+                    if contrast_ratio(fg_rgb, bg_rgb) < MIN_CONTRAST {
+                        span.style = span.style.fg(best_contrast_bw(bg_rgb));
+                    }
+                }
+            }
+
             let used = spans
                 .iter()
                 .map(|s| display_width(s.content.as_ref()))
