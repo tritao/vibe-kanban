@@ -180,6 +180,7 @@ struct TuiPrefs {
     log_mode: LogMode,
     log_render_mode: LogRenderMode,
     diff_theme: DiffTheme,
+    diff_wrap: bool,
 }
 
 impl Default for TuiPrefs {
@@ -190,6 +191,7 @@ impl Default for TuiPrefs {
             log_mode: LogMode::Normalized,
             log_render_mode: LogRenderMode::Markdown,
             diff_theme: DiffTheme::default(),
+            diff_wrap: false,
         }
     }
 }
@@ -411,6 +413,7 @@ struct AppState {
     diff_preview_cache_width: u16,
     diff_preview_lines: Vec<Line<'static>>,
     diff_theme: DiffTheme,
+    diff_wrap: bool,
 
     log_status: StreamStatus,
     log_store: serde_json::Value,
@@ -503,6 +506,7 @@ impl AppState {
             diff_preview_cache_width: 0,
             diff_preview_lines: vec![Line::from("No diffs")],
             diff_theme: prefs.diff_theme,
+            diff_wrap: prefs.diff_wrap,
 
             log_status: StreamStatus::Disconnected,
             log_store: serde_json::json!({ "entries": [] }),
@@ -991,6 +995,12 @@ fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Result<bool> {
                     }
                     (KeyCode::Char('l'), _) if app.focus == FocusPane::Diff => {
                         app.diff_focus = DiffFocus::Preview;
+                    }
+                    (KeyCode::Char('w'), _) if app.focus == FocusPane::Diff => {
+                        app.diff_wrap = !app.diff_wrap;
+                        app.prefs.diff_wrap = app.diff_wrap;
+                        save_prefs(&app.prefs);
+                        app.diff_preview_cache_key = None;
                     }
                     (KeyCode::Char('c'), _) if app.focus == FocusPane::Board => {
                         app.show_cancelled = !app.show_cancelled;
@@ -1645,7 +1655,7 @@ fn render_bottom_bar(app: &AppState) -> Paragraph<'static> {
             "Tab next | i compose | Enter send | e expand | PgUp/PgDn scroll | End bottom | m md view | x stop | o log mode | q quit"
         }
         FocusPane::Diff => {
-            "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | q quit"
+            "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | w wrap | q quit"
         }
     };
     Paragraph::new(Line::from(Span::styled(
@@ -2286,7 +2296,11 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: ratatui::layout::Rec
     let w = Paragraph::new(visible.to_vec()).block(
         Block::default()
             .borders(Borders::ALL)
-            .title(format!("Diff ({})", app.diff_theme.label()))
+            .title(format!(
+                "Diff ({}){}",
+                app.diff_theme.label(),
+                if app.diff_wrap { ", wrap" } else { "" }
+            ))
             .border_style(border_style),
     );
 
@@ -4960,8 +4974,9 @@ fn append_normalized_entry(
                                         continue;
                                     }
                                     let body_width = width.saturating_sub(2).max(1);
-                                    let mut rendered =
-                                        highlight_unified_diff(path, diff, body_width, diff_theme);
+                                    let mut rendered = highlight_unified_diff(
+                                        path, diff, body_width, diff_theme, false,
+                                    );
                                     if rendered.len() > MAX_DIFF_LINES {
                                         rendered.truncate(MAX_DIFF_LINES);
                                         rendered.push(Line::from(Span::styled(
@@ -5355,6 +5370,7 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
     let mut hasher = DefaultHasher::new();
     selected.key.hash(&mut hasher);
     app.diff_theme.hash(&mut hasher);
+    app.diff_wrap.hash(&mut hasher);
     width.hash(&mut hasher);
 
     const MAX_DIFF_PREVIEW_LINES: usize = 20_000;
@@ -5461,6 +5477,7 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
                     &diff,
                     width,
                     app.diff_theme,
+                    app.diff_wrap,
                 ));
 
                 if lines.len() > MAX_DIFF_PREVIEW_LINES {
@@ -5573,7 +5590,8 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
         .as_deref()
         .or(selected.old_path.as_deref())
         .unwrap_or(&selected.key);
-    app.diff_preview_lines = highlight_unified_diff(highlight_path, &diff, width, app.diff_theme);
+    app.diff_preview_lines =
+        highlight_unified_diff(highlight_path, &diff, width, app.diff_theme, app.diff_wrap);
     if app.diff_preview_lines.is_empty() {
         app.diff_preview_lines = vec![Line::from("No diff content")];
     }
@@ -5732,11 +5750,78 @@ fn truncate_spans_to_width(mut spans: Vec<Span<'static>>, width: usize) -> Vec<S
     out
 }
 
+fn split_spans_by_width(
+    spans: &[Span<'static>],
+    max: usize,
+) -> (Vec<Span<'static>>, Vec<Span<'static>>) {
+    if max == 0 || spans.is_empty() {
+        return (vec![], spans.to_vec());
+    }
+
+    let mut left: Vec<Span<'static>> = vec![];
+    let mut remaining = max;
+    for (i, span) in spans.iter().enumerate() {
+        let w = display_width(span.content.as_ref());
+        if w <= remaining {
+            left.push(span.clone());
+            remaining -= w;
+            if remaining == 0 {
+                return (left, spans[i + 1..].to_vec());
+            }
+            continue;
+        }
+
+        if remaining == 0 {
+            return (left, spans[i..].to_vec());
+        }
+
+        let (chunk, rest) = split_by_width(span.content.as_ref(), remaining);
+        if !chunk.is_empty() {
+            left.push(Span::styled(chunk, span.style));
+        }
+        let mut right: Vec<Span<'static>> = vec![];
+        if !rest.is_empty() {
+            right.push(Span::styled(rest, span.style));
+        }
+        right.extend_from_slice(&spans[i + 1..]);
+        return (left, right);
+    }
+
+    (left, vec![])
+}
+
+fn wrap_spans_hard(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Vec<Span<'static>>> {
+    let width = width.max(1);
+    let mut out: Vec<Vec<Span<'static>>> = vec![];
+    while !spans.is_empty() {
+        let total: usize = spans
+            .iter()
+            .map(|s| display_width(s.content.as_ref()))
+            .sum();
+        if total <= width {
+            out.push(spans);
+            break;
+        }
+
+        let (left, right) = split_spans_by_width(&spans, width);
+        if left.is_empty() {
+            // Ensure progress even with extremely small widths / wide chars.
+            let first = spans.remove(0);
+            out.push(vec![first]);
+            continue;
+        }
+        out.push(left);
+        spans = right;
+    }
+    out
+}
+
 fn highlight_unified_diff(
     file_path: &str,
     diff: &str,
     width: usize,
     theme: DiffTheme,
+    wrap: bool,
 ) -> Vec<Line<'static>> {
     let ps = syntect_syntax_set();
     let syntect_theme = syntect_theme(theme);
@@ -5748,28 +5833,34 @@ fn highlight_unified_diff(
     let mut out: Vec<Line<'static>> = vec![];
     for raw_line in diff.lines() {
         if raw_line.starts_with("--- ") || raw_line.starts_with("+++ ") {
-            let spans = truncate_spans_to_width(
-                vec![Span::styled(
-                    raw_line.to_string(),
-                    Style::default()
-                        .fg(Color::LightBlue)
-                        .add_modifier(Modifier::BOLD),
-                )],
-                width,
-            );
-            out.push(Line::from(spans));
+            let spans = vec![Span::styled(
+                raw_line.to_string(),
+                Style::default()
+                    .fg(Color::LightBlue)
+                    .add_modifier(Modifier::BOLD),
+            )];
+            if wrap {
+                for row in wrap_spans_hard(spans, width) {
+                    out.push(Line::from(row));
+                }
+            } else {
+                out.push(Line::from(truncate_spans_to_width(spans, width)));
+            }
             continue;
         }
 
         if raw_line.starts_with("@@") {
-            let spans = truncate_spans_to_width(
-                vec![Span::styled(
-                    raw_line.to_string(),
-                    Style::default().fg(Color::Cyan),
-                )],
-                width,
-            );
-            out.push(Line::from(spans));
+            let spans = vec![Span::styled(
+                raw_line.to_string(),
+                Style::default().fg(Color::Cyan),
+            )];
+            if wrap {
+                for row in wrap_spans_hard(spans, width) {
+                    out.push(Line::from(row));
+                }
+            } else {
+                out.push(Line::from(truncate_spans_to_width(spans, width)));
+            }
             continue;
         }
 
@@ -5887,13 +5978,10 @@ fn highlight_unified_diff(
             }
         }
 
-        let mut spans = truncate_spans_to_width(spans, width);
-        if let Some(bg) = line_bg {
-            // Post-process syntect colors so they keep contrast against the line background.
-            // We only touch the "content" spans (skip the gutter + +/- marker at the start).
+        let apply_contrast = |spans: &mut [Span<'static>], bg: Color, skip: usize| {
             if let Some(bg_rgb) = color_to_rgb(bg) {
                 const MIN_CONTRAST: f64 = 3.0;
-                for span in spans.iter_mut().skip(2) {
+                for span in spans.iter_mut().skip(skip) {
                     let Some(fg) = span.style.fg else {
                         continue;
                     };
@@ -5905,7 +5993,9 @@ fn highlight_unified_diff(
                     }
                 }
             }
+        };
 
+        let pad_bg = |spans: &mut Vec<Span<'static>>, bg: Color| {
             let used = spans
                 .iter()
                 .map(|s| display_width(s.content.as_ref()))
@@ -5916,8 +6006,43 @@ fn highlight_unified_diff(
                     Style::default().bg(bg),
                 ));
             }
+        };
+
+        if wrap && width > 2 {
+            let content_width = width.saturating_sub(2).max(1);
+            let content = spans.split_off(2);
+            let wrapped = wrap_spans_hard(content, content_width);
+
+            for (i, chunk) in wrapped.into_iter().enumerate() {
+                let mut line_spans: Vec<Span<'static>> = if i == 0 {
+                    spans.clone()
+                } else {
+                    let mut p = vec![
+                        Span::styled("▌".to_string(), gutter_style),
+                        Span::styled(" ".to_string(), marker_style),
+                    ];
+                    if let Some(bg) = line_bg {
+                        for s in p.iter_mut() {
+                            s.style = s.style.bg(bg);
+                        }
+                    }
+                    p
+                };
+                line_spans.extend(chunk);
+                if let Some(bg) = line_bg {
+                    apply_contrast(&mut line_spans, bg, 2);
+                    pad_bg(&mut line_spans, bg);
+                }
+                out.push(Line::from(line_spans));
+            }
+        } else {
+            let mut spans = truncate_spans_to_width(spans, width);
+            if let Some(bg) = line_bg {
+                apply_contrast(&mut spans, bg, 2);
+                pad_bg(&mut spans, bg);
+            }
+            out.push(Line::from(spans));
         }
-        out.push(Line::from(spans));
     }
     out
 }
