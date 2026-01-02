@@ -5,7 +5,7 @@ use std::{
     io,
     path::PathBuf,
     sync::OnceLock,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::Context;
@@ -414,6 +414,8 @@ struct AppState {
     diff_preview_lines: Vec<Line<'static>>,
     diff_theme: DiffTheme,
     diff_wrap: bool,
+    diff_preview_pending: bool,
+    diff_preview_next_refresh_at: Option<Instant>,
 
     log_status: StreamStatus,
     log_store: serde_json::Value,
@@ -507,6 +509,8 @@ impl AppState {
             diff_preview_lines: vec![Line::from("No diffs")],
             diff_theme: prefs.diff_theme,
             diff_wrap: prefs.diff_wrap,
+            diff_preview_pending: false,
+            diff_preview_next_refresh_at: None,
 
             log_status: StreamStatus::Disconnected,
             log_store: serde_json::json!({ "entries": [] }),
@@ -646,6 +650,7 @@ async fn main() -> anyhow::Result<()> {
             Some(evt) = ui_rx.recv() => {
                 match evt {
                     UiEvent::Tick => {
+                        let now = Instant::now();
                         let layout = compute_main_layout(current_terminal_rect());
                         let inner_width = layout.exec_logs.width.saturating_sub(2);
                         let width = inner_width as usize;
@@ -656,11 +661,21 @@ async fn main() -> anyhow::Result<()> {
                         if flush_log_patches(&mut app, width) {
                             dirty = true;
                         }
-                        if dirty || app.diff_preview_cache_key.is_none() {
-                            let diff_inner_width = layout.diff_preview.width.saturating_sub(2) as usize;
+                        // Throttle expensive diff preview rebuilds (highlighting/wrapping) during
+                        // WS replay bursts by only refreshing when explicitly requested.
+                        let diff_inner_width_u16 = layout.diff_preview.width.saturating_sub(2);
+                        let diff_inner_width = diff_inner_width_u16 as usize;
+                        let diff_width_changed = app.diff_preview_cache_width != diff_inner_width_u16;
+                        let should_refresh_diff =
+                            diff_width_changed
+                                || app.diff_preview_cache_key.is_none()
+                                || diff_preview_refresh_ready(&app, now);
+                        if should_refresh_diff {
                             if refresh_diff_preview_cache(&mut app, diff_inner_width) {
                                 dirty = true;
                             }
+                            app.diff_preview_pending = false;
+                            app.diff_preview_next_refresh_at = None;
                         }
                         if clamp_scroll_offsets(&mut app, layout) {
                             dirty = true;
@@ -792,14 +807,30 @@ fn handle_net_event(app: &mut AppState, event: NetEvent) {
         }
         NetEvent::DiffStreamStatus(status) => {
             app.diff_status = status;
+            if status == StreamStatus::Completed && app.diff_preview_pending {
+                // If we were throttling refreshes during replay, do one final refresh ASAP.
+                app.diff_preview_next_refresh_at = Some(Instant::now());
+            }
         }
         NetEvent::DiffReset => {
             app.diff_store = serde_json::json!({ "entries": {} });
             app.selected_diff_index = 0;
             app.diff_scroll_offset = 0;
             app.diff_preview_cache_key = None;
+            app.diff_preview_pending = false;
+            app.diff_preview_next_refresh_at = None;
         }
         NetEvent::DiffPatch(patch) => {
+            let prev_selected_key = {
+                let prev_rows = diff_rows_with_all(&app.diff_store);
+                prev_rows
+                    .get(
+                        app.selected_diff_index
+                            .min(prev_rows.len().saturating_sub(1)),
+                    )
+                    .map(|r| r.key.clone())
+            };
+
             if let Err(e) = json_patch::patch(&mut app.diff_store, &patch) {
                 app.last_error = Some(format!("failed to apply diff patch: {e}"));
                 app.diff_status = StreamStatus::Error;
@@ -812,7 +843,31 @@ fn handle_net_event(app: &mut AppState, event: NetEvent) {
             } else {
                 app.selected_diff_index = app.selected_diff_index.min(rows.len() - 1);
             }
-            app.diff_preview_cache_key = None;
+
+            // Only refresh diff preview if the patch affects the currently selected entry.
+            // This avoids re-highlighting on every patch during server rebuild/replay bursts.
+            let selected = rows.get(app.selected_diff_index);
+            let selection_changed =
+                prev_selected_key.as_deref() != selected.map(|s| s.key.as_str());
+            if let Some(selected) = selected {
+                let needs_refresh = selection_changed
+                    || if selected.key == DIFF_ALL_KEY {
+                        true
+                    } else {
+                        diff_patch_touches_key(&patch, &selected.key)
+                    };
+
+                if needs_refresh {
+                    let delay = match app.diff_status {
+                        StreamStatus::Completed => Duration::from_millis(0),
+                        _ => Duration::from_millis(75),
+                    };
+                    schedule_diff_preview_refresh(app, delay);
+                }
+            } else if selection_changed {
+                // Diffs disappeared; refresh the preview to show the empty state.
+                schedule_diff_preview_refresh(app, Duration::from_millis(0));
+            }
         }
         NetEvent::LogStreamStatus(status) => {
             app.log_status = status;
@@ -1139,6 +1194,37 @@ fn compute_main_layout(area: ratatui::layout::Rect) -> MainLayoutRects {
         diff_files: diff_sections[0],
         diff_preview: diff_sections[1],
     }
+}
+
+fn json_pointer_escape_segment(s: &str) -> String {
+    s.replace('~', "~0").replace('/', "~1")
+}
+
+fn diff_patch_touches_key(patch: &json_patch::Patch, key: &str) -> bool {
+    let escaped = json_pointer_escape_segment(key);
+    let prefix = format!("/entries/{escaped}");
+    patch.iter().any(|op| {
+        let path = op.path().to_string();
+        path == "/entries" || path == prefix || path.starts_with(&(prefix.clone() + "/"))
+    })
+}
+
+fn schedule_diff_preview_refresh(app: &mut AppState, delay: Duration) {
+    let now = Instant::now();
+    let next = now + delay;
+    app.diff_preview_pending = true;
+    app.diff_preview_next_refresh_at = match app.diff_preview_next_refresh_at {
+        Some(existing) => Some(existing.min(next)),
+        None => Some(next),
+    };
+}
+
+fn diff_preview_refresh_ready(app: &AppState, now: Instant) -> bool {
+    app.diff_preview_pending
+        && app
+            .diff_preview_next_refresh_at
+            .map(|t| now >= t)
+            .unwrap_or(true)
 }
 
 fn clamp_scroll_offsets(app: &mut AppState, layout: MainLayoutRects) -> bool {
@@ -1496,8 +1582,11 @@ fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
                 if rect_contains(layout.diff_files, col, row) {
                     app.diff_focus = DiffFocus::Files;
                     if let Some(idx) = diff_files_hit_at(app, layout.diff_files, col, row) {
-                        app.selected_diff_index = idx;
-                        app.diff_scroll_offset = 0;
+                        if idx != app.selected_diff_index {
+                            app.selected_diff_index = idx;
+                            app.diff_scroll_offset = 0;
+                            schedule_diff_preview_refresh(app, Duration::from_millis(0));
+                        }
                     }
                 } else if rect_contains(layout.diff_preview, col, row) {
                     app.diff_focus = DiffFocus::Preview;
@@ -6874,6 +6963,7 @@ fn select_adjacent_diff_file(app: &mut AppState, delta: i32) {
 
     app.selected_diff_index = next;
     app.diff_scroll_offset = 0;
+    schedule_diff_preview_refresh(app, Duration::from_millis(0));
 }
 
 fn ensure_selection_visible(app: &mut AppState) {
