@@ -759,6 +759,11 @@ async fn main() -> anyhow::Result<()> {
                             dirty = true;
                         }
                         if dirty {
+                            if app.composer_active {
+                                terminal.show_cursor().ok();
+                            } else {
+                                terminal.hide_cursor().ok();
+                            }
                             terminal.draw(|f| render(f, &app)).context("draw frame")?;
                             dirty = false;
                         }
@@ -2176,7 +2181,36 @@ fn render_composer(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
     };
 
     let hint = if app.composer_active {
-        format!("> {}", app.composer_buffer)
+        let prefix = "> ";
+        let inner_w = area.width.saturating_sub(2) as usize;
+        let prefix_w = display_width(prefix);
+        let avail = inner_w.saturating_sub(prefix_w);
+
+        let mut visible = app.composer_buffer.clone();
+        if avail == 0 {
+            visible.clear();
+        } else if display_width(&visible) > avail {
+            // Show the tail of the buffer (we only edit at the end for now).
+            let mut out = String::new();
+            for ch in visible.chars().rev() {
+                if display_width(&out) >= avail.saturating_sub(1) {
+                    break;
+                }
+                out.insert(0, ch);
+            }
+            visible = format!("…{out}");
+        }
+
+        let cursor_x = area
+            .x
+            .saturating_add(1)
+            .saturating_add(prefix_w as u16)
+            .saturating_add(display_width(&visible) as u16)
+            .min(area.x.saturating_add(area.width).saturating_sub(1));
+        let cursor_y = area.y.saturating_add(1);
+        f.set_cursor_position((cursor_x, cursor_y));
+
+        format!("{prefix}{visible}")
     } else {
         "Press i to type a follow-up or /command…".to_string()
     };
@@ -2538,12 +2572,18 @@ fn apply_composer_autocomplete(app: &mut AppState) -> bool {
     let insert = items[idx].insert.as_str();
 
     let buf = app.composer_buffer.clone();
-    let token_start = buf
+    let mut token_start = buf
         .char_indices()
         .rev()
         .find(|(_, c)| c.is_whitespace())
         .map(|(i, c)| i + c.len_utf8())
         .unwrap_or(0);
+
+    if let Some(slash_pos) = buf.find('/') {
+        if token_start <= slash_pos {
+            token_start = slash_pos + 1;
+        }
+    }
 
     app.composer_buffer.truncate(token_start);
     app.composer_buffer.push_str(insert);
