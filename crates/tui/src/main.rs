@@ -5852,7 +5852,9 @@ fn highlight_unified_diff(
         if raw_line.starts_with("@@") {
             let spans = vec![Span::styled(
                 raw_line.to_string(),
-                Style::default().fg(Color::Cyan),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )];
             if wrap {
                 for row in wrap_spans_hard(spans, width) {
