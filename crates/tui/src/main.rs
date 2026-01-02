@@ -651,6 +651,9 @@ async fn main() -> anyhow::Result<()> {
                                 dirty = true;
                             }
                         }
+                        if clamp_scroll_offsets(&mut app, layout) {
+                            dirty = true;
+                        }
                         if dirty {
                             terminal.draw(|f| render(f, &app)).context("draw frame")?;
                             dirty = false;
@@ -1119,6 +1122,53 @@ fn compute_main_layout(area: ratatui::layout::Rect) -> MainLayoutRects {
         diff_files: diff_sections[0],
         diff_preview: diff_sections[1],
     }
+}
+
+fn clamp_scroll_offsets(app: &mut AppState, layout: MainLayoutRects) -> bool {
+    // Prevent internal offsets from growing beyond the maximum (overscroll), which would require
+    // scrolling back down the same amount before the viewport starts moving again.
+    let mut changed = false;
+
+    // Execution log pane (offset counts "lines above the viewport", i.e. distance from bottom).
+    {
+        let len = app.log_lines.len();
+        let height = layout.exec_logs.height.saturating_sub(2) as usize;
+        let visible = height.min(len);
+        let max_offset = len.saturating_sub(visible);
+
+        if app.log_autoscroll {
+            if app.log_scroll_offset != 0 {
+                app.log_scroll_offset = 0;
+                changed = true;
+            }
+        } else {
+            let next = app.log_scroll_offset.min(max_offset);
+            if next != app.log_scroll_offset {
+                app.log_scroll_offset = next;
+                changed = true;
+            }
+            if app.log_scroll_offset == 0 && !app.log_autoscroll {
+                app.log_autoscroll = true;
+                changed = true;
+            }
+        }
+    }
+
+    // Diff preview pane (offset counts "first visible line").
+    {
+        let len = app.diff_preview_lines.len();
+        let height = layout.diff_preview.height.saturating_sub(2) as usize;
+        let visible = height.min(len);
+        let max_start = len.saturating_sub(visible);
+
+        let next = app.diff_scroll_offset.min(max_start);
+        if next != app.diff_scroll_offset {
+            app.diff_scroll_offset = next;
+            changed = true;
+        }
+    }
+
+    changed
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -4227,7 +4277,18 @@ fn append_log_entry(
 
             // Visual separation between "cards"/blocks, but don't spam blank lines for
             // ephemeral progress entries (thinking/loading).
-            if !is_progress {
+            if is_progress {
+                // If we're starting a new progress sequence (i.e. previous block wasn't a progress
+                // update), add the same separation we use for other blocks.
+                if state.progress_kind.is_none() {
+                    if let Some(last) = lines.last() {
+                        if !line_is_blank(last) {
+                            let sep_owner = map.last().copied().unwrap_or(entry_idx);
+                            push_line(lines, map, sep_owner, Line::from(""), width);
+                        }
+                    }
+                }
+            } else {
                 // When a "real" entry arrives, stop coalescing progress.
                 state.progress_kind = None;
                 state.progress_count = 0;
@@ -4667,21 +4728,31 @@ fn append_normalized_entry(
 
                     let exit_status = action_type.get("result").and_then(|v| v.get("exit_status"));
                     if let Some(es) = exit_status {
-                        let exit_str =
-                            serde_json::to_string(es).unwrap_or_else(|_| "unknown".to_string());
-                        push_line(
-                            lines,
-                            map,
-                            entry_idx,
-                            Line::from(vec![
-                                Span::styled("  - ", Style::default().add_modifier(Modifier::DIM)),
-                                Span::styled(
-                                    format!("exit_status: {exit_str}"),
-                                    Style::default().add_modifier(Modifier::DIM),
-                                ),
-                            ]),
-                            width,
-                        );
+                        let code = es
+                            .get("code")
+                            .and_then(|v| v.as_i64())
+                            .or_else(|| es.as_i64())
+                            .or_else(|| es.as_u64().map(|v| v as i64));
+                        if let Some(code) = code
+                            && code != 0
+                        {
+                            push_line(
+                                lines,
+                                map,
+                                entry_idx,
+                                Line::from(vec![
+                                    Span::styled(
+                                        "  - ",
+                                        Style::default().add_modifier(Modifier::DIM),
+                                    ),
+                                    Span::styled(
+                                        format!("exit {code}"),
+                                        Style::default().fg(Color::Red),
+                                    ),
+                                ]),
+                                width,
+                            );
+                        }
                     }
 
                     let output = action_type
