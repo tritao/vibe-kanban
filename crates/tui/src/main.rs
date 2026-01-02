@@ -5693,7 +5693,7 @@ fn highlight_unified_diff(
                 vec![Span::styled(
                     raw_line.to_string(),
                     Style::default()
-                        .fg(Color::Magenta)
+                        .fg(Color::LightBlue)
                         .add_modifier(Modifier::BOLD),
                 )],
                 width,
