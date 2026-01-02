@@ -2083,21 +2083,30 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
         visible
             .iter()
             .map(|d| {
-                if d.key == DIFF_ALL_KEY {
-                    let name = format!("{:>8}", "ALL");
-                    let mut spans: Vec<Span<'static>> = vec![
-                        Span::styled(
-                            name,
-                            Style::default()
-                                .fg(Color::Magenta)
-                                .add_modifier(Modifier::BOLD),
-                        ),
+                const LABEL_W: usize = 8;
+
+                fn label_spans(label: &str, style: Style) -> Vec<Span<'static>> {
+                    const LABEL_W: usize = 8;
+                    let pad = LABEL_W.saturating_sub(label.len());
+                    vec![
+                        Span::raw(" ".repeat(pad)),
+                        Span::styled(label.to_string(), style),
                         Span::raw(" "),
-                        Span::styled(
-                            "All changes".to_string(),
-                            Style::default().add_modifier(Modifier::BOLD),
-                        ),
-                    ];
+                    ]
+                }
+
+                if d.key == DIFF_ALL_KEY {
+                    let mut spans: Vec<Span<'static>> = vec![];
+                    spans.extend(label_spans(
+                        "ALL",
+                        Style::default()
+                            .fg(Color::Magenta)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                    spans.push(Span::styled(
+                        "All changes".to_string(),
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ));
 
                     if d.content_omitted {
                         spans.push(Span::raw(" "));
@@ -2125,52 +2134,16 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
 
                 let change = d.change.as_deref().unwrap_or("unknown");
                 let (label, change_style) = match change {
-                    "added" | "Added" => (
-                        "ADD",
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Green)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    "deleted" | "Deleted" => (
-                        "DEL",
-                        Style::default()
-                            .fg(Color::White)
-                            .bg(Color::Red)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    "modified" | "Modified" => (
-                        "MOD",
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    "renamed" | "Renamed" => (
-                        "REN",
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    "copied" | "Copied" => (
-                        "CPY",
-                        Style::default()
-                            .fg(Color::White)
-                            .bg(Color::Blue)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                    "permission_change" | "PermissionChange" | "Permission Change" => (
-                        "CHMOD",
-                        Style::default()
-                            .fg(Color::White)
-                            .bg(Color::Magenta)
-                            .add_modifier(Modifier::BOLD),
-                    ),
+                    "added" | "Added" => ("ADD", Style::default().fg(Color::Green)),
+                    "deleted" | "Deleted" => ("DEL", Style::default().fg(Color::Red)),
+                    "modified" | "Modified" => ("MOD", Style::default().fg(Color::Yellow)),
+                    "renamed" | "Renamed" => ("REN", Style::default().fg(Color::Cyan)),
+                    "copied" | "Copied" => ("CPY", Style::default().fg(Color::Blue)),
+                    "permission_change" | "PermissionChange" | "Permission Change" => {
+                        ("CHMOD", Style::default().fg(Color::Magenta))
+                    }
                     _ => ("?", Style::default().add_modifier(Modifier::DIM)),
                 };
-
-                let name = format!("{label:>8}");
 
                 let path_display = if label == "REN" {
                     match (d.old_path.as_deref(), d.new_path.as_deref()) {
@@ -2190,8 +2163,13 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                     _ => (None, path_display),
                 };
 
-                let mut spans: Vec<Span<'static>> =
-                    vec![Span::styled(name, change_style), Span::raw(" ")];
+                let mut spans: Vec<Span<'static>> = vec![];
+                let styled_label = if label.len() <= LABEL_W && label != "?" {
+                    change_style.add_modifier(Modifier::BOLD)
+                } else {
+                    change_style
+                };
+                spans.extend(label_spans(label, styled_label));
 
                 if let Some(dir) = dir_part {
                     spans.push(Span::styled(
