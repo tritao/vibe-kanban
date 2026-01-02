@@ -176,6 +176,7 @@ struct TuiPrefs {
     show_cancelled: bool,
     log_mode: LogMode,
     log_render_mode: LogRenderMode,
+    diff_theme: DiffTheme,
 }
 
 impl Default for TuiPrefs {
@@ -185,6 +186,63 @@ impl Default for TuiPrefs {
             show_cancelled: false,
             log_mode: LogMode::Normalized,
             log_render_mode: LogRenderMode::Markdown,
+            diff_theme: DiffTheme::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DiffTheme {
+    Base16OceanDark,
+    Base16EightiesDark,
+    Base16MochaDark,
+    Base16OceanLight,
+    InspiredGithub,
+    SolarizedDark,
+    SolarizedLight,
+}
+
+impl Default for DiffTheme {
+    fn default() -> Self {
+        Self::InspiredGithub
+    }
+}
+
+impl DiffTheme {
+    fn syntect_key(self) -> &'static str {
+        match self {
+            Self::Base16OceanDark => "base16-ocean.dark",
+            Self::Base16EightiesDark => "base16-eighties.dark",
+            Self::Base16MochaDark => "base16-mocha.dark",
+            Self::Base16OceanLight => "base16-ocean.light",
+            Self::InspiredGithub => "InspiredGitHub",
+            Self::SolarizedDark => "Solarized (dark)",
+            Self::SolarizedLight => "Solarized (light)",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Base16OceanDark => "ocean.dark",
+            Self::Base16EightiesDark => "eighties.dark",
+            Self::Base16MochaDark => "mocha.dark",
+            Self::Base16OceanLight => "ocean.light",
+            Self::InspiredGithub => "github",
+            Self::SolarizedDark => "solarized.dark",
+            Self::SolarizedLight => "solarized.light",
+        }
+    }
+
+    fn cycle_next(self) -> Self {
+        match self {
+            Self::InspiredGithub => Self::Base16OceanDark,
+            Self::Base16OceanDark => Self::Base16EightiesDark,
+            Self::Base16EightiesDark => Self::Base16MochaDark,
+            Self::Base16MochaDark => Self::Base16OceanLight,
+            Self::Base16OceanLight => Self::SolarizedDark,
+            Self::SolarizedDark => Self::SolarizedLight,
+            Self::SolarizedLight => Self::InspiredGithub,
         }
     }
 }
@@ -332,6 +390,7 @@ struct AppState {
     diff_preview_cache_hash: u64,
     diff_preview_cache_width: u16,
     diff_preview_lines: Vec<Line<'static>>,
+    diff_theme: DiffTheme,
 
     log_status: StreamStatus,
     log_store: serde_json::Value,
@@ -420,6 +479,7 @@ impl AppState {
             diff_preview_cache_hash: 0,
             diff_preview_cache_width: 0,
             diff_preview_lines: vec![Line::from("No diffs")],
+            diff_theme: prefs.diff_theme,
 
             log_status: StreamStatus::Disconnected,
             log_store: serde_json::json!({ "entries": [] }),
@@ -873,6 +933,12 @@ fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Result<bool> {
                         app.diff_stats_only = !app.diff_stats_only;
                         let _ = app.diff_stats_tx.send(app.diff_stats_only);
                         app.diff_scroll_offset = 0;
+                    }
+                    (KeyCode::Char('t'), _) if app.focus == FocusPane::Diff => {
+                        app.diff_theme = app.diff_theme.cycle_next();
+                        app.prefs.diff_theme = app.diff_theme;
+                        save_prefs(&app.prefs);
+                        app.diff_preview_cache_key = None;
                     }
                     (KeyCode::Char('i'), _) if app.focus == FocusPane::Execution => {
                         app.composer_active = true;
@@ -1423,7 +1489,7 @@ fn render_top_bar(app: &AppState) -> Paragraph<'static> {
             Style::default().fg(Color::Gray),
         ),
         Span::raw("  "),
-        Span::styled(focus, Style::default().fg(Color::DarkGray)),
+        Span::styled(focus, Style::default().add_modifier(Modifier::DIM)),
     ]);
 
     Paragraph::new(line)
@@ -1433,11 +1499,13 @@ fn render_bottom_bar(app: &AppState) -> Paragraph<'static> {
     let text = match app.focus {
         FocusPane::Board => "Tab next | j/k move | J/K status | ←/→ move | / search | [/] attempts | x stop | o log mode | q quit",
         FocusPane::Execution => "Tab next | i compose | Enter send | PgUp/PgDn scroll | End bottom | m md view | x stop | o log mode | q quit",
-        FocusPane::Diff => "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | q quit",
+        FocusPane::Diff => {
+            "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | q quit"
+        }
     };
     Paragraph::new(Line::from(Span::styled(
         text,
-        Style::default().fg(Color::DarkGray),
+        Style::default().add_modifier(Modifier::DIM),
     )))
 }
 
@@ -1626,7 +1694,11 @@ fn render_board_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                     .title(title)
                     .border_style(border_style),
             )
-            .highlight_style(Style::default().bg(Color::DarkGray))
+            .highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol(if is_active { "▶ " } else { "  " });
 
         let mut state = ratatui::widgets::ListState::default();
@@ -1848,7 +1920,7 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                     "permission_change" | "PermissionChange" | "Permission Change" => {
                         ("CHMOD", Style::default().fg(Color::Magenta))
                     }
-                    _ => ("?", Style::default().fg(Color::DarkGray)),
+                    _ => ("?", Style::default().add_modifier(Modifier::DIM)),
                 };
 
                 let name = if label.len() >= 5 {
@@ -1879,7 +1951,10 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                 ];
 
                 if let Some(dir) = dir_part {
-                    spans.push(Span::styled(format!("{dir}/"), Style::default().fg(Color::DarkGray)));
+                    spans.push(Span::styled(
+                        format!("{dir}/"),
+                        Style::default().add_modifier(Modifier::DIM),
+                    ));
                 }
                 spans.push(Span::styled(
                     base_part,
@@ -1888,7 +1963,10 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
 
                 if d.content_omitted {
                     spans.push(Span::raw(" "));
-                    spans.push(Span::styled("[omitted]", Style::default().fg(Color::DarkGray)));
+                    spans.push(Span::styled(
+                        "[omitted]",
+                        Style::default().add_modifier(Modifier::DIM),
+                    ));
                 }
 
                 if let (Some(a), Some(b)) = (d.additions, d.deletions) {
@@ -1949,7 +2027,7 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: ratatui::layout::Rec
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Diff")
+                .title(format!("Diff ({})", app.diff_theme.label()))
                 .border_style(border_style),
         );
 
@@ -2337,6 +2415,7 @@ fn render_help_modal(f: &mut Frame) {
         Line::from("  h/l         files/preview focus"),
         Line::from("  PgUp/PgDn   scroll diff preview"),
         Line::from("  d           toggle stats-only"),
+        Line::from("  t           cycle theme"),
     ];
 
     let p = Paragraph::new(lines)
@@ -3660,6 +3739,7 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
 
     let mut hasher = DefaultHasher::new();
     selected.key.hash(&mut hasher);
+    app.diff_theme.hash(&mut hasher);
     width.hash(&mut hasher);
     let omitted = entry_content
         .as_ref()
@@ -3729,7 +3809,7 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
         .unwrap_or("");
 
     let diff = utils::diff::create_unified_diff(&selected.key, old, new);
-    app.diff_preview_lines = highlight_unified_diff(&selected.key, &diff, width);
+    app.diff_preview_lines = highlight_unified_diff(&selected.key, &diff, width, app.diff_theme);
     if app.diff_preview_lines.is_empty() {
         app.diff_preview_lines = vec![Line::from("No diff content")];
     }
@@ -3741,16 +3821,23 @@ fn syntect_syntax_set() -> &'static SyntaxSet {
     SET.get_or_init(SyntaxSet::load_defaults_newlines)
 }
 
-fn syntect_theme() -> &'static Theme {
+fn syntect_theme_set() -> &'static ThemeSet {
+    static SET: OnceLock<ThemeSet> = OnceLock::new();
+    SET.get_or_init(ThemeSet::load_defaults)
+}
+
+fn syntect_fallback_theme() -> &'static Theme {
     static THEME: OnceLock<Theme> = OnceLock::new();
-    THEME.get_or_init(|| {
-        let ts = ThemeSet::load_defaults();
-        ts.themes
-            .get("base16-ocean.dark")
-            .cloned()
-            .or_else(|| ts.themes.values().next().cloned())
-            .unwrap_or_default()
-    })
+    THEME.get_or_init(Theme::default)
+}
+
+fn syntect_theme(theme: DiffTheme) -> &'static Theme {
+    let ts = syntect_theme_set();
+    ts.themes
+        .get(theme.syntect_key())
+        .or_else(|| ts.themes.get(DiffTheme::default().syntect_key()))
+        .or_else(|| ts.themes.values().next())
+        .unwrap_or_else(|| syntect_fallback_theme())
 }
 
 fn syntax_for_path<'a>(ps: &'a SyntaxSet, path: &str) -> &'a SyntaxReference {
@@ -3823,9 +3910,14 @@ fn truncate_spans_to_width(mut spans: Vec<Span<'static>>, width: usize) -> Vec<S
     out
 }
 
-fn highlight_unified_diff(file_path: &str, diff: &str, width: usize) -> Vec<Line<'static>> {
+fn highlight_unified_diff(
+    file_path: &str,
+    diff: &str,
+    width: usize,
+    theme: DiffTheme,
+) -> Vec<Line<'static>> {
     let ps = syntect_syntax_set();
-    let theme = syntect_theme();
+    let theme = syntect_theme(theme);
     let syntax = syntax_for_path(ps, file_path);
 
     let mut old_hl = HighlightLines::new(syntax, theme);
