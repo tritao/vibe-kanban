@@ -1097,9 +1097,9 @@ fn compute_main_layout(area: ratatui::layout::Rect) -> MainLayoutRects {
     let main = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(26),
-            Constraint::Percentage(48),
-            Constraint::Percentage(26),
+            Constraint::Percentage(25),
+            Constraint::Percentage(50),
+            Constraint::Percentage(25),
         ])
         .split(root[1]);
 
@@ -1516,9 +1516,9 @@ fn render(f: &mut Frame, app: &AppState) {
     let main = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(26),
-            Constraint::Percentage(48),
-            Constraint::Percentage(26),
+            Constraint::Percentage(25),
+            Constraint::Percentage(50),
+            Constraint::Percentage(25),
         ])
         .split(root[1]);
 
@@ -1835,7 +1835,7 @@ fn render_board_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
             )
             .highlight_style(
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::REVERSED)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol(if is_active { "▶ " } else { "  " });
@@ -2050,7 +2050,7 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
     let border_style = if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files {
         Style::default().fg(Color::Cyan)
     } else if app.focus == FocusPane::Diff {
-        Style::default().fg(Color::DarkGray)
+        Style::default()
     } else {
         Style::default()
     };
@@ -2219,7 +2219,7 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
                 .title(title)
                 .border_style(border_style),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray))
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol(
             if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files {
                 "▶ "
@@ -2239,7 +2239,7 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: ratatui::layout::Rec
     let border_style = if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Preview {
         Style::default().fg(Color::Cyan)
     } else if app.focus == FocusPane::Diff {
-        Style::default().fg(Color::DarkGray)
+        Style::default()
     } else {
         Style::default()
     };
@@ -2296,7 +2296,7 @@ fn render_projects_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Re
                 .title(title)
                 .border_style(border_style),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray))
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol("▶ ");
 
     let mut state = ratatui::widgets::ListState::default();
@@ -2357,7 +2357,7 @@ fn render_tasks_board(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect
         let border_style = if is_active_col {
             Style::default().fg(Color::Cyan)
         } else if app.focus == FocusPane::Board {
-            Style::default().fg(Color::DarkGray)
+            Style::default()
         } else {
             Style::default()
         };
@@ -2378,7 +2378,7 @@ fn render_tasks_board(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect
                     .title(title)
                     .border_style(border_style),
             )
-            .highlight_style(Style::default().bg(Color::DarkGray))
+            .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
             .highlight_symbol("▶ ");
 
         let mut state = ratatui::widgets::ListState::default();
@@ -2485,7 +2485,7 @@ fn render_details_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rec
                 .title(attempts_title)
                 .border_style(attempts_border),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray))
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol("▶ ");
     let mut attempts_state = ratatui::widgets::ListState::default();
     if !app.attempts.is_empty() {
@@ -2527,7 +2527,7 @@ fn render_details_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rec
                 .title(exec_title)
                 .border_style(execs_border),
         )
-        .highlight_style(Style::default().bg(Color::DarkGray))
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED))
         .highlight_symbol("▶ ");
     let mut exec_state = ratatui::widgets::ListState::default();
     if !execs.is_empty() {
@@ -4225,7 +4225,7 @@ fn append_log_entry(
                 state,
                 LogKind::Stdout,
                 text,
-                Style::default().add_modifier(Modifier::DIM),
+                Style::default(),
                 true,
                 target_idx,
                 "  ",
@@ -5662,7 +5662,9 @@ fn highlight_unified_diff(
             let spans = truncate_spans_to_width(
                 vec![Span::styled(
                     raw_line.to_string(),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default()
+                        .fg(Color::Magenta)
+                        .add_modifier(Modifier::BOLD),
                 )],
                 width,
             );
@@ -5684,14 +5686,37 @@ fn highlight_unified_diff(
 
         let (marker, rest) = raw_line.split_at(1.min(raw_line.len()));
         let marker_ch = marker.chars().next().unwrap_or(' ');
-        let marker_style = match marker_ch {
-            '+' => Style::default().fg(Color::Green),
-            '-' => Style::default().fg(Color::Red),
-            ' ' => Style::default().fg(Color::DarkGray),
-            _ => Style::default().fg(Color::DarkGray),
+        let (gutter_style, marker_style) = match marker_ch {
+            '+' => (
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::LightGreen)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            '-' => (
+                Style::default()
+                    .fg(Color::LightRed)
+                    .add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::LightRed)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            ' ' => (
+                Style::default().fg(Color::Gray).add_modifier(Modifier::DIM),
+                Style::default().fg(Color::Gray),
+            ),
+            _ => (
+                Style::default().fg(Color::Gray).add_modifier(Modifier::DIM),
+                Style::default().fg(Color::Gray),
+            ),
         };
 
-        let mut spans: Vec<Span<'static>> = vec![Span::styled(marker.to_string(), marker_style)];
+        let mut spans: Vec<Span<'static>> = vec![
+            Span::styled("▌".to_string(), gutter_style),
+            Span::styled(marker.to_string(), marker_style),
+        ];
         let rest_spans = match marker_ch {
             '+' => new_hl
                 .highlight_line(rest, ps)
@@ -5906,7 +5931,7 @@ fn render_markdown(md: &str, width: usize, softbreak_mode: MdSoftBreakMode) -> V
     let mut in_code_block = false;
     let mut code_buf = String::new();
 
-    let prefix_style = Style::default().fg(Color::DarkGray);
+    let prefix_style = Style::default().fg(Color::Gray);
 
     fn base_prefix(quote_depth: usize, list_depth: usize) -> String {
         let mut p = String::new();
@@ -6845,7 +6870,13 @@ fn render_task_line(task: &TaskRow) -> Line<'static> {
     if task.has_in_progress_attempt {
         spans.push(Span::styled("RUN ", Style::default().fg(Color::Green)));
     } else if task.last_attempt_failed {
-        spans.push(Span::styled("FAIL ", Style::default().fg(Color::Red)));
+        spans.push(Span::styled(
+            "FAIL ",
+            Style::default()
+                .fg(Color::Black)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+        ));
     }
     spans.push(Span::raw(task.title.clone()));
     Line::from(spans)
