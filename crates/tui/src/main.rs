@@ -792,17 +792,11 @@ fn handle_net_event(app: &mut AppState, event: NetEvent) {
                 return;
             }
 
-            let len = app
-                .diff_store
-                .get("entries")
-                .and_then(|v| v.as_object())
-                .map(|o| o.len())
-                .unwrap_or(0);
-
-            if len == 0 {
+            let rows = diff_rows_with_all(&app.diff_store);
+            if rows.is_empty() {
                 app.selected_diff_index = 0;
             } else {
-                app.selected_diff_index = app.selected_diff_index.min(len - 1);
+                app.selected_diff_index = app.selected_diff_index.min(rows.len() - 1);
             }
             app.diff_preview_cache_key = None;
         }
@@ -1263,7 +1257,7 @@ fn diff_files_hit_at(
         return None;
     }
 
-    let rows = diff_rows(&app.diff_store);
+    let rows = diff_rows_with_all(&app.diff_store);
     if rows.is_empty() {
         return None;
     }
@@ -1904,6 +1898,8 @@ struct DiffRow {
     new_path: Option<String>,
 }
 
+const DIFF_ALL_KEY: &str = "__ALL__";
+
 fn diff_rows(store: &serde_json::Value) -> Vec<DiffRow> {
     let Some(entries) = store.get("entries").and_then(|v| v.as_object()) else {
         return vec![];
@@ -1958,6 +1954,36 @@ fn diff_rows(store: &serde_json::Value) -> Vec<DiffRow> {
     rows
 }
 
+fn diff_rows_with_all(store: &serde_json::Value) -> Vec<DiffRow> {
+    let mut rows = diff_rows(store);
+    if rows.is_empty() {
+        return rows;
+    }
+
+    let mut total_adds = 0usize;
+    let mut total_dels = 0usize;
+    let mut any_omitted = false;
+    for row in &rows {
+        total_adds = total_adds.saturating_add(row.additions.unwrap_or(0));
+        total_dels = total_dels.saturating_add(row.deletions.unwrap_or(0));
+        any_omitted |= row.content_omitted;
+    }
+
+    rows.insert(
+        0,
+        DiffRow {
+            key: DIFF_ALL_KEY.to_string(),
+            change: Some("all".to_string()),
+            additions: Some(total_adds),
+            deletions: Some(total_dels),
+            content_omitted: any_omitted,
+            old_path: None,
+            new_path: None,
+        },
+    );
+    rows
+}
+
 fn render_diff_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
     let sections = Layout::default()
         .direction(Direction::Vertical)
@@ -1969,7 +1995,8 @@ fn render_diff_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) 
 }
 
 fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
-    let rows = diff_rows(&app.diff_store);
+    let rows = diff_rows_with_all(&app.diff_store);
+    let file_count = rows.len().saturating_sub(1);
     let border_style = if app.focus == FocusPane::Diff && app.diff_focus == DiffFocus::Files {
         Style::default().fg(Color::Cyan)
     } else if app.focus == FocusPane::Diff {
@@ -1980,7 +2007,7 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
 
     let title = format!(
         "Files ({}, {})",
-        rows.len(),
+        file_count,
         match app.diff_status {
             StreamStatus::Connected => "live",
             StreamStatus::Connecting => "connecting",
@@ -2006,6 +2033,46 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect)
         visible
             .iter()
             .map(|d| {
+                if d.key == DIFF_ALL_KEY {
+                    let name = format!("{:>8}", "ALL");
+                    let mut spans: Vec<Span<'static>> = vec![
+                        Span::styled(
+                            name,
+                            Style::default()
+                                .fg(Color::Magenta)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(" "),
+                        Span::styled(
+                            "All changes".to_string(),
+                            Style::default().add_modifier(Modifier::BOLD),
+                        ),
+                    ];
+
+                    if d.content_omitted {
+                        spans.push(Span::raw(" "));
+                        spans.push(Span::styled(
+                            "[omitted]".to_string(),
+                            Style::default().add_modifier(Modifier::DIM),
+                        ));
+                    }
+
+                    if let (Some(adds), Some(dels)) = (d.additions, d.deletions) {
+                        spans.push(Span::raw(" "));
+                        spans.push(Span::styled(
+                            format!("+{adds}"),
+                            Style::default().fg(Color::Green),
+                        ));
+                        spans.push(Span::raw("/"));
+                        spans.push(Span::styled(
+                            format!("-{dels}"),
+                            Style::default().fg(Color::Red),
+                        ));
+                    }
+
+                    return ListItem::new(Line::from(spans));
+                }
+
                 let change = d.change.as_deref().unwrap_or("unknown");
                 let (label, change_style) = match change {
                     "added" | "Added" => ("ADD", Style::default().fg(Color::Green)),
@@ -5162,7 +5229,7 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
         app.diff_preview_cache_key = None;
     }
 
-    let rows = diff_rows(&app.diff_store);
+    let rows = diff_rows_with_all(&app.diff_store);
     let selected = rows
         .get(app.selected_diff_index.min(rows.len().saturating_sub(1)))
         .cloned();
@@ -5177,6 +5244,135 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
         return true;
     };
 
+    let mut hasher = DefaultHasher::new();
+    selected.key.hash(&mut hasher);
+    app.diff_theme.hash(&mut hasher);
+    width.hash(&mut hasher);
+
+    const MAX_DIFF_PREVIEW_LINES: usize = 20_000;
+
+    if selected.key == DIFF_ALL_KEY {
+        let entries = app.diff_store.get("entries").and_then(|v| v.as_object());
+
+        for row in rows.iter().skip(1) {
+            row.key.hash(&mut hasher);
+            row.content_omitted.hash(&mut hasher);
+            row.additions.unwrap_or(0).hash(&mut hasher);
+            row.deletions.unwrap_or(0).hash(&mut hasher);
+
+            let Some(content) = entries
+                .and_then(|e| e.get(&row.key))
+                .and_then(|v| v.get("content"))
+            else {
+                0usize.hash(&mut hasher);
+                continue;
+            };
+
+            let omitted = content
+                .get("contentOmitted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            omitted.hash(&mut hasher);
+
+            let old = content
+                .get("oldContent")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let new = content
+                .get("newContent")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            hash_text_sample(&mut hasher, old);
+            hash_text_sample(&mut hasher, new);
+        }
+
+        let content_hash = hasher.finish();
+        if app.diff_preview_cache_key.as_deref() == Some(DIFF_ALL_KEY)
+            && app.diff_preview_cache_hash == content_hash
+            && app.diff_preview_cache_width == width_u16
+        {
+            return false;
+        }
+
+        app.diff_preview_cache_key = Some(DIFF_ALL_KEY.to_string());
+        app.diff_preview_cache_hash = content_hash;
+
+        let mut lines: Vec<Line<'static>> = vec![];
+        if let Some(entries) = entries {
+            for (idx, row) in rows.iter().enumerate().skip(1) {
+                if idx > 1 && !lines.is_empty() {
+                    lines.push(Line::from(""));
+                }
+
+                let entry_content = entries
+                    .get(&row.key)
+                    .and_then(|v| v.get("content"))
+                    .cloned();
+                let Some(content) = entry_content else {
+                    lines.push(Line::from(format!("{} (missing diff content)", row.key)));
+                    continue;
+                };
+
+                let omitted = content
+                    .get("contentOmitted")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if omitted {
+                    let adds = content
+                        .get("additions")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    let dels = content
+                        .get("deletions")
+                        .and_then(|v| v.as_u64())
+                        .unwrap_or(0);
+                    lines.push(Line::from(format!(
+                        "{} (content omitted)  +{}/-{}",
+                        row.key, adds, dels
+                    )));
+                    continue;
+                }
+
+                let old = content
+                    .get("oldContent")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let new = content
+                    .get("newContent")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                let diff = utils::diff::create_unified_diff(&row.key, old, new);
+                let highlight_path = row
+                    .new_path
+                    .as_deref()
+                    .or(row.old_path.as_deref())
+                    .unwrap_or(&row.key);
+                lines.extend(highlight_unified_diff(
+                    highlight_path,
+                    &diff,
+                    width,
+                    app.diff_theme,
+                ));
+
+                if lines.len() > MAX_DIFF_PREVIEW_LINES {
+                    lines.truncate(MAX_DIFF_PREVIEW_LINES);
+                    lines.push(Line::from(Span::styled(
+                        "… (truncated)".to_string(),
+                        Style::default().add_modifier(Modifier::DIM),
+                    )));
+                    break;
+                }
+            }
+        }
+
+        if lines.is_empty() {
+            lines.push(Line::from("No diffs"));
+        }
+        app.diff_preview_lines = lines;
+        return true;
+    }
+
     let entry_content = app
         .diff_store
         .get("entries")
@@ -5184,10 +5380,6 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
         .and_then(|v| v.get("content"))
         .cloned();
 
-    let mut hasher = DefaultHasher::new();
-    selected.key.hash(&mut hasher);
-    app.diff_theme.hash(&mut hasher);
-    width.hash(&mut hasher);
     let omitted = entry_content
         .as_ref()
         .and_then(|c| c.get("contentOmitted"))
@@ -5268,7 +5460,12 @@ fn refresh_diff_preview_cache(app: &mut AppState, width: usize) -> bool {
         .unwrap_or("");
 
     let diff = utils::diff::create_unified_diff(&selected.key, old, new);
-    app.diff_preview_lines = highlight_unified_diff(&selected.key, &diff, width, app.diff_theme);
+    let highlight_path = selected
+        .new_path
+        .as_deref()
+        .or(selected.old_path.as_deref())
+        .unwrap_or(&selected.key);
+    app.diff_preview_lines = highlight_unified_diff(highlight_path, &diff, width, app.diff_theme);
     if app.diff_preview_lines.is_empty() {
         app.diff_preview_lines = vec![Line::from("No diff content")];
     }
@@ -6273,7 +6470,7 @@ fn move_active_status(app: &mut AppState, delta: i32) {
 }
 
 fn select_adjacent_diff_file(app: &mut AppState, delta: i32) {
-    let rows = diff_rows(&app.diff_store);
+    let rows = diff_rows_with_all(&app.diff_store);
     if rows.is_empty() {
         app.selected_diff_index = 0;
         return;
