@@ -13,6 +13,7 @@ use crate::selection::{
     active_exec_id, exec_list, filtered_projects, find_task, tasks_by_status, tasks_filtered_base,
 };
 use crate::state::{AppState, TaskRow, TaskStatus};
+use crate::ui::board::BoardHit;
 use crate::ui::sync_selected_repo_from_diff_selection;
 
 pub(super) fn select_project(app: &mut AppState, project_id: Option<Uuid>) {
@@ -400,6 +401,34 @@ pub(super) fn select_diff_file(app: &mut AppState, idx: usize) {
 
 pub(super) fn select_log_entry(app: &mut AppState, sel: Option<LogSelection>) {
     app.exec.log_selected = sel;
+}
+
+pub(super) fn focus_board_section(app: &mut AppState, status: TaskStatus) {
+    if app.board.tasks_active_column != status {
+        app.board.tasks_active_column = status;
+    }
+    ensure_selected_task_in_active_column(app);
+}
+
+pub(super) fn apply_board_hit(app: &mut AppState, hit: BoardHit) {
+    focus_board_section(app, hit.status);
+
+    if let Some(idx) = hit.clicked_index {
+        app.board.board_index_by_status[hit.status.idx()] = idx;
+    }
+
+    if let Some(task_id) = hit.clicked_task_id {
+        select_task(app, Some(task_id));
+    } else {
+        ensure_selected_task_in_active_column(app);
+    }
+}
+
+pub(super) fn normalize_after_cancelled_toggle(app: &mut AppState) {
+    if !app.board.show_cancelled && app.board.tasks_active_column == TaskStatus::Cancelled {
+        app.board.tasks_active_column = TaskStatus::Done;
+    }
+    ensure_selected_task_in_active_column(app);
 }
 
 pub(super) fn request_move_selected_task(app: &mut AppState, direction: i32) {

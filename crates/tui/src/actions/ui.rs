@@ -12,7 +12,7 @@ use crate::diff::diff_rows_with_all;
 use super::selection as sel;
 use crate::state::{
     AppState, ConfirmAction, ConfirmState, DiffFocus, FocusPane, InputMode, InputState, LogMode,
-    LogRenderMode, LogViewMode, TaskStatus,
+    LogRenderMode, LogViewMode,
 };
 use crate::ui::{
     board_hit_at, diff_repo_bar_action_at, open_create_task_modal, trigger_diff_repo_action,
@@ -123,7 +123,7 @@ mod tests {
                 "a.txt": { "type": "DIFF", "content": { "change": "modified", "additions": 1, "deletions": 0 } }
             }
         });
-        app.diff.selected_diff_index = 1; // 0 is ALL
+        super::sel::select_diff_file(&mut app, 1); // 0 is ALL
 
         let (quit, _dirty, effects) = super::reduce_ui(
             &mut app,
@@ -449,9 +449,7 @@ fn reduce_key(app: &mut AppState, key: crossterm::event::KeyEvent) -> (bool, boo
         }
         (KeyCode::Char('c'), _) if app.ui.focus == FocusPane::Board => {
             app.board.show_cancelled = !app.board.show_cancelled;
-            if !app.board.show_cancelled && app.board.tasks_active_column == TaskStatus::Cancelled {
-                app.board.tasks_active_column = TaskStatus::Done;
-            }
+            sel::normalize_after_cancelled_toggle(app);
             app.prefs.show_cancelled = app.board.show_cancelled;
             save_prefs(&app.prefs);
             return (false, true, vec![]);
@@ -606,8 +604,7 @@ fn reduce_mouse(app: &mut AppState, mouse: crossterm::event::MouseEvent) -> bool
             }
             if let Some(hit) = board_hit_at(app, layout.board, col, row) {
                 app.ui.focus = FocusPane::Board;
-                app.board.tasks_active_column = hit.status;
-                sel::ensure_selected_task_in_active_column(app);
+                sel::focus_board_section(app, hit.status);
                 sel::select_adjacent_task(app, -1);
                 return true;
             }
@@ -635,8 +632,7 @@ fn reduce_mouse(app: &mut AppState, mouse: crossterm::event::MouseEvent) -> bool
             }
             if let Some(hit) = board_hit_at(app, layout.board, col, row) {
                 app.ui.focus = FocusPane::Board;
-                app.board.tasks_active_column = hit.status;
-                sel::ensure_selected_task_in_active_column(app);
+                sel::focus_board_section(app, hit.status);
                 sel::select_adjacent_task(app, 1);
                 return true;
             }
@@ -645,15 +641,7 @@ fn reduce_mouse(app: &mut AppState, mouse: crossterm::event::MouseEvent) -> bool
             if rect_contains(layout.board, col, row) {
                 app.ui.focus = FocusPane::Board;
                 if let Some(hit) = board_hit_at(app, layout.board, col, row) {
-                    app.board.tasks_active_column = hit.status;
-                    if let Some(idx) = hit.clicked_index {
-                        app.board.board_index_by_status[hit.status.idx()] = idx;
-                    }
-                    if let Some(task_id) = hit.clicked_task_id {
-                        sel::select_task(app, Some(task_id));
-                    } else {
-                        sel::ensure_selected_task_in_active_column(app);
-                    }
+                    sel::apply_board_hit(app, hit);
                 }
                 return true;
             }
