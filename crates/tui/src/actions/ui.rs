@@ -711,7 +711,7 @@ fn reduce_mouse(app: &mut AppState, mouse: crossterm::event::MouseEvent) -> bool
                     return true;
                 }
                 if rect_contains(layout.exec_logs, col, row) {
-                    app.exec.log_selected = log_entry_hit_at(app, layout.exec_logs, col, row);
+                    sel::select_log_entry(app, log_entry_hit_at(app, layout.exec_logs, col, row));
                     return true;
                 }
                 return false;
@@ -741,7 +741,7 @@ fn reduce_mouse(app: &mut AppState, mouse: crossterm::event::MouseEvent) -> bool
         MouseEventKind::Down(MouseButton::Right) => {
             if rect_contains(layout.exec_logs, col, row) {
                 app.ui.focus = FocusPane::Execution;
-                app.exec.log_selected = log_entry_hit_at(app, layout.exec_logs, col, row);
+                sel::select_log_entry(app, log_entry_hit_at(app, layout.exec_logs, col, row));
                 crate::logs::toggle_selected_log_entry(app);
                 return true;
             }

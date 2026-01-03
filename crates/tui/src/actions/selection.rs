@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::diff::diff_rows_with_all;
 use crate::diff_preview::schedule_diff_preview_refresh;
 use crate::events::NetEvent;
+use crate::logs::LogSelection;
 use crate::net;
 use crate::prefs::save_prefs;
 use crate::selection::lists_filters::tasks_filtered_by_status;
@@ -395,6 +396,10 @@ pub(super) fn select_diff_file(app: &mut AppState, idx: usize) {
     app.diff.diff_scroll_offset = 0;
     sync_selected_repo_from_diff_selection(app);
     schedule_diff_preview_refresh(app, Duration::from_millis(0));
+}
+
+pub(super) fn select_log_entry(app: &mut AppState, sel: Option<LogSelection>) {
+    app.exec.log_selected = sel;
 }
 
 pub(super) fn request_move_selected_task(app: &mut AppState, direction: i32) {
