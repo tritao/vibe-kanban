@@ -227,6 +227,10 @@ pub(crate) fn usage_for_command(cmd: &str) -> Option<&'static str> {
     find_command_spec(cmd).and_then(|c| c.usage)
 }
 
+pub(crate) fn canonical_command_name(cmd: &str) -> Option<&'static str> {
+    find_command_spec(cmd).map(|c| c.name)
+}
+
 pub(crate) fn help_section_lines() -> Vec<String> {
     let mut items: Vec<(&'static str, &'static str)> = vec![];
     for cmd in COMMAND_SPECS {

@@ -111,8 +111,9 @@ pub(crate) fn submit_slash_command(app: &mut AppState, raw: &str) {
 }
 
 fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    match tokens[0].as_str() {
-        "help" | "?" => {
+    let cmd = crate::slash::canonical_command_name(tokens[0].as_str()).unwrap_or(tokens[0].as_str());
+    match cmd {
+        "help" => {
             app.ui.show_help = true;
             app.ui.last_notice = Some("Opened help. (Press Esc to close)".to_string());
             Ok(())
@@ -129,7 +130,7 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
         "push" => handle_push_command(app, tokens),
         "pr" => handle_pr_command(app, tokens),
         "open" => handle_open_command(app, tokens),
-        other => Err(crate::slash::unknown_command_error(other)),
+        _ => Err(crate::slash::unknown_command_error(tokens[0].as_str())),
     }
 }
 
