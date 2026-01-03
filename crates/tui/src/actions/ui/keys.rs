@@ -1,10 +1,11 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::commands::submit_composer;
-use crate::layout::{compute_main_layout, current_terminal_rect};
+use crate::layout::{current_terminal_rect};
 use crate::state::{AppState, ConfirmAction, ConfirmState, DiffFocus, FocusPane};
 
 use super::copy::reduce_copy;
+use super::composer;
 use super::create_task;
 use super::keys_board;
 use super::keys_diff;
@@ -81,8 +82,8 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
             }
             _ => {}
         }
-        if let Some((dirty, effects)) = reduce_composer_key(app, key) {
-            return (false, dirty, effects);
+        if composer::handle_composer_key(app, key) {
+            return (false, true, vec![]);
         }
         return (false, false, vec![]);
     }
@@ -143,95 +144,6 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
     }
 
     (false, false, vec![])
-}
-
-fn reduce_composer_key(app: &mut AppState, key: KeyEvent) -> Option<(bool, Vec<Effect>)> {
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
-            app.ui.composer.undo();
-        }
-        (KeyCode::Char('y'), KeyModifiers::CONTROL)
-        | (KeyCode::Char('Z'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
-            app.ui.composer.redo();
-        }
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-            app.ui.composer.clear();
-        }
-        (KeyCode::Enter, KeyModifiers::CONTROL) => {
-            app.ui.composer.insert_char('\n');
-        }
-        (KeyCode::Left, KeyModifiers::CONTROL) => {
-            app.ui.composer.move_word_left();
-        }
-        (KeyCode::Right, KeyModifiers::CONTROL) => {
-            app.ui.composer.move_word_right();
-        }
-        (KeyCode::Left, _) => {
-            app.ui.composer.move_left();
-        }
-        (KeyCode::Right, _) => {
-            app.ui.composer.move_right();
-        }
-        (KeyCode::Up, _) => {
-            if app.ui.composer.buffer.trim_start().starts_with('/')
-                && {
-                    app.ui.composer.clamp_cursor();
-                    app.ui.composer.cursor == app.ui.composer.buffer.len()
-                }
-            {
-                crate::ui::move_composer_autocomplete(app, -1);
-            } else {
-                app.ui.composer.move_up();
-            }
-        }
-        (KeyCode::Down, _) => {
-            if app.ui.composer.buffer.trim_start().starts_with('/')
-                && {
-                    app.ui.composer.clamp_cursor();
-                    app.ui.composer.cursor == app.ui.composer.buffer.len()
-                }
-            {
-                crate::ui::move_composer_autocomplete(app, 1);
-            } else {
-                app.ui.composer.move_down();
-            }
-        }
-        (KeyCode::Home, _) => {
-            app.ui.composer.move_home(true);
-        }
-        (KeyCode::End, _) => {
-            app.ui.composer.move_end(true);
-        }
-        (KeyCode::Backspace, KeyModifiers::ALT) | (KeyCode::Backspace, KeyModifiers::CONTROL) => {
-            app.ui.composer.backspace_word();
-        }
-        (KeyCode::Backspace, _) => {
-            app.ui.composer.backspace();
-        }
-        (KeyCode::Delete, KeyModifiers::CONTROL) => {
-            app.ui.composer.delete_word();
-        }
-        (KeyCode::Delete, _) => {
-            app.ui.composer.delete();
-        }
-        (KeyCode::Tab, _) => {
-            crate::ui::apply_composer_autocomplete(app);
-        }
-        (KeyCode::Char(c), KeyModifiers::NONE) => {
-            app.ui.composer.insert_char(c);
-        }
-        _ => return None,
-    }
-
-    app.ui.composer_suggest_index = 0;
-    let layout = compute_main_layout(current_terminal_rect());
-    let area = layout.exec_input;
-    let inner_w = area.width.saturating_sub(2) as usize;
-    let inner_h = area.height.saturating_sub(2) as usize;
-    let prefix_w = crate::text::display_width("  ");
-    let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
-    app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
-    Some((true, vec![]))
 }
 
 fn reduce_search_key(app: &mut AppState, key: KeyEvent) -> Option<(bool, Vec<Effect>)> {
