@@ -13,7 +13,7 @@ pub(crate) fn render_help_modal(f: &mut Frame) {
     let area = centered_rect(70, 70, f.area());
     f.render_widget(Clear, area);
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![Span::styled(
             "Vibe Kanban TUI — Help",
             Style::default().add_modifier(Modifier::BOLD),
@@ -54,16 +54,9 @@ pub(crate) fn render_help_modal(f: &mut Frame) {
         Line::from("  x           stop active run"),
         Line::from(""),
         Line::from("Slash commands"),
-        Line::from("  /status                 refresh repo branch status"),
-        Line::from("  /repo [name|n]           select repo for git ops"),
-        Line::from("  /rebase [--onto B]       rebase attempt branch"),
-        Line::from("  /resolve [--repo R]      ask agent to resolve conflicts"),
-        Line::from("  /merge                   squash-merge into target"),
-        Line::from("  /push [--force]          push branch"),
-        Line::from("  /abort                   abort conflicts/rebase"),
-        Line::from("  /pr create --title T     create PR (server-side)"),
-        Line::from("  /pr attach               attach existing PR"),
-        Line::from("  /open <file>             open file in editor"),
+    ];
+    lines.extend(crate::slash::help_section_lines().into_iter().map(Line::from));
+    lines.extend([
         Line::from(""),
         Line::from("Diff (right)"),
         Line::from("  j/k         select file"),
@@ -80,7 +73,7 @@ pub(crate) fn render_help_modal(f: &mut Frame) {
         Line::from("  C           resolve conflicts (agent)"),
         Line::from("  O           open first conflicted file"),
         Line::from("  A           abort conflicts/rebase"),
-    ];
+    ]);
 
     let p = Paragraph::new(lines)
         .block(Block::default().borders(Borders::ALL).title("Help"))

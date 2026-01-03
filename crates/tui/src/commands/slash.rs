@@ -129,7 +129,7 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
         "push" => handle_push_command(app, tokens),
         "pr" => handle_pr_command(app, tokens),
         "open" => handle_open_command(app, tokens),
-        other => Err(format!("unknown command: /{other} (try /help)")),
+        other => Err(crate::slash::unknown_command_error(other)),
     }
 }
 
@@ -555,14 +555,18 @@ fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
 
 fn handle_pr_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     if tokens.len() < 2 {
-        return Err("usage: /pr <create|attach|comments|open>".to_string());
+        return Err(
+            crate::slash::usage_for_command("pr")
+                .unwrap_or("usage: /pr <create|attach|comments|open>")
+                .to_string(),
+        );
     }
     match tokens[1].as_str() {
         "create" => handle_pr_create_command(app, tokens),
         "attach" => handle_pr_attach_command(app, tokens),
         "comments" => handle_pr_comments_command(app, tokens),
         "open" => handle_pr_open_command(app, tokens),
-        other => Err(format!("unknown subcommand: pr {other}")),
+        other => Err(crate::slash::unknown_subcommand_error("pr", other)),
     }
 }
 
@@ -891,7 +895,11 @@ fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(
 
 fn handle_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     if tokens.len() < 2 {
-        return Err("usage: /open <file_path>".to_string());
+        return Err(
+            crate::slash::usage_for_command("open")
+                .unwrap_or("usage: /open <file_path>")
+                .to_string(),
+        );
     }
     let attempt_id = app
         .board
