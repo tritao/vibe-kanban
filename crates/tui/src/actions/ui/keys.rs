@@ -14,6 +14,7 @@ use crate::state::{
 use crate::ui::{open_create_task_modal, trigger_diff_repo_action, DiffRepoAction};
 
 use super::copy::reduce_copy;
+use super::scroll;
 use super::{CopyTarget, Effect};
 use super::{sel};
 
@@ -320,28 +321,23 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
             return (false, true, vec![]);
         }
         (KeyCode::PageUp, _) if app.ui.focus == FocusPane::Execution => {
-            app.exec.log_autoscroll = false;
-            app.exec.log_scroll_offset = app.exec.log_scroll_offset.saturating_add(40);
+            scroll::scroll_exec_older(app, 40);
             return (false, true, vec![]);
         }
         (KeyCode::PageDown, _) if app.ui.focus == FocusPane::Execution => {
-            app.exec.log_scroll_offset = app.exec.log_scroll_offset.saturating_sub(40);
-            if app.exec.log_scroll_offset == 0 {
-                app.exec.log_autoscroll = true;
-            }
+            scroll::scroll_exec_newer(app, 40);
             return (false, true, vec![]);
         }
         (KeyCode::End, _) if app.ui.focus == FocusPane::Execution => {
-            app.exec.log_autoscroll = true;
-            app.exec.log_scroll_offset = 0;
+            scroll::scroll_exec_to_end(app);
             return (false, true, vec![]);
         }
         (KeyCode::PageUp, _) if app.ui.focus == FocusPane::Diff => {
-            app.diff.diff_scroll_offset = app.diff.diff_scroll_offset.saturating_sub(20);
+            scroll::scroll_diff_up(app, 20);
             return (false, true, vec![]);
         }
         (KeyCode::PageDown, _) if app.ui.focus == FocusPane::Diff => {
-            app.diff.diff_scroll_offset = app.diff.diff_scroll_offset.saturating_add(20);
+            scroll::scroll_diff_down(app, 20);
             return (false, true, vec![]);
         }
         _ => {}
@@ -741,4 +737,3 @@ fn submit_create_task_state(app: &mut AppState, state: crate::state::CreateTaskS
         }
     });
 }
-

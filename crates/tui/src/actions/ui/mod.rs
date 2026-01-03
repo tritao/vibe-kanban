@@ -12,6 +12,7 @@ pub(super) use super::selection as sel;
 mod copy;
 mod keys;
 mod mouse;
+mod scroll;
 
 pub(super) enum Effect {
     CopyOsc52(String),
@@ -76,4 +77,3 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
 
 #[cfg(test)]
 mod tests;
-

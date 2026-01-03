@@ -8,6 +8,7 @@ use crate::ui::board_hit_at;
 use crate::util::window_for_list;
 
 use super::sel;
+use super::scroll;
 
 pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
     let col = mouse.column;
@@ -66,16 +67,13 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         MouseEventKind::ScrollUp => {
             if rect_contains(layout.exec_logs, col, row) {
                 app.ui.focus = FocusPane::Execution;
-                app.exec.log_autoscroll = false;
-                app.exec.log_scroll_offset =
-                    app.exec.log_scroll_offset.saturating_add(LOG_WHEEL_STEP);
+                scroll::scroll_exec_older(app, LOG_WHEEL_STEP);
                 return true;
             }
             if rect_contains(layout.diff_preview, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Preview;
-                app.diff.diff_scroll_offset =
-                    app.diff.diff_scroll_offset.saturating_sub(DIFF_WHEEL_STEP);
+                scroll::scroll_diff_up(app, DIFF_WHEEL_STEP);
                 return true;
             }
             if rect_contains(layout.diff_files, col, row) {
@@ -94,18 +92,13 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         MouseEventKind::ScrollDown => {
             if rect_contains(layout.exec_logs, col, row) {
                 app.ui.focus = FocusPane::Execution;
-                app.exec.log_scroll_offset =
-                    app.exec.log_scroll_offset.saturating_sub(LOG_WHEEL_STEP);
-                if app.exec.log_scroll_offset == 0 {
-                    app.exec.log_autoscroll = true;
-                }
+                scroll::scroll_exec_newer(app, LOG_WHEEL_STEP);
                 return true;
             }
             if rect_contains(layout.diff_preview, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Preview;
-                app.diff.diff_scroll_offset =
-                    app.diff.diff_scroll_offset.saturating_add(DIFF_WHEEL_STEP);
+                scroll::scroll_diff_down(app, DIFF_WHEEL_STEP);
                 return true;
             }
             if rect_contains(layout.diff_files, col, row) {
