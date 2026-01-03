@@ -17,6 +17,7 @@ mod prefs;
 mod commands;
 mod actions;
 mod jobs;
+mod slash;
 
 use std::time::Duration;
 

@@ -3,20 +3,21 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use crate::layout::{compute_main_layout, current_terminal_rect};
 use crate::state::AppState;
 
+use super::slash;
 use super::text_edit;
 
 pub(super) fn handle_composer_key(app: &mut AppState, key: KeyEvent) -> bool {
     // Autocomplete navigation when composing slash commands and cursor is at end.
     match key.code {
         KeyCode::Up | KeyCode::Down => {
-            if app.ui.composer.buffer.trim_start().starts_with('/')
+            if slash::is_slash_mode(app)
                 && {
                     app.ui.composer.clamp_cursor();
                     app.ui.composer.cursor == app.ui.composer.buffer.len()
                 }
             {
                 let delta = if matches!(key.code, KeyCode::Up) { -1 } else { 1 };
-                crate::ui::move_composer_autocomplete(app, delta);
+                slash::move_autocomplete(app, delta);
                 return true;
             }
         }
@@ -30,7 +31,7 @@ pub(super) fn handle_composer_key(app: &mut AppState, key: KeyEvent) -> bool {
         }
         // Tab applies autocomplete (only when suggestions active).
         (KeyCode::Tab, _) => {
-            crate::ui::apply_composer_autocomplete(app);
+            slash::apply_autocomplete(app);
         }
         _ => {
             if !text_edit::apply_text_field_key(&mut app.ui.composer, key, true) {
@@ -49,4 +50,3 @@ pub(super) fn handle_composer_key(app: &mut AppState, key: KeyEvent) -> bool {
     app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
     true
 }
-

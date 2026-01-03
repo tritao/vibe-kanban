@@ -14,8 +14,7 @@ pub(crate) use diff::{
 pub(crate) use chrome::{render_bottom_bar, render_top_bar};
 pub(crate) use board::{board_hit_at, render_board_pane};
 pub(crate) use execution::{
-    apply_composer_autocomplete, move_composer_autocomplete, render_composer_autocomplete,
-    render_execution_pane,
+    render_composer_autocomplete, render_execution_pane,
 };
 
 pub(crate) use modals::{render_confirm_modal, render_help_modal, render_input_modal};
