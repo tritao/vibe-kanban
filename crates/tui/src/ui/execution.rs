@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
-use crate::text::{display_width, wrap_line_wordwise};
+use crate::text::{display_width, slice_by_display_cols, wrap_line_wordwise};
 use crate::events::StreamStatus;
 use crate::selection::clamp_index;
 use crate::state::{AppState, FocusPane, RepoBranchStatus};
@@ -128,125 +128,82 @@ fn render_composer(f: &mut Frame, app: &AppState, area: Rect) {
     let inner_h = area.height.saturating_sub(2) as usize;
 
     let lines: Vec<Line<'static>> = if app.ui.composer_active {
-        use crate::text::edit::{clamp_cursor_to_boundary, cursor_col_in_line, cursor_line_index, line_ranges};
+        use crate::text::edit::line_ranges;
 
-        fn slice_by_display_cols(s: &str, start_col: usize, max_cols: usize) -> String {
-            use unicode_width::UnicodeWidthChar;
+        // Keep 1 cell free so the terminal cursor can sit "after" the last character.
+        let inner_h = inner_h.max(1);
+        let prefix = "  ";
+        let prefix_w = display_width(prefix);
+        let content_w = inner_w
+            .saturating_sub(prefix_w)
+            .saturating_sub(1)
+            .max(1);
 
-            if max_cols == 0 {
-                return String::new();
+        let ranges = line_ranges(&app.ui.composer.buffer);
+        let total_lines = ranges.len().max(1);
+
+        let (cur_line, cur_col) = app.ui.composer.cursor_line_col();
+        let cur_line = cur_line.min(total_lines.saturating_sub(1));
+
+        let start_line = (app.ui.composer.scroll_y as usize).min(total_lines.saturating_sub(1));
+        let end_line = (start_line + inner_h).min(total_lines);
+
+        let mut out: Vec<Line<'static>> = Vec::with_capacity(inner_h);
+        for (idx, (start, end)) in ranges.iter().enumerate().take(end_line).skip(start_line) {
+            let line_str = app.ui.composer.buffer.get(*start..*end).unwrap_or("");
+
+            let prefix = if idx == start_line {
+                if start_line > 0 { "… " } else { "> " }
+            } else {
+                "  "
+            };
+
+            let line_w = display_width(line_str);
+            let start_col = app.ui.composer.scroll_x as usize;
+            let left = start_col > 0;
+
+            let mut right = false;
+            let mut take = content_w.saturating_sub(left as usize);
+            if idx != cur_line && start_col.saturating_add(take) < line_w {
+                right = true;
+                take = content_w
+                    .saturating_sub(left as usize)
+                    .saturating_sub(1);
             }
-            let mut col = 0usize;
-            let mut out = String::new();
-            for ch in s.chars() {
-                let w = UnicodeWidthChar::width(ch).unwrap_or(0).max(1);
-                let next = col.saturating_add(w);
-                if next <= start_col {
-                    col = next;
-                    continue;
-                }
-                if col >= start_col.saturating_add(max_cols) {
-                    break;
-                }
-                if crate::text::display_width(&out) + w > max_cols {
-                    break;
-                }
-                out.push(ch);
-                col = next;
-            }
-            out
-        }
-
-        fn crop_line(line: &str, cursor_col: usize, avail: usize) -> (String, usize) {
-            use crate::text::display_width;
-
-            // Keep 1 cell free so the terminal cursor can sit "after" the last character.
-            let avail = avail.saturating_sub(1).max(1);
-            let w = display_width(line);
-            if w <= avail {
-                return (line.to_string(), cursor_col.min(avail));
-            }
-
-            let mut start_col = cursor_col.saturating_sub(avail / 2);
-            start_col = start_col.min(w.saturating_sub(avail));
-
-            // Reserve room for ellipses.
-            let mut left = start_col > 0;
-            let mut right = start_col.saturating_add(avail) < w;
-            let mut take = avail.saturating_sub(left as usize).saturating_sub(right as usize);
-
-            // Recenter based on the reduced take width.
-            start_col = cursor_col.saturating_sub(take / 2);
-            start_col = start_col.min(w.saturating_sub(take));
-            left = start_col > 0;
-            right = start_col.saturating_add(take) < w;
-            take = avail.saturating_sub(left as usize).saturating_sub(right as usize);
-            start_col = start_col.min(w.saturating_sub(take));
 
             let mut visible = String::new();
             if left {
                 visible.push('…');
             }
-            let chunk = slice_by_display_cols(line, start_col, take);
-            visible.push_str(&chunk);
+            visible.push_str(&slice_by_display_cols(line_str, start_col, take));
             if right {
                 visible.push('…');
             }
 
-            let cursor_in_chunk = cursor_col.saturating_sub(start_col).min(take);
-            let cursor_x = (left as usize).saturating_add(cursor_in_chunk).min(avail);
-            (visible, cursor_x)
-        }
-
-        let cursor = clamp_cursor_to_boundary(&app.ui.composer.buffer, app.ui.composer.cursor);
-        let ranges = line_ranges(&app.ui.composer.buffer);
-        let cur_line = cursor_line_index(&ranges, cursor).min(ranges.len().saturating_sub(1));
-        let (cur_start, cur_end) = ranges[cur_line];
-        let cursor_col =
-            cursor_col_in_line(&app.ui.composer.buffer, cur_start, cursor.min(cur_end));
-
-        let start_line = if inner_h == 0 {
-            0
-        } else {
-            cur_line.saturating_sub(inner_h.saturating_sub(1))
-        };
-        let end_line = (start_line + inner_h.max(1)).min(ranges.len());
-
-        let mut out: Vec<Line<'static>> = Vec::with_capacity(inner_h.max(1));
-        for (i, (start, end)) in ranges.iter().enumerate().take(end_line).skip(start_line) {
-            let line_str = app.ui.composer.buffer.get(*start..*end).unwrap_or("");
-
-            let prefix = if i == start_line {
-                if start_line > 0 { "… " } else { "> " }
-            } else {
-                "  "
-            };
-            let prefix_w = display_width(prefix);
-            let avail = inner_w.saturating_sub(prefix_w);
-
-            let (visible, cursor_x_in_visible) = if i == cur_line {
-                crop_line(line_str, cursor_col, avail)
-            } else {
-                (crate::text::truncate_to_width(line_str, avail), 0)
-            };
-
-            if i == cur_line {
+            if idx == cur_line {
+                let cursor_in_chunk = cur_col.saturating_sub(start_col).min(take);
+                let cursor_x_in_visible = (left as usize).saturating_add(cursor_in_chunk);
                 let cursor_x = area
                     .x
                     .saturating_add(1)
                     .saturating_add(prefix_w as u16)
                     .saturating_add(cursor_x_in_visible as u16)
                     .min(area.x.saturating_add(area.width).saturating_sub(2));
-                let cursor_y = area.y.saturating_add(1).saturating_add((i - start_line) as u16);
+                let cursor_y = area
+                    .y
+                    .saturating_add(1)
+                    .saturating_add((idx - start_line) as u16);
                 f.set_cursor_position((cursor_x, cursor_y));
             }
 
             out.push(Line::from(format!("{prefix}{visible}")));
         }
+
         if out.is_empty() {
             out.push(Line::from("> "));
             f.set_cursor_position((area.x.saturating_add(3), area.y.saturating_add(1)));
         }
+
         out
     } else {
         vec![Line::from("Press i to type a follow-up or /command…")]

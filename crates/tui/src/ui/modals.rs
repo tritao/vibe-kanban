@@ -6,6 +6,7 @@ use ratatui::{
 };
 
 use super::layout::centered_rect;
+use crate::text::{display_width, slice_by_display_cols};
 use crate::state::{ConfirmState, InputMode, InputState};
 
 pub(crate) fn render_help_modal(f: &mut Frame) {
@@ -40,6 +41,8 @@ pub(crate) fn render_help_modal(f: &mut Frame) {
         Line::from("  /<cmd>      run slash command (while composing)"),
         Line::from("  Tab         autocomplete (slash mode)"),
         Line::from("  ↑/↓         move cursor / select suggestion at end"),
+        Line::from("  Ctrl+←/→    move by word"),
+        Line::from("  Alt+Backsp  delete word"),
         Line::from("  e / Enter   expand/collapse entry"),
         Line::from("  Esc         cancel compose"),
         Line::from("  o           toggle raw/normalized"),
@@ -114,13 +117,39 @@ pub(crate) fn render_input_modal(f: &mut Frame, input: &InputState) {
         ),
     };
 
+    // Single-line editor with horizontal scroll.
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1); // "/" + free cell
+    let start_col = input.field.scroll_x as usize;
+    let left = start_col > 0;
+
+    let buf = input.field.buffer.as_str();
+    let buf_w = display_width(buf);
+    let mut right = false;
+    let mut take = content_w.saturating_sub(left as usize);
+    if start_col.saturating_add(take) < buf_w {
+        right = true;
+        take = content_w
+            .saturating_sub(left as usize)
+            .saturating_sub(1);
+    }
+
+    let mut visible = String::new();
+    if left {
+        visible.push('…');
+    }
+    visible.push_str(&slice_by_display_cols(buf, start_col, take));
+    if right {
+        visible.push('…');
+    }
+
     let lines = vec![
         Line::from(vec![Span::styled(
             title,
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from(""),
-        Line::from(format!("/{}", input.buffer)),
+        Line::from(format!("/{visible}")),
         Line::from(""),
         Line::from(hint),
     ];
@@ -129,4 +158,18 @@ pub(crate) fn render_input_modal(f: &mut Frame, input: &InputState) {
         .block(Block::default().borders(Borders::ALL).title("Input"))
         .wrap(Wrap { trim: true });
     f.render_widget(p, area);
+
+    // Cursor position: title (0), blank (1), input (2).
+    let (_, col) = input.field.cursor_line_col();
+    let cursor_in_chunk = col.saturating_sub(start_col).min(take);
+    let cursor_x_in_visible = (left as usize).saturating_add(cursor_in_chunk);
+
+    let x = area
+        .x
+        .saturating_add(1)
+        .saturating_add(1) // leading "/"
+        .saturating_add(cursor_x_in_visible as u16)
+        .min(area.x.saturating_add(area.width).saturating_sub(2));
+    let y = area.y.saturating_add(1).saturating_add(2);
+    f.set_cursor_position((x, y));
 }

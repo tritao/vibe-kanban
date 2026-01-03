@@ -74,7 +74,7 @@ pub(crate) enum InputMode {
 #[derive(Debug, Clone)]
 pub(crate) struct InputState {
     pub(crate) mode: InputMode,
-    pub(crate) buffer: String,
+    pub(crate) field: TextFieldState,
     pub(crate) original: String,
 }
 
@@ -132,6 +132,16 @@ impl TextFieldState {
 
     pub(crate) fn move_right(&mut self) {
         self.cursor = crate::text::edit::next_cursor(&self.buffer, self.cursor);
+        self.goal_col = None;
+    }
+
+    pub(crate) fn move_word_left(&mut self) {
+        self.cursor = crate::text::edit::prev_word_cursor(&self.buffer, self.cursor);
+        self.goal_col = None;
+    }
+
+    pub(crate) fn move_word_right(&mut self) {
+        self.cursor = crate::text::edit::next_word_cursor(&self.buffer, self.cursor);
         self.goal_col = None;
     }
 
@@ -205,9 +215,33 @@ impl TextFieldState {
         self.goal_col = None;
     }
 
+    pub(crate) fn backspace_word(&mut self) {
+        let cur = crate::text::edit::clamp_cursor_to_boundary(&self.buffer, self.cursor);
+        let prev = crate::text::edit::prev_word_cursor(&self.buffer, cur);
+        if prev < cur {
+            self.buffer.replace_range(prev..cur, "");
+            self.cursor = prev;
+        } else {
+            self.cursor = 0;
+        }
+        self.goal_col = None;
+    }
+
     pub(crate) fn delete(&mut self) {
         let cur = crate::text::edit::clamp_cursor_to_boundary(&self.buffer, self.cursor);
         let next = crate::text::edit::next_cursor(&self.buffer, cur);
+        if cur < next {
+            self.buffer.replace_range(cur..next, "");
+            self.cursor = cur;
+        } else {
+            self.cursor = self.buffer.len();
+        }
+        self.goal_col = None;
+    }
+
+    pub(crate) fn delete_word(&mut self) {
+        let cur = crate::text::edit::clamp_cursor_to_boundary(&self.buffer, self.cursor);
+        let next = crate::text::edit::next_word_cursor(&self.buffer, cur);
         if cur < next {
             self.buffer.replace_range(cur..next, "");
             self.cursor = cur;

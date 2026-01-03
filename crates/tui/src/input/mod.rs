@@ -47,33 +47,77 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                     return Ok(false);
                 }
 
-                if let Some(input) = app.ui.input.as_mut() {
+                if let Some(mut input) = app.ui.input.take() {
+                    let mut close = false;
+                    let mut filter_changed = false;
+
                     match (key.code, key.modifiers) {
                         (KeyCode::Esc, _) => {
                             app.board.task_filter = input.original.clone();
-                            app.ui.input = None;
-                            ensure_selection_visible(app);
+                            close = true;
+                            filter_changed = true;
                         }
                         (KeyCode::Enter, _) => {
-                            app.ui.input = None;
-                            ensure_selection_visible(app);
+                            close = true;
+                        }
+                        (KeyCode::Backspace, KeyModifiers::ALT)
+                        | (KeyCode::Backspace, KeyModifiers::CONTROL) => {
+                            input.field.backspace_word();
+                            app.board.task_filter = input.field.buffer.clone();
+                            filter_changed = true;
                         }
                         (KeyCode::Backspace, _) => {
-                            input.buffer.pop();
-                            app.board.task_filter = input.buffer.clone();
-                            ensure_selection_visible(app);
+                            input.field.backspace();
+                            app.board.task_filter = input.field.buffer.clone();
+                            filter_changed = true;
                         }
                         (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                            input.buffer.clear();
+                            input.field.clear();
                             app.board.task_filter.clear();
-                            ensure_selection_visible(app);
+                            filter_changed = true;
+                        }
+                        (KeyCode::Left, KeyModifiers::CONTROL) => {
+                            input.field.move_word_left();
+                        }
+                        (KeyCode::Right, KeyModifiers::CONTROL) => {
+                            input.field.move_word_right();
+                        }
+                        (KeyCode::Left, _) => {
+                            input.field.move_left();
+                        }
+                        (KeyCode::Right, _) => {
+                            input.field.move_right();
+                        }
+                        (KeyCode::Home, _) => {
+                            input.field.move_home(false);
+                        }
+                        (KeyCode::End, _) => {
+                            input.field.move_end(false);
                         }
                         (KeyCode::Char(c), KeyModifiers::NONE) => {
-                            input.buffer.push(c);
-                            app.board.task_filter = input.buffer.clone();
-                            ensure_selection_visible(app);
+                            input.field.insert_char(c);
+                            app.board.task_filter = input.field.buffer.clone();
+                            filter_changed = true;
                         }
                         _ => {}
+                    }
+
+                    // Keep the caret visible (single-line input).
+                    let term = current_terminal_rect();
+                    let area = crate::ui::layout::centered_rect(80, 25, term);
+                    let inner_w = area.width.saturating_sub(2) as usize;
+                    let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1); // "/" + free cell
+                    input.field.ensure_cursor_visible(content_w, 1);
+
+                    if close {
+                        if filter_changed {
+                            ensure_selection_visible(app);
+                        }
+                    } else {
+                        if filter_changed {
+                            ensure_selection_visible(app);
+                        }
+                        app.ui.input = Some(input);
                     }
                     return Ok(false);
                 }
@@ -138,6 +182,14 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                                 app.ui.composer_suggest_index = 0;
                             }
                         }
+                        (KeyCode::Left, KeyModifiers::CONTROL) => {
+                            app.ui.composer.move_word_left();
+                            app.ui.composer_suggest_index = 0;
+                        }
+                        (KeyCode::Right, KeyModifiers::CONTROL) => {
+                            app.ui.composer.move_word_right();
+                            app.ui.composer_suggest_index = 0;
+                        }
                         (KeyCode::Left, _) => {
                             app.ui.composer.move_left();
                             app.ui.composer_suggest_index = 0;
@@ -154,8 +206,17 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                             app.ui.composer.move_end(true);
                             app.ui.composer_suggest_index = 0;
                         }
+                        (KeyCode::Backspace, KeyModifiers::ALT)
+                        | (KeyCode::Backspace, KeyModifiers::CONTROL) => {
+                            app.ui.composer.backspace_word();
+                            app.ui.composer_suggest_index = 0;
+                        }
                         (KeyCode::Backspace, _) => {
                             app.ui.composer.backspace();
+                            app.ui.composer_suggest_index = 0;
+                        }
+                        (KeyCode::Delete, KeyModifiers::CONTROL) => {
+                            app.ui.composer.delete_word();
                             app.ui.composer_suggest_index = 0;
                         }
                         (KeyCode::Delete, _) => {
@@ -171,6 +232,19 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                             app.ui.composer_suggest_index = 0;
                         }
                         _ => {}
+                    }
+
+                    if app.ui.composer_active {
+                        let layout = compute_main_layout(current_terminal_rect());
+                        let area = layout.exec_input;
+                        let inner_w = area.width.saturating_sub(2) as usize;
+                        let inner_h = area.height.saturating_sub(2) as usize;
+                        let prefix_w = crate::text::display_width("  ");
+                        let content_w = inner_w
+                            .saturating_sub(prefix_w)
+                            .saturating_sub(1)
+                            .max(1);
+                        app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
                     }
                     return Ok(false);
                 }
@@ -188,9 +262,19 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                         };
                     }
                     (KeyCode::Char('/'), _) => {
+                        let mut field = crate::state::TextFieldState {
+                            buffer: app.board.task_filter.clone(),
+                            ..Default::default()
+                        };
+                        field.set_end();
+                        let term = current_terminal_rect();
+                        let area = crate::ui::layout::centered_rect(80, 25, term);
+                        let inner_w = area.width.saturating_sub(2) as usize;
+                        let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1);
+                        field.ensure_cursor_visible(content_w, 1);
                         app.ui.input = Some(InputState {
                             mode: InputMode::SearchTasks,
-                            buffer: app.board.task_filter.clone(),
+                            field,
                             original: app.board.task_filter.clone(),
                         });
                     }
@@ -246,6 +330,16 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                         app.ui.composer_active = true;
                         app.ui.composer_suggest_index = 0;
                         app.ui.composer.set_end();
+                        let layout = compute_main_layout(current_terminal_rect());
+                        let area = layout.exec_input;
+                        let inner_w = area.width.saturating_sub(2) as usize;
+                        let inner_h = area.height.saturating_sub(2) as usize;
+                        let prefix_w = crate::text::display_width("  ");
+                        let content_w = inner_w
+                            .saturating_sub(prefix_w)
+                            .saturating_sub(1)
+                            .max(1);
+                        app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
                     }
                     (KeyCode::Char('x'), _) => {
                         if let Some(exec_id) = app.exec.selected_exec_id {
@@ -554,6 +648,15 @@ fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
                 if rect_contains(layout.exec_input, col, row) {
                     app.ui.composer_active = true;
                     app.ui.composer.set_end();
+                    let area = layout.exec_input;
+                    let inner_w = area.width.saturating_sub(2) as usize;
+                    let inner_h = area.height.saturating_sub(2) as usize;
+                    let prefix_w = crate::text::display_width("  ");
+                    let content_w = inner_w
+                        .saturating_sub(prefix_w)
+                        .saturating_sub(1)
+                        .max(1);
+                    app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
                 } else if rect_contains(layout.exec_logs, col, row) {
                     app.exec.log_selected = log_entry_hit_at(app, layout.exec_logs, col, row);
                 }

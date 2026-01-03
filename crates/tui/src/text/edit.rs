@@ -38,6 +38,63 @@ pub(crate) fn next_cursor(s: &str, cursor: usize) -> usize {
     }
 }
 
+pub(crate) fn prev_word_cursor(s: &str, cursor: usize) -> usize {
+    let mut cur = clamp_cursor_to_boundary(s, cursor);
+    if cur == 0 {
+        return 0;
+    }
+
+    while cur > 0 {
+        let prev = prev_cursor(s, cur);
+        let ch = s.get(prev..cur).and_then(|t| t.chars().next());
+        if ch.is_some_and(|c| c.is_whitespace()) {
+            cur = prev;
+        } else {
+            break;
+        }
+    }
+
+    while cur > 0 {
+        let prev = prev_cursor(s, cur);
+        let ch = s.get(prev..cur).and_then(|t| t.chars().next());
+        if ch.is_some_and(|c| c.is_whitespace()) {
+            break;
+        }
+        cur = prev;
+    }
+
+    cur
+}
+
+pub(crate) fn next_word_cursor(s: &str, cursor: usize) -> usize {
+    let mut cur = clamp_cursor_to_boundary(s, cursor);
+    let len = s.len();
+    if cur >= len {
+        return len;
+    }
+
+    while cur < len {
+        let next = next_cursor(s, cur);
+        let ch = s.get(cur..next).and_then(|t| t.chars().next());
+        if ch.is_some_and(|c| c.is_whitespace()) {
+            cur = next;
+        } else {
+            break;
+        }
+    }
+
+    while cur < len {
+        let next = next_cursor(s, cur);
+        let ch = s.get(cur..next).and_then(|t| t.chars().next());
+        if ch.is_some_and(|c| c.is_whitespace()) {
+            break;
+        }
+        cur = next;
+    }
+
+    cur
+}
+
 pub(crate) fn line_ranges(s: &str) -> Vec<(usize, usize)> {
     if s.is_empty() {
         return vec![(0, 0)];
@@ -109,4 +166,3 @@ pub(crate) fn move_cursor_vertically(
     let within = byte_index_at_display_col(line_str, cur_col);
     (t_start + within.min(t_end.saturating_sub(t_start)), Some(cur_col))
 }
-

@@ -2,7 +2,7 @@ use ratatui::{
     style::Style,
     text::{Line, Span},
 };
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 pub(crate) fn display_width(s: &str) -> usize {
     UnicodeWidthStr::width(s)
@@ -42,6 +42,32 @@ pub(crate) fn split_by_width(s: &str, max: usize) -> (String, String) {
     }
     let rest = s.get(last_byte..).unwrap_or("").to_string();
     (chunk, rest)
+}
+
+pub(crate) fn slice_by_display_cols(s: &str, start_col: usize, max_cols: usize) -> String {
+    if max_cols == 0 {
+        return String::new();
+    }
+
+    let mut col = 0usize;
+    let mut out = String::new();
+    for ch in s.chars() {
+        let w = UnicodeWidthChar::width(ch).unwrap_or(0).max(1);
+        let next = col.saturating_add(w);
+        if next <= start_col {
+            col = next;
+            continue;
+        }
+        if col >= start_col.saturating_add(max_cols) {
+            break;
+        }
+        if display_width(&out) + w > max_cols {
+            break;
+        }
+        out.push(ch);
+        col = next;
+    }
+    out
 }
 
 pub(crate) fn push_span_merged(spans: &mut Vec<Span<'static>>, text: String, style: Style) {
@@ -334,4 +360,3 @@ pub(crate) fn wrap_spans_hard(mut spans: Vec<Span<'static>>, width: usize) -> Ve
     }
     out
 }
-

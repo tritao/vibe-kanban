@@ -9,7 +9,7 @@ use ratatui::{
 };
 
 use crate::diff::{diff_rows_with_all, DIFF_ALL_KEY};
-use crate::layout::rect_contains;
+use crate::layout::{compute_main_layout, current_terminal_rect, rect_contains};
 use crate::commands::{
     begin_git_op, request_branch_status_refresh, resolve_repo_for_command, set_toast,
     trigger_abort_conflicts,
@@ -542,6 +542,16 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             app.ui.composer_suggest_index = 0;
             app.ui.composer.buffer = instructions;
             app.ui.composer.set_end();
+            let layout = compute_main_layout(current_terminal_rect());
+            let area = layout.exec_input;
+            let inner_w = area.width.saturating_sub(2) as usize;
+            let inner_h = area.height.saturating_sub(2) as usize;
+            let prefix_w = crate::text::display_width("  ");
+            let content_w = inner_w
+                .saturating_sub(prefix_w)
+                .saturating_sub(1)
+                .max(1);
+            app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
             set_toast(
                 app,
                 format!("Conflicts: drafted resolution request ({})", repo.repo_name),

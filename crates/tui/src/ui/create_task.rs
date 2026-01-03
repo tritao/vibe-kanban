@@ -142,6 +142,12 @@ pub(crate) fn handle_create_task_key(app: &mut AppState, key: crossterm::event::
                 (KeyCode::Enter, _) => {
                     state.focus = CreateTaskFocus::Description;
                 }
+                (KeyCode::Left, KeyModifiers::CONTROL) => {
+                    state.title.move_word_left();
+                }
+                (KeyCode::Right, KeyModifiers::CONTROL) => {
+                    state.title.move_word_right();
+                }
                 (KeyCode::Left, _) => {
                     state.title.move_left();
                 }
@@ -154,8 +160,15 @@ pub(crate) fn handle_create_task_key(app: &mut AppState, key: crossterm::event::
                 (KeyCode::End, _) => {
                     state.title.move_end(false);
                 }
+                (KeyCode::Backspace, KeyModifiers::ALT)
+                | (KeyCode::Backspace, KeyModifiers::CONTROL) => {
+                    state.title.backspace_word();
+                }
                 (KeyCode::Backspace, _) => {
                     state.title.backspace();
+                }
+                (KeyCode::Delete, KeyModifiers::CONTROL) => {
+                    state.title.delete_word();
                 }
                 (KeyCode::Delete, _) => {
                     state.title.delete();
@@ -169,6 +182,19 @@ pub(crate) fn handle_create_task_key(app: &mut AppState, key: crossterm::event::
                 _ => {}
             },
             CreateTaskFocus::Description => match (key.code, key.modifiers) {
+                (KeyCode::Left, KeyModifiers::CONTROL) => {
+                    state.description.move_word_left();
+                }
+                (KeyCode::Right, KeyModifiers::CONTROL) => {
+                    state.description.move_word_right();
+                }
+                (KeyCode::Backspace, KeyModifiers::ALT)
+                | (KeyCode::Backspace, KeyModifiers::CONTROL) => {
+                    state.description.backspace_word();
+                }
+                (KeyCode::Delete, KeyModifiers::CONTROL) => {
+                    state.description.delete_word();
+                }
                 (KeyCode::Backspace, _) => {
                     state.description.backspace();
                 }
