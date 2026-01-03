@@ -14,6 +14,7 @@ use crate::state::{
 use crate::ui::{open_create_task_modal, trigger_diff_repo_action, DiffRepoAction};
 
 use super::copy::reduce_copy;
+use super::focus;
 use super::scroll;
 use super::{CopyTarget, Effect};
 use super::{sel};
@@ -104,11 +105,7 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
             return (false, true, vec![]);
         }
         (KeyCode::Tab, KeyModifiers::NONE) => {
-            app.ui.focus = match app.ui.focus {
-                FocusPane::Board => FocusPane::Execution,
-                FocusPane::Execution => FocusPane::Diff,
-                FocusPane::Diff => FocusPane::Board,
-            };
+            focus::cycle_focus(app);
             return (false, true, vec![]);
         }
         (KeyCode::Char('/'), _) => {
@@ -223,11 +220,11 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
             return (false, true, vec![]);
         }
         (KeyCode::Char('h'), _) if app.ui.focus == FocusPane::Diff => {
-            app.ui.diff_focus = DiffFocus::Files;
+            focus::focus_diff_files(app);
             return (false, true, vec![]);
         }
         (KeyCode::Char('l'), _) if app.ui.focus == FocusPane::Diff => {
-            app.ui.diff_focus = DiffFocus::Preview;
+            focus::focus_diff_preview(app);
             return (false, true, vec![]);
         }
         (KeyCode::Char('w'), _) if app.ui.focus == FocusPane::Diff => {

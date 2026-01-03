@@ -3,10 +3,11 @@ use ratatui::layout::Rect;
 
 use crate::diff::diff_rows_with_all;
 use crate::layout::{compute_main_layout, current_terminal_rect, rect_contains};
-use crate::state::{AppState, DiffFocus, FocusPane};
+use crate::state::AppState;
 use crate::ui::board_hit_at;
 use crate::util::window_for_list;
 
+use super::focus;
 use super::sel;
 use super::scroll;
 
@@ -66,24 +67,22 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             if rect_contains(layout.exec_logs, col, row) {
-                app.ui.focus = FocusPane::Execution;
+                focus::focus_execution(app);
                 scroll::scroll_exec_older(app, LOG_WHEEL_STEP);
                 return true;
             }
             if rect_contains(layout.diff_preview, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Preview;
+                focus::focus_diff_preview(app);
                 scroll::scroll_diff_up(app, DIFF_WHEEL_STEP);
                 return true;
             }
             if rect_contains(layout.diff_files, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Files;
+                focus::focus_diff_files(app);
                 sel::select_adjacent_diff_file(app, -1);
                 return true;
             }
             if let Some(hit) = board_hit_at(app, layout.board, col, row) {
-                app.ui.focus = FocusPane::Board;
+                focus::focus_board(app);
                 sel::focus_board_section(app, hit.status);
                 sel::select_adjacent_task(app, -1);
                 return true;
@@ -91,24 +90,22 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         }
         MouseEventKind::ScrollDown => {
             if rect_contains(layout.exec_logs, col, row) {
-                app.ui.focus = FocusPane::Execution;
+                focus::focus_execution(app);
                 scroll::scroll_exec_newer(app, LOG_WHEEL_STEP);
                 return true;
             }
             if rect_contains(layout.diff_preview, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Preview;
+                focus::focus_diff_preview(app);
                 scroll::scroll_diff_down(app, DIFF_WHEEL_STEP);
                 return true;
             }
             if rect_contains(layout.diff_files, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Files;
+                focus::focus_diff_files(app);
                 sel::select_adjacent_diff_file(app, 1);
                 return true;
             }
             if let Some(hit) = board_hit_at(app, layout.board, col, row) {
-                app.ui.focus = FocusPane::Board;
+                focus::focus_board(app);
                 sel::focus_board_section(app, hit.status);
                 sel::select_adjacent_task(app, 1);
                 return true;
@@ -116,7 +113,7 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         }
         MouseEventKind::Down(MouseButton::Left) => {
             if rect_contains(layout.board, col, row) {
-                app.ui.focus = FocusPane::Board;
+                focus::focus_board(app);
                 if let Some(hit) = board_hit_at(app, layout.board, col, row) {
                     sel::apply_board_hit(app, hit);
                 }
@@ -124,7 +121,7 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
             }
 
             if rect_contains(layout.exec, col, row) {
-                app.ui.focus = FocusPane::Execution;
+                focus::focus_execution(app);
                 if rect_contains(layout.exec_input, col, row) {
                     app.ui.composer_active = true;
                     let area = layout.exec_input;
@@ -185,8 +182,8 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
             }
 
             if rect_contains(layout.diff, col, row) {
-                app.ui.focus = FocusPane::Diff;
                 if rect_contains(layout.diff_repo_bar, col, row) {
+                    focus::focus_diff(app);
                     if let Some(action) =
                         crate::ui::diff_repo_bar_action_at(app, layout.diff_repo_bar, col, row)
                     {
@@ -195,21 +192,21 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
                     return true;
                 }
                 if rect_contains(layout.diff_files, col, row) {
-                    app.ui.diff_focus = DiffFocus::Files;
+                    focus::focus_diff_files(app);
                     if let Some(idx) = diff_files_hit_at(app, layout.diff_files, col, row) {
                         sel::select_diff_file(app, idx);
                     }
                     return true;
                 }
                 if rect_contains(layout.diff_preview, col, row) {
-                    app.ui.diff_focus = DiffFocus::Preview;
+                    focus::focus_diff_preview(app);
                     return true;
                 }
             }
         }
         MouseEventKind::Down(MouseButton::Right) => {
             if rect_contains(layout.exec_logs, col, row) {
-                app.ui.focus = FocusPane::Execution;
+                focus::focus_execution(app);
                 sel::select_log_entry(app, log_entry_hit_at(app, layout.exec_logs, col, row));
                 crate::logs::toggle_selected_log_entry(app);
                 return true;
