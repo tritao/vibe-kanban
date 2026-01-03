@@ -9,13 +9,11 @@ use crate::diff_preview::{
 };
 use crate::events::{NetEvent, StreamStatus};
 use crate::logs::{enqueue_log_patch, reset_logs};
-use crate::selection::{
-    ensure_exec_selection, ensure_selection_visible, filtered_projects, set_selected_attempt,
-    set_selected_exec, set_selected_project, set_selected_task, sync_tasks_active_column,
-    tasks_by_status, tasks_filtered_base,
-};
+use crate::selection::{filtered_projects, tasks_by_status, tasks_filtered_base};
 use crate::state::{AppState, TaskStatus};
 use crate::ui::sync_selected_repo_from_diff_selection;
+
+use super::selection as sel;
 
 pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
     match event {
@@ -38,7 +36,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             let projects = filtered_projects(app);
             if projects.is_empty() {
                 app.board.selected_project_index = 0;
-                set_selected_project(app, None);
+                sel::select_project(app, None);
                 return true;
             }
 
@@ -51,7 +49,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
 
             app.board.selected_project_index =
                 app.board.selected_project_index.min(projects.len() - 1);
-            set_selected_project(app, Some(projects[app.board.selected_project_index].id));
+            sel::select_project(app, Some(projects[app.board.selected_project_index].id));
             true
         }
         NetEvent::TasksStreamStatus(status) => {
@@ -60,7 +58,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         }
         NetEvent::TasksReset => {
             app.board.tasks_store = serde_json::json!({ "tasks": {} });
-            set_selected_task(app, None);
+            sel::select_task(app, None);
             app.board.pending_select_task_id = None;
             true
         }
@@ -73,23 +71,23 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
 
             let tasks = tasks_filtered_base(app);
             if tasks.is_empty() {
-                set_selected_task(app, None);
+                sel::select_task(app, None);
                 return true;
             }
 
             if let Some(pending) = app.board.pending_select_task_id {
                 if tasks.iter().any(|t| t.id == pending) {
                     app.board.pending_select_task_id = None;
-                    set_selected_task(app, Some(pending));
-                    sync_tasks_active_column(app);
-                    ensure_selection_visible(app);
+                    sel::select_task(app, Some(pending));
+                    sel::sync_tasks_active_column(app);
+                    sel::ensure_selection_visible(app);
                     return true;
                 }
             }
 
             if let Some(selected_id) = app.board.selected_task_id {
                 if tasks.iter().any(|t| t.id == selected_id) {
-                    sync_tasks_active_column(app);
+                    sel::sync_tasks_active_column(app);
                     return true;
                 }
             }
@@ -104,9 +102,9 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             }
             .or_else(|| tasks.first());
 
-            set_selected_task(app, chosen.map(|t| t.id));
-            sync_tasks_active_column(app);
-            ensure_selection_visible(app);
+            sel::select_task(app, chosen.map(|t| t.id));
+            sel::sync_tasks_active_column(app);
+            sel::ensure_selection_visible(app);
             true
         }
         NetEvent::AttemptsLoaded { task_id, attempts } => {
@@ -117,7 +115,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.board.attempts = attempts;
             app.board.selected_attempt_index = 0;
             let default_attempt = app.board.attempts.first().map(|a| a.id);
-            set_selected_attempt(app, default_attempt);
+            sel::select_attempt(app, default_attempt);
             true
         }
         NetEvent::ExecStreamStatus(status) => {
@@ -126,7 +124,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         }
         NetEvent::ExecReset => {
             app.exec.exec_store = serde_json::json!({ "execution_processes": {} });
-            set_selected_exec(app, None);
+            sel::select_exec(app, None);
             true
         }
         NetEvent::ExecPatch(patch) => {
@@ -135,7 +133,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 app.exec.exec_status = StreamStatus::Error;
                 return true;
             }
-            ensure_exec_selection(app);
+            sel::ensure_exec_selection(app);
             true
         }
         NetEvent::DiffStreamStatus(status) => {
@@ -259,4 +257,3 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         }
     }
 }
-

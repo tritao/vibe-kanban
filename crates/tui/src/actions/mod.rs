@@ -1,6 +1,7 @@
 mod tick;
 mod ui;
 mod net;
+mod selection;
 
 use std::time::Instant;
 

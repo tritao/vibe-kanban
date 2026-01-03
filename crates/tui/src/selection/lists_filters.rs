@@ -295,11 +295,3 @@ pub(crate) fn find_task(store: &serde_json::Value, task_id: Uuid) -> Option<Task
         description,
     })
 }
-
-pub(super) fn filtered_projects_for_selection(app: &AppState) -> Vec<(Uuid, String)> {
-    // Helper for selection logic to avoid exporting ProjectRow.
-    filtered_projects(app)
-        .into_iter()
-        .map(|p| (p.id, p.name))
-        .collect()
-}

@@ -9,11 +9,7 @@ use crate::events::UiEvent;
 use crate::layout::{compute_main_layout, current_terminal_rect, rect_contains};
 use crate::prefs::save_prefs;
 use crate::diff::diff_rows_with_all;
-use crate::selection::{
-    ensure_selected_task_in_active_column, ensure_selection_visible, move_active_status,
-    request_move_selected_task, select_adjacent_attempt, select_adjacent_diff_file,
-    select_adjacent_task, set_selected_task,
-};
+use super::selection as sel;
 use crate::state::{
     AppState, ConfirmAction, ConfirmState, DiffFocus, FocusPane, InputMode, InputState, LogMode,
     LogRenderMode, LogViewMode, TaskStatus,
@@ -217,12 +213,12 @@ fn reduce_key(app: &mut AppState, key: crossterm::event::KeyEvent) -> (bool, boo
                 if let Some(input) = app.ui.input.take() {
                     app.board.task_filter = input.original;
                 }
-                ensure_selection_visible(app);
+                sel::ensure_selection_visible(app);
                 return (false, true, vec![]);
             }
             (KeyCode::Enter, _) => {
                 app.ui.input = None;
-                ensure_selection_visible(app);
+                sel::ensure_selection_visible(app);
                 return (false, true, vec![]);
             }
             _ => {}
@@ -390,11 +386,11 @@ fn reduce_key(app: &mut AppState, key: crossterm::event::KeyEvent) -> (bool, boo
             }
         }
         (KeyCode::Char('['), _) => {
-            select_adjacent_attempt(app, -1);
+            sel::select_adjacent_attempt(app, -1);
             return (false, true, vec![]);
         }
         (KeyCode::Char(']'), _) => {
-            select_adjacent_attempt(app, 1);
+            sel::select_adjacent_attempt(app, 1);
             return (false, true, vec![]);
         }
         (KeyCode::Char('h'), _) if app.ui.focus == FocusPane::Diff => {
@@ -462,39 +458,39 @@ fn reduce_key(app: &mut AppState, key: crossterm::event::KeyEvent) -> (bool, boo
             return (false, true, vec![]);
         }
         (KeyCode::Char('K'), _) if app.ui.focus == FocusPane::Board => {
-            move_active_status(app, -1);
+            sel::move_active_status(app, -1);
             return (false, true, vec![]);
         }
         (KeyCode::Char('J'), _) if app.ui.focus == FocusPane::Board => {
-            move_active_status(app, 1);
+            sel::move_active_status(app, 1);
             return (false, true, vec![]);
         }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _) if app.ui.focus == FocusPane::Board => {
-            select_adjacent_task(app, -1);
+            sel::select_adjacent_task(app, -1);
             return (false, true, vec![]);
         }
         (KeyCode::Down, _) | (KeyCode::Char('j'), _) if app.ui.focus == FocusPane::Board => {
-            select_adjacent_task(app, 1);
+            sel::select_adjacent_task(app, 1);
             return (false, true, vec![]);
         }
         (KeyCode::Left, _) if app.ui.focus == FocusPane::Board => {
-            request_move_selected_task(app, -1);
+            sel::request_move_selected_task(app, -1);
             return (false, true, vec![]);
         }
         (KeyCode::Right, _) if app.ui.focus == FocusPane::Board => {
-            request_move_selected_task(app, 1);
+            sel::request_move_selected_task(app, 1);
             return (false, true, vec![]);
         }
         (KeyCode::Up, _) | (KeyCode::Char('k'), _)
             if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Files =>
         {
-            select_adjacent_diff_file(app, -1);
+            sel::select_adjacent_diff_file(app, -1);
             return (false, true, vec![]);
         }
         (KeyCode::Down, _) | (KeyCode::Char('j'), _)
             if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Files =>
         {
-            select_adjacent_diff_file(app, 1);
+            sel::select_adjacent_diff_file(app, 1);
             return (false, true, vec![]);
         }
         (KeyCode::PageUp, _) if app.ui.focus == FocusPane::Execution => {
@@ -602,14 +598,14 @@ fn reduce_mouse(app: &mut AppState, mouse: crossterm::event::MouseEvent) -> bool
             if rect_contains(layout.diff_files, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Files;
-                select_adjacent_diff_file(app, -1);
+                sel::select_adjacent_diff_file(app, -1);
                 return true;
             }
             if let Some(hit) = board_hit_at(app, layout.board, col, row) {
                 app.ui.focus = FocusPane::Board;
                 app.board.tasks_active_column = hit.status;
-                ensure_selected_task_in_active_column(app);
-                select_adjacent_task(app, -1);
+                sel::ensure_selected_task_in_active_column(app);
+                sel::select_adjacent_task(app, -1);
                 return true;
             }
         }
@@ -631,14 +627,14 @@ fn reduce_mouse(app: &mut AppState, mouse: crossterm::event::MouseEvent) -> bool
             if rect_contains(layout.diff_files, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Files;
-                select_adjacent_diff_file(app, 1);
+                sel::select_adjacent_diff_file(app, 1);
                 return true;
             }
             if let Some(hit) = board_hit_at(app, layout.board, col, row) {
                 app.ui.focus = FocusPane::Board;
                 app.board.tasks_active_column = hit.status;
-                ensure_selected_task_in_active_column(app);
-                select_adjacent_task(app, 1);
+                sel::ensure_selected_task_in_active_column(app);
+                sel::select_adjacent_task(app, 1);
                 return true;
             }
         }
@@ -651,9 +647,9 @@ fn reduce_mouse(app: &mut AppState, mouse: crossterm::event::MouseEvent) -> bool
                         app.board.board_index_by_status[hit.status.idx()] = idx;
                     }
                     if let Some(task_id) = hit.clicked_task_id {
-                        set_selected_task(app, Some(task_id));
+                        sel::select_task(app, Some(task_id));
                     } else {
-                        ensure_selected_task_in_active_column(app);
+                        sel::ensure_selected_task_in_active_column(app);
                     }
                 }
                 return true;
@@ -1047,7 +1043,7 @@ fn reduce_search_key(
     let inner_w = area.width.saturating_sub(2) as usize;
     let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1);
     input.field.ensure_cursor_visible(content_w, 1);
-    crate::selection::ensure_selection_visible(app);
+    sel::ensure_selection_visible(app);
 
     app.ui.input = Some(input);
     Some((true, vec![]))
