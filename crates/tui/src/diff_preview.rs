@@ -1,0 +1,77 @@
+use std::time::{Duration, Instant};
+
+use ratatui::style::{Modifier, Style};
+use ratatui::text::{Line, Span};
+
+use crate::diff::{build_diff_preview_request, compute_diff_preview};
+use crate::events::NetEvent;
+use crate::state::AppState;
+
+fn json_pointer_escape_segment(s: &str) -> String {
+    s.replace('~', "~0").replace('/', "~1")
+}
+
+pub(crate) fn diff_patch_touches_key(patch: &json_patch::Patch, key: &str) -> bool {
+    let escaped = json_pointer_escape_segment(key);
+    let prefix = format!("/entries/{escaped}");
+    patch.iter().any(|op| {
+        let path = op.path().to_string();
+        path == "/entries" || path == prefix || path.starts_with(&(prefix.clone() + "/"))
+    })
+}
+
+pub(crate) fn schedule_diff_preview_refresh(app: &mut AppState, delay: Duration) {
+    // Cancel any in-flight diff preview generation; a newer one will replace it.
+    cancel_diff_preview_job(app);
+    let now = Instant::now();
+    let next = now + delay;
+    app.diff.diff_preview_pending = true;
+    app.diff.diff_preview_next_refresh_at = match app.diff.diff_preview_next_refresh_at {
+        Some(existing) => Some(existing.min(next)),
+        None => Some(next),
+    };
+}
+
+pub(crate) fn diff_preview_refresh_ready(app: &AppState, now: Instant) -> bool {
+    app.diff.diff_preview_pending
+        && app
+            .diff
+            .diff_preview_next_refresh_at
+            .map(|t| now >= t)
+            .unwrap_or(true)
+}
+
+pub(crate) fn cancel_diff_preview_job(app: &mut AppState) {
+    app.diff.diff_preview_gen = app.diff.diff_preview_gen.wrapping_add(1);
+    if let Some(job) = app.diff.diff_preview_job.take() {
+        job.abort();
+    }
+}
+
+pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
+    cancel_diff_preview_job(app);
+
+    let generation = app.diff.diff_preview_gen;
+    let width_u16 = (width.min(u16::MAX as usize)) as u16;
+    let req = build_diff_preview_request(&app.diff.diff_store, app.diff.selected_diff_index);
+    let theme = app.diff.diff_theme;
+    let wrap = app.diff.diff_wrap;
+    let net_tx = app.net_tx.clone();
+
+    // Immediate feedback; rendering is updated when the job completes.
+    app.diff.diff_preview_lines = vec![Line::from(Span::styled(
+        "Loading diff…".to_string(),
+        Style::default().add_modifier(Modifier::DIM),
+    ))];
+
+    app.diff.diff_preview_job = Some(tokio::task::spawn_blocking(move || {
+        let (cache_key, cache_hash, lines) = compute_diff_preview(req, width, theme, wrap);
+        let _ = net_tx.blocking_send(NetEvent::DiffPreviewReady {
+            generation,
+            cache_key,
+            cache_hash,
+            width: width_u16,
+            lines,
+        });
+    }));
+}

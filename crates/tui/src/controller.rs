@@ -1,0 +1,240 @@
+use std::time::Duration;
+
+use ratatui::text::Line;
+
+use crate::commands::{finish_git_op, request_diff_reconnect};
+use crate::diff::{diff_rows_with_all, DIFF_ALL_KEY};
+use crate::diff_preview::{
+    cancel_diff_preview_job, diff_patch_touches_key, schedule_diff_preview_refresh,
+};
+use crate::events::{NetEvent, StreamStatus};
+use crate::logs::{enqueue_log_patch, reset_logs};
+use crate::selection::{
+    ensure_exec_selection, ensure_selection_visible, filtered_projects, set_selected_attempt,
+    set_selected_exec, set_selected_project, set_selected_task, sync_tasks_active_column,
+    tasks_by_status, tasks_filtered_base,
+};
+use crate::state::{AppState, TaskStatus};
+use crate::ui::sync_selected_repo_from_diff_selection;
+
+pub(crate) fn handle_net_event(app: &mut AppState, event: NetEvent) {
+    match event {
+        NetEvent::InfoLoaded { ok, summary } => {
+            app.info_ok = ok;
+            app.info_summary = summary;
+        }
+        NetEvent::ProjectsStreamStatus(status) => {
+            app.board.projects_status = status;
+        }
+        NetEvent::ProjectsPatch(patch) => {
+            if let Err(e) = json_patch::patch(&mut app.board.projects_store, &patch) {
+                app.ui.last_error = Some(format!("failed to apply projects patch: {e}"));
+                app.board.projects_status = StreamStatus::Error;
+                return;
+            }
+
+            let projects = filtered_projects(app);
+            if projects.is_empty() {
+                app.board.selected_project_index = 0;
+                set_selected_project(app, None);
+                return;
+            }
+
+            if let Some(selected_id) = app.board.selected_project_id {
+                if let Some(idx) = projects.iter().position(|p| p.id == selected_id) {
+                    app.board.selected_project_index = idx;
+                    return;
+                }
+            }
+
+            app.board.selected_project_index =
+                app.board.selected_project_index.min(projects.len() - 1);
+            set_selected_project(app, Some(projects[app.board.selected_project_index].id));
+        }
+        NetEvent::TasksStreamStatus(status) => {
+            app.board.tasks_status = status;
+        }
+        NetEvent::TasksReset => {
+            app.board.tasks_store = serde_json::json!({ "tasks": {} });
+            set_selected_task(app, None);
+            app.board.pending_select_task_id = None;
+        }
+        NetEvent::TasksPatch(patch) => {
+            if let Err(e) = json_patch::patch(&mut app.board.tasks_store, &patch) {
+                app.ui.last_error = Some(format!("failed to apply tasks patch: {e}"));
+                app.board.tasks_status = StreamStatus::Error;
+                return;
+            }
+
+            let tasks = tasks_filtered_base(app);
+            if tasks.is_empty() {
+                set_selected_task(app, None);
+                return;
+            }
+
+            if let Some(pending) = app.board.pending_select_task_id {
+                if tasks.iter().any(|t| t.id == pending) {
+                    app.board.pending_select_task_id = None;
+                    set_selected_task(app, Some(pending));
+                    sync_tasks_active_column(app);
+                    ensure_selection_visible(app);
+                    return;
+                }
+            }
+
+            if let Some(selected_id) = app.board.selected_task_id {
+                if tasks.iter().any(|t| t.id == selected_id) {
+                    sync_tasks_active_column(app);
+                    return;
+                }
+            }
+
+            let by_status = tasks_by_status(&tasks);
+            let chosen = match app.board.tasks_active_column {
+                TaskStatus::Todo => by_status.todo.first(),
+                TaskStatus::InProgress => by_status.inprogress.first(),
+                TaskStatus::InReview => by_status.inreview.first(),
+                TaskStatus::Done => by_status.done.first(),
+                TaskStatus::Cancelled => by_status.cancelled.first(),
+            }
+            .or_else(|| tasks.first());
+
+            set_selected_task(app, chosen.map(|t| t.id));
+            sync_tasks_active_column(app);
+            ensure_selection_visible(app);
+        }
+        NetEvent::AttemptsLoaded { task_id, attempts } => {
+            if app.board.selected_task_id != Some(task_id) {
+                return;
+            }
+
+            app.board.attempts = attempts;
+            app.board.selected_attempt_index = 0;
+            let default_attempt = app.board.attempts.first().map(|a| a.id);
+            set_selected_attempt(app, default_attempt);
+        }
+        NetEvent::ExecStreamStatus(status) => {
+            app.exec.exec_status = status;
+        }
+        NetEvent::ExecReset => {
+            app.exec.exec_store = serde_json::json!({ "execution_processes": {} });
+            set_selected_exec(app, None);
+        }
+        NetEvent::ExecPatch(patch) => {
+            if let Err(e) = json_patch::patch(&mut app.exec.exec_store, &patch) {
+                app.ui.last_error = Some(format!("failed to apply exec patch: {e}"));
+                app.exec.exec_status = StreamStatus::Error;
+                return;
+            }
+            ensure_exec_selection(app);
+        }
+        NetEvent::DiffStreamStatus(status) => {
+            app.diff.diff_status = status;
+        }
+        NetEvent::DiffReset => {
+            app.diff.diff_store = serde_json::json!({ "entries": {} });
+            app.diff.selected_diff_index = 0;
+            app.diff.diff_scroll_offset = 0;
+            app.diff.diff_preview_cache_key = None;
+            app.diff.diff_preview_cache_hash = 0;
+            app.diff.diff_preview_lines = vec![Line::from("No diffs")];
+            app.diff.diff_preview_pending = false;
+            app.diff.diff_preview_next_refresh_at = None;
+            cancel_diff_preview_job(app);
+        }
+        NetEvent::DiffPatch(patch) => {
+            if let Err(e) = json_patch::patch(&mut app.diff.diff_store, &patch) {
+                app.ui.last_error = Some(format!("failed to apply diff patch: {e}"));
+                app.diff.diff_status = StreamStatus::Error;
+                return;
+            }
+
+            let touches_entries = patch.iter().any(|op| {
+                let path = op.path().to_string();
+                path == "/entries" || path.starts_with("/entries/")
+            });
+            if !touches_entries {
+                return;
+            }
+
+            let rows = diff_rows_with_all(&app.diff.diff_store);
+            if rows.is_empty() {
+                return;
+            }
+            let sel = app.diff.selected_diff_index.min(rows.len().saturating_sub(1));
+            let sel_key = rows.get(sel).map(|r| r.key.as_str()).unwrap_or(DIFF_ALL_KEY);
+
+            let should_refresh = if sel_key == DIFF_ALL_KEY {
+                true
+            } else {
+                diff_patch_touches_key(&patch, sel_key)
+            };
+            if should_refresh {
+                app.diff.diff_preview_cache_key = None;
+                app.diff.diff_preview_cache_hash = 0;
+                schedule_diff_preview_refresh(app, Duration::from_millis(0));
+            }
+        }
+        NetEvent::DiffReconnect => {
+            // Clear local state immediately; the WS task will also emit a `DiffReset` when it
+            // reconnects.
+            app.diff.diff_store = serde_json::json!({ "entries": {} });
+            app.diff.selected_diff_index = 0;
+            app.diff.diff_scroll_offset = 0;
+            app.diff.diff_preview_cache_key = None;
+            app.diff.diff_preview_cache_hash = 0;
+            app.diff.diff_preview_lines = vec![Line::from("No diffs")];
+            app.diff.diff_preview_pending = false;
+            app.diff.diff_preview_next_refresh_at = None;
+            cancel_diff_preview_job(app);
+            request_diff_reconnect(app);
+        }
+        NetEvent::DiffPreviewReady {
+            generation,
+            cache_key,
+            cache_hash,
+            width,
+            lines,
+        } => {
+            if generation != app.diff.diff_preview_gen {
+                return;
+            }
+            app.diff.diff_preview_cache_key = cache_key;
+            app.diff.diff_preview_cache_hash = cache_hash;
+            app.diff.diff_preview_cache_width = width;
+            app.diff.diff_preview_lines = lines;
+            app.diff.diff_preview_job = None;
+        }
+        NetEvent::GitOpFinished {
+            repo_id,
+            kind,
+            ok,
+            message,
+        } => {
+            finish_git_op(app, repo_id, kind, ok, message);
+        }
+        NetEvent::LogStreamStatus(status) => {
+            app.exec.log_status = status;
+        }
+        NetEvent::LogReset(exec_id) => {
+            reset_logs(app, exec_id);
+        }
+        NetEvent::LogPatch { exec_id, patch } => {
+            enqueue_log_patch(app, exec_id, patch);
+        }
+        NetEvent::BranchStatusLoaded(statuses) => {
+            app.diff.repo_statuses = statuses;
+            sync_selected_repo_from_diff_selection(app);
+        }
+        NetEvent::TaskCreated { task_id, status } => {
+            app.ui.last_notice = Some(format!("Created task {task_id} ({})", status.label()));
+            app.ui.create_task = None;
+        }
+        NetEvent::Notice(msg) => {
+            app.ui.last_notice = Some(msg);
+        }
+        NetEvent::Error(msg) => {
+            app.ui.last_error = Some(msg);
+        }
+    }
+}
