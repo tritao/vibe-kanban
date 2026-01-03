@@ -177,6 +177,20 @@ impl ExecLogBuffer {
         Ok(true)
     }
 
+    pub(crate) fn rendered_entry_text(&self, entry_idx: usize) -> Option<String> {
+        if entry_idx >= self.entry_line_starts.len() {
+            return None;
+        }
+        let start = self.entry_line_starts[entry_idx];
+        let end = self
+            .entry_line_starts
+            .get(entry_idx + 1)
+            .copied()
+            .unwrap_or(self.lines.len());
+        let slice = self.lines.get(start..end).unwrap_or(&[]);
+        Some(crate::util::lines_plain_text(slice))
+    }
+
 }
 
 pub(crate) fn mark_all_log_buffers_dirty(app: &mut AppState, entry_idx: usize) {

@@ -142,6 +142,13 @@ pub(crate) fn handle_create_task_key(app: &mut AppState, key: crossterm::event::
                 (KeyCode::Enter, _) => {
                     state.focus = CreateTaskFocus::Description;
                 }
+                (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+                    state.title.undo();
+                }
+                (KeyCode::Char('y'), KeyModifiers::CONTROL)
+                | (KeyCode::Char('Z'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
+                    state.title.redo();
+                }
                 (KeyCode::Left, KeyModifiers::CONTROL) => {
                     state.title.move_word_left();
                 }
@@ -182,6 +189,13 @@ pub(crate) fn handle_create_task_key(app: &mut AppState, key: crossterm::event::
                 _ => {}
             },
             CreateTaskFocus::Description => match (key.code, key.modifiers) {
+                (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+                    state.description.undo();
+                }
+                (KeyCode::Char('y'), KeyModifiers::CONTROL)
+                | (KeyCode::Char('Z'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
+                    state.description.redo();
+                }
                 (KeyCode::Left, KeyModifiers::CONTROL) => {
                     state.description.move_word_left();
                 }
@@ -377,10 +391,9 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
 
     // Title
     let title_border = create_task_focus_border(state.focus, CreateTaskFocus::Title);
-    let mut title_state = state.title.clone();
     let title_inner_w = chunks[0].width.saturating_sub(2) as usize;
-    title_state.ensure_cursor_visible(title_inner_w.max(1), 1);
-    let title_p = Paragraph::new(Line::from(title_state.buffer.clone()))
+    let (_, title_scroll_x) = state.title.ensured_scroll(title_inner_w.max(1), 1);
+    let title_p = Paragraph::new(Line::from(state.title.buffer.clone()))
         .block(
             Block::default()
                 .borders(Borders::ALL)
@@ -388,22 +401,23 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
                 .border_style(title_border),
         )
         .wrap(Wrap { trim: false });
-    let title_p = title_p.scroll((0, title_state.scroll_x));
+    let title_p = title_p.scroll((0, title_scroll_x));
     f.render_widget(title_p, chunks[0]);
 
     // Description (auto-scroll to keep the cursor visible)
     let desc_border = create_task_focus_border(state.focus, CreateTaskFocus::Description);
     let desc_inner_h = chunks[1].height.saturating_sub(2) as usize;
     let desc_inner_w = chunks[1].width.saturating_sub(2) as usize;
-    let mut desc_state = state.description.clone();
-    desc_state.ensure_cursor_visible(desc_inner_w.max(1), desc_inner_h.max(1));
-    let desc_lines: Vec<Line<'static>> = if desc_state.buffer.is_empty() {
+    let (desc_scroll_y, desc_scroll_x) =
+        state.description.ensured_scroll(desc_inner_w.max(1), desc_inner_h.max(1));
+    let desc_lines: Vec<Line<'static>> = if state.description.buffer.is_empty() {
         vec![Line::from(Span::styled(
             "Optional. Markdown supported.",
             Style::default().add_modifier(Modifier::DIM),
         ))]
     } else {
-        desc_state
+        state
+            .description
             .buffer
             .split('\n')
             .map(|l| Line::from(l.to_string()))
@@ -415,8 +429,8 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
             .title("Description")
             .border_style(desc_border),
     );
-    if !desc_state.buffer.is_empty() {
-        desc_p = desc_p.scroll((desc_state.scroll_y, desc_state.scroll_x));
+    if !state.description.buffer.is_empty() {
+        desc_p = desc_p.scroll((desc_scroll_y, desc_scroll_x));
     }
     f.render_widget(desc_p, chunks[1]);
 
@@ -515,12 +529,12 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
     let cursor_pad_x = 1u16;
     match state.focus {
         CreateTaskFocus::Title => {
-            let (_, cursor_col) = title_state.cursor_line_col();
+            let (_, cursor_col) = state.title.cursor_line_col();
             let x = chunks[0]
                 .x
                 .saturating_add(cursor_pad_x)
                 .saturating_add(
-                    cursor_col.saturating_sub(title_state.scroll_x as usize) as u16
+                    cursor_col.saturating_sub(title_scroll_x as usize) as u16
                 )
                 .min(chunks[0].x.saturating_add(chunks[0].width).saturating_sub(2));
             let y = chunks[0].y.saturating_add(1);
@@ -532,15 +546,15 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
             if inner_w == 0 || inner_h == 0 {
                 return;
             }
-            if desc_state.buffer.is_empty() {
+            if state.description.buffer.is_empty() {
                 let x = chunks[1].x.saturating_add(cursor_pad_x);
                 let y = chunks[1].y.saturating_add(1);
                 f.set_cursor_position((x, y));
                 return;
             }
-            let (line, col) = desc_state.cursor_line_col();
-            let vx = col.saturating_sub(desc_state.scroll_x as usize);
-            let vy = line.saturating_sub(desc_state.scroll_y as usize);
+            let (line, col) = state.description.cursor_line_col();
+            let vx = col.saturating_sub(desc_scroll_x as usize);
+            let vy = line.saturating_sub(desc_scroll_y as usize);
             let x = chunks[1]
                 .x
                 .saturating_add(cursor_pad_x)

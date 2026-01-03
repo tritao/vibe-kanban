@@ -1,4 +1,5 @@
 use crate::state::{AppState, TaskStatus};
+use ratatui::text::Line;
 
 pub(crate) fn board_statuses(app: &AppState) -> Vec<TaskStatus> {
     if app.board.show_cancelled {
@@ -17,6 +18,25 @@ pub(crate) fn board_statuses(app: &AppState) -> Vec<TaskStatus> {
             TaskStatus::Done,
         ]
     }
+}
+
+pub(crate) fn line_plain_text(line: &Line<'_>) -> String {
+    let mut out = String::new();
+    for s in &line.spans {
+        out.push_str(s.content.as_ref());
+    }
+    out
+}
+
+pub(crate) fn lines_plain_text(lines: &[Line<'_>]) -> String {
+    let mut out = String::new();
+    for (i, line) in lines.iter().enumerate() {
+        if i > 0 {
+            out.push('\n');
+        }
+        out.push_str(&line_plain_text(line));
+    }
+    out
 }
 
 pub(crate) fn window_for_list(len: usize, selected: usize, height: usize) -> (usize, usize, usize) {

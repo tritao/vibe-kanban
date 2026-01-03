@@ -105,9 +105,66 @@ pub(crate) struct TextFieldState {
     pub(crate) goal_col: Option<usize>,
     pub(crate) scroll_x: u16, // columns
     pub(crate) scroll_y: u16, // lines
+    undo: Vec<TextFieldSnapshot>,
+    redo: Vec<TextFieldSnapshot>,
+}
+
+#[derive(Debug, Clone)]
+struct TextFieldSnapshot {
+    buffer: String,
+    cursor: usize,
+    goal_col: Option<usize>,
+    scroll_x: u16,
+    scroll_y: u16,
 }
 
 impl TextFieldState {
+    fn snapshot(&self) -> TextFieldSnapshot {
+        TextFieldSnapshot {
+            buffer: self.buffer.clone(),
+            cursor: self.cursor,
+            goal_col: self.goal_col,
+            scroll_x: self.scroll_x,
+            scroll_y: self.scroll_y,
+        }
+    }
+
+    fn restore(&mut self, snap: TextFieldSnapshot) {
+        self.buffer = snap.buffer;
+        self.cursor = snap.cursor;
+        self.goal_col = snap.goal_col;
+        self.scroll_x = snap.scroll_x;
+        self.scroll_y = snap.scroll_y;
+        self.clamp_cursor();
+    }
+
+    fn push_undo(&mut self) {
+        const MAX_UNDO: usize = 200;
+        self.undo.push(self.snapshot());
+        if self.undo.len() > MAX_UNDO {
+            self.undo.remove(0);
+        }
+        self.redo.clear();
+    }
+
+    pub(crate) fn undo(&mut self) -> bool {
+        let Some(snap) = self.undo.pop() else {
+            return false;
+        };
+        self.redo.push(self.snapshot());
+        self.restore(snap);
+        true
+    }
+
+    pub(crate) fn redo(&mut self) -> bool {
+        let Some(snap) = self.redo.pop() else {
+            return false;
+        };
+        self.undo.push(self.snapshot());
+        self.restore(snap);
+        true
+    }
+
     pub(crate) fn clamp_cursor(&mut self) {
         self.cursor = crate::text::edit::clamp_cursor_to_boundary(&self.buffer, self.cursor);
     }
@@ -118,6 +175,9 @@ impl TextFieldState {
     }
 
     pub(crate) fn clear(&mut self) {
+        if !self.buffer.is_empty() {
+            self.push_undo();
+        }
         self.buffer.clear();
         self.cursor = 0;
         self.goal_col = None;
@@ -197,6 +257,7 @@ impl TextFieldState {
     }
 
     pub(crate) fn insert_char(&mut self, ch: char) {
+        self.push_undo();
         let cur = crate::text::edit::clamp_cursor_to_boundary(&self.buffer, self.cursor);
         self.buffer.insert(cur, ch);
         self.cursor = cur + ch.len_utf8();
@@ -207,6 +268,7 @@ impl TextFieldState {
         let cur = crate::text::edit::clamp_cursor_to_boundary(&self.buffer, self.cursor);
         let prev = crate::text::edit::prev_cursor(&self.buffer, cur);
         if prev < cur {
+            self.push_undo();
             self.buffer.replace_range(prev..cur, "");
             self.cursor = prev;
         } else {
@@ -219,6 +281,7 @@ impl TextFieldState {
         let cur = crate::text::edit::clamp_cursor_to_boundary(&self.buffer, self.cursor);
         let prev = crate::text::edit::prev_word_cursor(&self.buffer, cur);
         if prev < cur {
+            self.push_undo();
             self.buffer.replace_range(prev..cur, "");
             self.cursor = prev;
         } else {
@@ -231,6 +294,7 @@ impl TextFieldState {
         let cur = crate::text::edit::clamp_cursor_to_boundary(&self.buffer, self.cursor);
         let next = crate::text::edit::next_cursor(&self.buffer, cur);
         if cur < next {
+            self.push_undo();
             self.buffer.replace_range(cur..next, "");
             self.cursor = cur;
         } else {
@@ -243,6 +307,7 @@ impl TextFieldState {
         let cur = crate::text::edit::clamp_cursor_to_boundary(&self.buffer, self.cursor);
         let next = crate::text::edit::next_word_cursor(&self.buffer, cur);
         if cur < next {
+            self.push_undo();
             self.buffer.replace_range(cur..next, "");
             self.cursor = cur;
         } else {
@@ -260,7 +325,7 @@ impl TextFieldState {
         (line, col)
     }
 
-    pub(crate) fn ensure_cursor_visible(&mut self, inner_w: usize, inner_h: usize) {
+    pub(crate) fn ensured_scroll(&self, inner_w: usize, inner_h: usize) -> (u16, u16) {
         let (line, col) = self.cursor_line_col();
 
         let inner_h = inner_h.max(1) as i64;
@@ -284,8 +349,13 @@ impl TextFieldState {
             new_sx = cx - inner_w + 1;
         }
 
-        self.scroll_y = new_sy.max(0) as u16;
-        self.scroll_x = new_sx.max(0) as u16;
+        (new_sy.max(0) as u16, new_sx.max(0) as u16)
+    }
+
+    pub(crate) fn ensure_cursor_visible(&mut self, inner_w: usize, inner_h: usize) {
+        let (y, x) = self.ensured_scroll(inner_w, inner_h);
+        self.scroll_y = y;
+        self.scroll_x = x;
     }
 }
 

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::commands::submit_composer;
+use crate::commands::{copy_to_clipboard_osc52, set_toast, submit_composer};
 use crate::diff::diff_rows_with_all;
 use crate::diff_preview::schedule_diff_preview_refresh;
 use crate::events::UiEvent;
@@ -59,6 +59,19 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                         }
                         (KeyCode::Enter, _) => {
                             close = true;
+                        }
+                        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+                            if input.field.undo() {
+                                app.board.task_filter = input.field.buffer.clone();
+                                filter_changed = true;
+                            }
+                        }
+                        (KeyCode::Char('y'), KeyModifiers::CONTROL)
+                        | (KeyCode::Char('Z'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
+                            if input.field.redo() {
+                                app.board.task_filter = input.field.buffer.clone();
+                                filter_changed = true;
+                            }
                         }
                         (KeyCode::Backspace, KeyModifiers::ALT)
                         | (KeyCode::Backspace, KeyModifiers::CONTROL) => {
@@ -142,6 +155,15 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                         (KeyCode::Esc, _) => {
                             app.ui.composer_active = false;
                             app.ui.composer.clear();
+                            app.ui.composer_suggest_index = 0;
+                        }
+                        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
+                            app.ui.composer.undo();
+                            app.ui.composer_suggest_index = 0;
+                        }
+                        (KeyCode::Char('y'), KeyModifiers::CONTROL)
+                        | (KeyCode::Char('Z'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
+                            app.ui.composer.redo();
                             app.ui.composer_suggest_index = 0;
                         }
                         (KeyCode::Enter, KeyModifiers::CONTROL) => {
@@ -262,10 +284,8 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                         };
                     }
                     (KeyCode::Char('/'), _) => {
-                        let mut field = crate::state::TextFieldState {
-                            buffer: app.board.task_filter.clone(),
-                            ..Default::default()
-                        };
+                        let mut field = crate::state::TextFieldState::default();
+                        field.buffer = app.board.task_filter.clone();
                         field.set_end();
                         let term = current_terminal_rect();
                         let area = crate::ui::layout::centered_rect(80, 25, term);
@@ -309,6 +329,64 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                         app.prefs.log_view_mode = app.exec.log_view_mode;
                         save_prefs(&app.prefs);
                         app.exec.log_view_dirty = true;
+                    }
+                    (KeyCode::Char('y'), _) if app.ui.focus == FocusPane::Execution => {
+                        let text = if let Some(sel) = app.exec.log_selected {
+                            app.exec
+                                .log_buffers
+                                .get(&sel.exec_id)
+                                .and_then(|b| b.rendered_entry_text(sel.entry_idx))
+                        } else {
+                            None
+                        }
+                        .unwrap_or_else(|| {
+                            let layout = compute_main_layout(current_terminal_rect());
+                            let area = layout.exec_logs;
+                            let len = app.exec.log_lines.len();
+                            let max_render = area.height.saturating_sub(2) as usize;
+                            let visible = max_render.min(len).max(1);
+                            let mut offset = if app.exec.log_autoscroll {
+                                0
+                            } else {
+                                app.exec.log_scroll_offset
+                            };
+                            offset = offset.min(len.saturating_sub(visible));
+                            let start = len.saturating_sub(visible + offset);
+                            let end = len.saturating_sub(offset);
+                            crate::util::lines_plain_text(
+                                app.exec.log_lines.get(start..end).unwrap_or(&[]),
+                            )
+                        });
+
+                        if text.trim().is_empty() {
+                            set_toast(app, "Copy: nothing to copy".to_string(), ratatui::style::Color::Yellow, None);
+                        } else if let Err(e) = copy_to_clipboard_osc52(&text) {
+                            set_toast(app, format!("Copy failed: {e}"), ratatui::style::Color::Red, None);
+                        } else {
+                            set_toast(app, "Copied logs".to_string(), ratatui::style::Color::Green, None);
+                        }
+                    }
+                    (KeyCode::Char('y'), _) if app.ui.focus == FocusPane::Diff => {
+                        let rows = diff_rows_with_all(&app.diff.diff_store);
+                        let selected = rows
+                            .get(app.diff.selected_diff_index)
+                            .map(|d| d.key.clone());
+                        let text = match app.ui.diff_focus {
+                            DiffFocus::Files => selected.unwrap_or_default(),
+                            DiffFocus::Preview => crate::util::lines_plain_text(&app.diff.diff_preview_lines),
+                        };
+
+                        if text.trim().is_empty() {
+                            set_toast(app, "Copy: nothing to copy".to_string(), ratatui::style::Color::Yellow, None);
+                        } else if let Err(e) = copy_to_clipboard_osc52(&text) {
+                            set_toast(app, format!("Copy failed: {e}"), ratatui::style::Color::Red, None);
+                        } else {
+                            let label = match app.ui.diff_focus {
+                                DiffFocus::Files => "Copied path",
+                                DiffFocus::Preview => "Copied diff",
+                            };
+                            set_toast(app, label.to_string(), ratatui::style::Color::Green, None);
+                        }
                     }
                     (KeyCode::Char('e'), _) | (KeyCode::Enter, _)
                         if app.ui.focus == FocusPane::Execution =>
@@ -550,18 +628,58 @@ fn log_entry_hit_at(
 }
 
 fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
-    if app.ui.confirm.is_some()
-        || app.ui.input.is_some()
-        || app.ui.show_help
-        || app.ui.create_task.is_some()
-    {
-        return;
-    }
-
     use crossterm::event::{MouseButton, MouseEventKind};
 
     let col = mouse.column;
     let row = mouse.row;
+
+    // Allow caret placement in the search modal.
+    if let Some(input) = app.ui.input.as_mut() {
+        if app.ui.confirm.is_some() || app.ui.show_help || app.ui.create_task.is_some() {
+            return;
+        }
+
+        if matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left)) {
+            let area = crate::ui::layout::centered_rect(80, 25, current_terminal_rect());
+            let input_y = area.y.saturating_add(1).saturating_add(2);
+            let input_x0 = area.x.saturating_add(1).saturating_add(1); // leading "/"
+            let input_x1 = area.x.saturating_add(area.width).saturating_sub(2);
+
+            if row == input_y && col >= input_x0 && col <= input_x1 {
+                let inner_w = area.width.saturating_sub(2) as usize;
+                let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1);
+
+                let start_col = input.field.scroll_x as usize;
+                let left = start_col > 0;
+                let click_x = col.saturating_sub(input_x0) as usize;
+                let mut target_col = if left {
+                    if click_x == 0 {
+                        start_col
+                    } else {
+                        start_col.saturating_add(click_x.saturating_sub(1))
+                    }
+                } else {
+                    start_col.saturating_add(click_x)
+                };
+
+                // Clamp to end of line.
+                let line_w = crate::text::display_width(&input.field.buffer);
+                target_col = target_col.min(line_w);
+                input.field.cursor = crate::text::edit::byte_index_at_display_col(
+                    &input.field.buffer,
+                    target_col,
+                );
+                input.field.goal_col = None;
+                input.field.ensure_cursor_visible(content_w, 1);
+            }
+        }
+        return;
+    }
+
+    if app.ui.confirm.is_some() || app.ui.show_help || app.ui.create_task.is_some() {
+        return;
+    }
+
     let layout = compute_main_layout(current_terminal_rect());
 
     const LOG_WHEEL_STEP: usize = 3;
@@ -647,7 +765,6 @@ fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
                 app.ui.focus = FocusPane::Execution;
                 if rect_contains(layout.exec_input, col, row) {
                     app.ui.composer_active = true;
-                    app.ui.composer.set_end();
                     let area = layout.exec_input;
                     let inner_w = area.width.saturating_sub(2) as usize;
                     let inner_h = area.height.saturating_sub(2) as usize;
@@ -656,6 +773,50 @@ fn handle_mouse_event(app: &mut AppState, mouse: crossterm::event::MouseEvent) {
                         .saturating_sub(prefix_w)
                         .saturating_sub(1)
                         .max(1);
+
+                    // Click-to-place caret (same layout assumptions as render_composer).
+                    let inner_x0 = area.x.saturating_add(1);
+                    let inner_y0 = area.y.saturating_add(1);
+                    if row >= inner_y0 {
+                        let rel_y = row.saturating_sub(inner_y0) as usize;
+                        let line_ranges = crate::text::edit::line_ranges(&app.ui.composer.buffer);
+                        if !line_ranges.is_empty() {
+                            let start_line = app.ui.composer.scroll_y as usize;
+                            let target_line = start_line
+                                .saturating_add(rel_y)
+                                .min(line_ranges.len().saturating_sub(1));
+                            let (ls, le) = line_ranges[target_line];
+                            let line_str = app.ui.composer.buffer.get(ls..le).unwrap_or("");
+
+                            // Prefix is always 2 columns ("  ", "> ", or "… ").
+                            let content_x0 = inner_x0.saturating_add(prefix_w as u16);
+                            let mut rel_x =
+                                col.saturating_sub(content_x0) as usize;
+
+                            let start_col = app.ui.composer.scroll_x as usize;
+                            let left = start_col > 0;
+                            if left && rel_x > 0 {
+                                rel_x = rel_x.saturating_sub(1);
+                            } else if left && rel_x == 0 {
+                                // Clicked the left ellipsis.
+                                rel_x = 0;
+                            }
+                            let mut target_col = start_col.saturating_add(rel_x);
+                            let line_w = crate::text::display_width(line_str);
+                            target_col = target_col.min(line_w);
+
+                            let within =
+                                crate::text::edit::byte_index_at_display_col(line_str, target_col);
+                            app.ui.composer.cursor =
+                                (ls + within).min(app.ui.composer.buffer.len());
+                            app.ui.composer.goal_col = None;
+                        } else {
+                            app.ui.composer.set_end();
+                        }
+                    } else {
+                        app.ui.composer.set_end();
+                    }
+
                     app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
                 } else if rect_contains(layout.exec_logs, col, row) {
                     app.exec.log_selected = log_entry_hit_at(app, layout.exec_logs, col, row);

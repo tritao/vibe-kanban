@@ -17,6 +17,7 @@ tracing-subscriber = { workspace = true }
 utils = { path = "../utils" }
 
 clap = { version = "4.5.27", features = ["derive", "env"] }
+base64 = "0.22.1"
 crossterm = "0.28.1"
 futures-util = "0.3"
 json-patch = "2.0"
