@@ -27,7 +27,7 @@ pub(crate) fn submit_composer(app: &mut AppState) {
     app.ui.composer_active = false;
     app.ui.composer.clear();
 
-    if msg.trim_start().starts_with('/') {
+    if crate::slash::composer_is_slash_mode(&msg) {
         submit_slash_command(app, &msg);
         return;
     }
