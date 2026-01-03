@@ -10,6 +10,7 @@ use crate::state::AppState;
 pub(super) use super::selection as sel;
 
 mod copy;
+mod create_task;
 mod focus;
 mod keys;
 mod modals;

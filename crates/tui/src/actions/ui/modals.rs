@@ -71,4 +71,3 @@ pub(super) fn close_composer(app: &mut AppState) {
     app.ui.composer.clear();
     app.ui.composer_suggest_index = 0;
 }
-
