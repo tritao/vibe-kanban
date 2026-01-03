@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::commands::{copy_to_clipboard_osc52, set_toast, submit_composer};
+use crate::commands::submit_composer;
 use crate::diff::diff_rows_with_all;
 use crate::diff_preview::schedule_diff_preview_refresh;
 use crate::events::UiEvent;
@@ -329,64 +329,6 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                         app.prefs.log_view_mode = app.exec.log_view_mode;
                         save_prefs(&app.prefs);
                         app.exec.log_view_dirty = true;
-                    }
-                    (KeyCode::Char('y'), _) if app.ui.focus == FocusPane::Execution => {
-                        let text = if let Some(sel) = app.exec.log_selected {
-                            app.exec
-                                .log_buffers
-                                .get(&sel.exec_id)
-                                .and_then(|b| b.rendered_entry_text(sel.entry_idx))
-                        } else {
-                            None
-                        }
-                        .unwrap_or_else(|| {
-                            let layout = compute_main_layout(current_terminal_rect());
-                            let area = layout.exec_logs;
-                            let len = app.exec.log_lines.len();
-                            let max_render = area.height.saturating_sub(2) as usize;
-                            let visible = max_render.min(len).max(1);
-                            let mut offset = if app.exec.log_autoscroll {
-                                0
-                            } else {
-                                app.exec.log_scroll_offset
-                            };
-                            offset = offset.min(len.saturating_sub(visible));
-                            let start = len.saturating_sub(visible + offset);
-                            let end = len.saturating_sub(offset);
-                            crate::util::lines_plain_text(
-                                app.exec.log_lines.get(start..end).unwrap_or(&[]),
-                            )
-                        });
-
-                        if text.trim().is_empty() {
-                            set_toast(app, "Copy: nothing to copy".to_string(), ratatui::style::Color::Yellow, None);
-                        } else if let Err(e) = copy_to_clipboard_osc52(&text) {
-                            set_toast(app, format!("Copy failed: {e}"), ratatui::style::Color::Red, None);
-                        } else {
-                            set_toast(app, "Copied logs".to_string(), ratatui::style::Color::Green, None);
-                        }
-                    }
-                    (KeyCode::Char('y'), _) if app.ui.focus == FocusPane::Diff => {
-                        let rows = diff_rows_with_all(&app.diff.diff_store);
-                        let selected = rows
-                            .get(app.diff.selected_diff_index)
-                            .map(|d| d.key.clone());
-                        let text = match app.ui.diff_focus {
-                            DiffFocus::Files => selected.unwrap_or_default(),
-                            DiffFocus::Preview => crate::util::lines_plain_text(&app.diff.diff_preview_lines),
-                        };
-
-                        if text.trim().is_empty() {
-                            set_toast(app, "Copy: nothing to copy".to_string(), ratatui::style::Color::Yellow, None);
-                        } else if let Err(e) = copy_to_clipboard_osc52(&text) {
-                            set_toast(app, format!("Copy failed: {e}"), ratatui::style::Color::Red, None);
-                        } else {
-                            let label = match app.ui.diff_focus {
-                                DiffFocus::Files => "Copied path",
-                                DiffFocus::Preview => "Copied diff",
-                            };
-                            set_toast(app, label.to_string(), ratatui::style::Color::Green, None);
-                        }
                     }
                     (KeyCode::Char('e'), _) | (KeyCode::Enter, _)
                         if app.ui.focus == FocusPane::Execution =>

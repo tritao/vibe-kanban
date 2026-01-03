@@ -17,6 +17,7 @@ mod selection;
 mod diff_preview;
 mod prefs;
 mod commands;
+mod actions;
 
 use std::time::Duration;
 
