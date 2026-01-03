@@ -11,6 +11,7 @@ pub(super) use super::selection as sel;
 
 mod copy;
 mod composer;
+mod confirm;
 mod create_task;
 mod focus;
 mod keys;

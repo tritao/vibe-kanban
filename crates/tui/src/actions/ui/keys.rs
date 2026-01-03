@@ -2,8 +2,9 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::commands::submit_composer;
 use crate::layout::{current_terminal_rect};
-use crate::state::{AppState, ConfirmAction, ConfirmState, DiffFocus, FocusPane};
+use crate::state::{AppState, DiffFocus, FocusPane};
 
+use super::confirm;
 use super::copy::reduce_copy;
 use super::composer;
 use super::create_task;
@@ -18,18 +19,7 @@ use super::{CopyTarget, Effect};
 
 pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<Effect>) {
     // Confirm modal has highest priority.
-    if let Some(confirm) = app.ui.confirm.as_ref() {
-        match key.code {
-            KeyCode::Char('y') | KeyCode::Enter => {
-                let action = confirm.action;
-                modals::close_confirm(app);
-                crate::handle_confirm_action(app, action);
-            }
-            KeyCode::Char('n') | KeyCode::Esc => {
-                modals::close_confirm(app);
-            }
-            _ => {}
-        }
+    if confirm::handle_confirm_key(app, key) {
         return (false, true, vec![]);
     }
 
@@ -104,15 +94,7 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
             return (false, true, vec![]);
         }
         KeyCode::Char('x') => {
-            if let Some(exec_id) = app.exec.selected_exec_id {
-                modals::open_confirm(
-                    app,
-                    ConfirmState {
-                        title: "Stop execution?".to_string(),
-                        body: format!("Stop execution process {exec_id}? (y/n)"),
-                        action: ConfirmAction::StopExec { exec_id },
-                    },
-                );
+            if confirm::open_stop_exec_confirm(app) {
                 return (false, true, vec![]);
             }
         }
