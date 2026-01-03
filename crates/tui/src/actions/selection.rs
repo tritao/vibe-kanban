@@ -3,7 +3,7 @@ use std::time::Duration;
 use uuid::Uuid;
 
 use crate::diff::diff_rows_with_all;
-use crate::diff_preview::schedule_diff_preview_refresh;
+use crate::diff_preview::{cancel_diff_preview_job, schedule_diff_preview_refresh};
 use crate::events::NetEvent;
 use crate::logs::LogSelection;
 use crate::net;
@@ -12,9 +12,10 @@ use crate::selection::lists_filters::tasks_filtered_by_status;
 use crate::selection::{
     active_exec_id, exec_list, filtered_projects, find_task, tasks_by_status, tasks_filtered_base,
 };
-use crate::state::{AppState, TaskRow, TaskStatus};
+use crate::state::{AppState, AttemptRow, TaskRow, TaskStatus};
 use crate::ui::board::BoardHit;
 use crate::ui::sync_selected_repo_from_diff_selection;
+use ratatui::text::Line;
 
 pub(super) fn select_project(app: &mut AppState, project_id: Option<Uuid>) {
     if app.board.selected_project_id == project_id {
@@ -54,6 +55,11 @@ pub(super) fn select_attempt(app: &mut AppState, attempt_id: Option<Uuid>) {
     }
 
     app.board.selected_attempt_id = attempt_id;
+    if let Some(attempt_id) = attempt_id {
+        if let Some(idx) = app.board.attempts.iter().position(|a| a.id == attempt_id) {
+            app.board.selected_attempt_index = idx;
+        }
+    }
 
     app.ui.last_error = None;
     app.ui.last_notice = None;
@@ -62,14 +68,7 @@ pub(super) fn select_attempt(app: &mut AppState, attempt_id: Option<Uuid>) {
     select_exec(app, None);
     crate::logs::reset_logs(app, None);
 
-    app.diff.diff_store = serde_json::json!({ "entries": {} });
-    app.diff.selected_diff_index = 0;
-    app.diff.diff_scroll_offset = 0;
-    app.diff.diff_preview_cache_key = None;
-    app.diff.diff_preview_cache_hash = 0;
-    app.diff.diff_preview_pending = false;
-    app.diff.diff_preview_next_refresh_at = None;
-    crate::diff_preview::cancel_diff_preview_job(app);
+    reset_diff_stream_state(app);
 
     app.diff.repo_statuses.clear();
     app.diff.selected_repo_index = 0;
@@ -92,6 +91,105 @@ pub(super) fn select_exec(app: &mut AppState, exec_id: Option<Uuid>) {
     }
     app.exec.log_selected = None;
     let _ = app.exec_sel_tx.send(exec_id);
+}
+
+pub(super) fn reconcile_projects_selection(app: &mut AppState) {
+    let projects: Vec<(Uuid, String)> = filtered_projects(app)
+        .into_iter()
+        .map(|p| (p.id, p.name))
+        .collect();
+    if projects.is_empty() {
+        app.board.selected_project_index = 0;
+        select_project(app, None);
+        return;
+    }
+
+    if let Some(selected_id) = app.board.selected_project_id
+        && let Some(idx) = projects.iter().position(|p| p.0 == selected_id)
+    {
+        app.board.selected_project_index = idx;
+        return;
+    }
+
+    app.board.selected_project_index = app.board.selected_project_index.min(projects.len() - 1);
+    select_project(app, Some(projects[app.board.selected_project_index].0));
+}
+
+pub(super) fn reconcile_tasks_selection(app: &mut AppState) {
+    let tasks = tasks_filtered_base(app);
+    if tasks.is_empty() {
+        select_task(app, None);
+        return;
+    }
+
+    if let Some(pending) = app.board.pending_select_task_id {
+        if tasks.iter().any(|t| t.id == pending) {
+            app.board.pending_select_task_id = None;
+            select_task(app, Some(pending));
+            sync_tasks_active_column(app);
+            ensure_selection_visible(app);
+            return;
+        }
+    }
+
+    if let Some(selected_id) = app.board.selected_task_id {
+        if tasks.iter().any(|t| t.id == selected_id) {
+            sync_tasks_active_column(app);
+            return;
+        }
+    }
+
+    let by_status = tasks_by_status(&tasks);
+    let chosen = match app.board.tasks_active_column {
+        TaskStatus::Todo => by_status.todo.first(),
+        TaskStatus::InProgress => by_status.inprogress.first(),
+        TaskStatus::InReview => by_status.inreview.first(),
+        TaskStatus::Done => by_status.done.first(),
+        TaskStatus::Cancelled => by_status.cancelled.first(),
+    }
+    .or_else(|| tasks.first());
+
+    select_task(app, chosen.map(|t| t.id));
+    sync_tasks_active_column(app);
+    ensure_selection_visible(app);
+}
+
+pub(super) fn set_attempts(app: &mut AppState, attempts: Vec<AttemptRow>) {
+    app.board.attempts = attempts;
+    if app.board.attempts.is_empty() {
+        app.board.selected_attempt_index = 0;
+        select_attempt(app, None);
+        return;
+    }
+
+    if let Some(id) = app.board.selected_attempt_id
+        && let Some(idx) = app.board.attempts.iter().position(|a| a.id == id)
+    {
+        app.board.selected_attempt_index = idx;
+        return;
+    }
+
+    app.board.selected_attempt_index = app
+        .board
+        .selected_attempt_index
+        .min(app.board.attempts.len() - 1);
+    select_attempt(
+        app,
+        Some(app.board.attempts[app.board.selected_attempt_index].id),
+    );
+}
+
+pub(super) fn reset_diff_stream_state(app: &mut AppState) {
+    app.diff.diff_store = serde_json::json!({ "entries": {} });
+    app.diff.selected_diff_index = 0;
+    app.diff.diff_scroll_offset = 0;
+    app.diff.diff_preview_cache_key = None;
+    app.diff.diff_preview_cache_hash = 0;
+    app.diff.diff_preview_cache_width = 0;
+    app.diff.diff_preview_lines = vec![Line::from("No diffs")];
+    app.diff.diff_preview_pending = false;
+    app.diff.diff_preview_next_refresh_at = None;
+    cancel_diff_preview_job(app);
 }
 
 pub(super) fn ensure_selection_visible(app: &mut AppState) {
@@ -429,6 +527,11 @@ pub(super) fn normalize_after_cancelled_toggle(app: &mut AppState) {
         app.board.tasks_active_column = TaskStatus::Done;
     }
     ensure_selected_task_in_active_column(app);
+}
+
+pub(super) fn note_task_created(app: &mut AppState, task_id: Uuid, status: TaskStatus) {
+    app.board.pending_select_task_id = Some(task_id);
+    focus_board_section(app, status);
 }
 
 pub(super) fn request_move_selected_task(app: &mut AppState, direction: i32) {

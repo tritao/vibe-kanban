@@ -1,16 +1,13 @@
 use std::time::Duration;
 
-use ratatui::text::Line;
-
 use crate::commands::{finish_git_op, request_diff_reconnect};
 use crate::diff::{diff_rows_with_all, DIFF_ALL_KEY};
 use crate::diff_preview::{
-    cancel_diff_preview_job, diff_patch_touches_key, schedule_diff_preview_refresh,
+    diff_patch_touches_key, schedule_diff_preview_refresh,
 };
 use crate::events::{NetEvent, StreamStatus};
 use crate::logs::{enqueue_log_patch, reset_logs};
-use crate::selection::{filtered_projects, tasks_by_status, tasks_filtered_base};
-use crate::state::{AppState, TaskStatus};
+use crate::state::AppState;
 use crate::ui::sync_selected_repo_from_diff_selection;
 
 use super::selection as sel;
@@ -33,23 +30,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 return true;
             }
 
-            let projects = filtered_projects(app);
-            if projects.is_empty() {
-                app.board.selected_project_index = 0;
-                sel::select_project(app, None);
-                return true;
-            }
-
-            if let Some(selected_id) = app.board.selected_project_id {
-                if let Some(idx) = projects.iter().position(|p| p.id == selected_id) {
-                    app.board.selected_project_index = idx;
-                    return true;
-                }
-            }
-
-            app.board.selected_project_index =
-                app.board.selected_project_index.min(projects.len() - 1);
-            sel::select_project(app, Some(projects[app.board.selected_project_index].id));
+            sel::reconcile_projects_selection(app);
             true
         }
         NetEvent::TasksStreamStatus(status) => {
@@ -68,43 +49,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 app.board.tasks_status = StreamStatus::Error;
                 return true;
             }
-
-            let tasks = tasks_filtered_base(app);
-            if tasks.is_empty() {
-                sel::select_task(app, None);
-                return true;
-            }
-
-            if let Some(pending) = app.board.pending_select_task_id {
-                if tasks.iter().any(|t| t.id == pending) {
-                    app.board.pending_select_task_id = None;
-                    sel::select_task(app, Some(pending));
-                    sel::sync_tasks_active_column(app);
-                    sel::ensure_selection_visible(app);
-                    return true;
-                }
-            }
-
-            if let Some(selected_id) = app.board.selected_task_id {
-                if tasks.iter().any(|t| t.id == selected_id) {
-                    sel::sync_tasks_active_column(app);
-                    return true;
-                }
-            }
-
-            let by_status = tasks_by_status(&tasks);
-            let chosen = match app.board.tasks_active_column {
-                TaskStatus::Todo => by_status.todo.first(),
-                TaskStatus::InProgress => by_status.inprogress.first(),
-                TaskStatus::InReview => by_status.inreview.first(),
-                TaskStatus::Done => by_status.done.first(),
-                TaskStatus::Cancelled => by_status.cancelled.first(),
-            }
-            .or_else(|| tasks.first());
-
-            sel::select_task(app, chosen.map(|t| t.id));
-            sel::sync_tasks_active_column(app);
-            sel::ensure_selection_visible(app);
+            sel::reconcile_tasks_selection(app);
             true
         }
         NetEvent::AttemptsLoaded { task_id, attempts } => {
@@ -112,10 +57,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 return false;
             }
 
-            app.board.attempts = attempts;
-            app.board.selected_attempt_index = 0;
-            let default_attempt = app.board.attempts.first().map(|a| a.id);
-            sel::select_attempt(app, default_attempt);
+            sel::set_attempts(app, attempts);
             true
         }
         NetEvent::ExecStreamStatus(status) => {
@@ -141,15 +83,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             true
         }
         NetEvent::DiffReset => {
-            app.diff.diff_store = serde_json::json!({ "entries": {} });
-            app.diff.selected_diff_index = 0;
-            app.diff.diff_scroll_offset = 0;
-            app.diff.diff_preview_cache_key = None;
-            app.diff.diff_preview_cache_hash = 0;
-            app.diff.diff_preview_lines = vec![Line::from("No diffs")];
-            app.diff.diff_preview_pending = false;
-            app.diff.diff_preview_next_refresh_at = None;
-            cancel_diff_preview_job(app);
+            sel::reset_diff_stream_state(app);
             true
         }
         NetEvent::DiffPatch(patch) => {
@@ -187,15 +121,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             true
         }
         NetEvent::DiffReconnect => {
-            app.diff.diff_store = serde_json::json!({ "entries": {} });
-            app.diff.selected_diff_index = 0;
-            app.diff.diff_scroll_offset = 0;
-            app.diff.diff_preview_cache_key = None;
-            app.diff.diff_preview_cache_hash = 0;
-            app.diff.diff_preview_lines = vec![Line::from("No diffs")];
-            app.diff.diff_preview_pending = false;
-            app.diff.diff_preview_next_refresh_at = None;
-            cancel_diff_preview_job(app);
+            sel::reset_diff_stream_state(app);
             request_diff_reconnect(app);
             true
         }
@@ -243,8 +169,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         }
         NetEvent::TaskCreated { task_id, status } => {
             // Place the new task in the expected column immediately, then select it when it appears.
-            app.board.pending_select_task_id = Some(task_id);
-            app.board.tasks_active_column = status;
+            sel::note_task_created(app, task_id, status);
             true
         }
         NetEvent::Notice(msg) => {
