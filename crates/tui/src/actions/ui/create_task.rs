@@ -1,11 +1,13 @@
 use std::time::Instant;
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 
 use crate::layout::current_terminal_rect;
 use crate::state::{AppState, CreateTaskFocus, CreateTaskState, TaskStatus};
+
+use super::text_edit;
 
 pub(super) fn handle_create_task_key(app: &mut AppState, key: KeyEvent) {
     let Some(mut state) = app.ui.create_task.take() else {
@@ -29,38 +31,16 @@ pub(super) fn handle_create_task_key(app: &mut AppState, key: KeyEvent) {
             state.focus = prev_focus(state.focus);
         }
         _ => match state.focus {
-            CreateTaskFocus::Title => match (key.code, key.modifiers) {
-                (KeyCode::Backspace, KeyModifiers::ALT)
-                | (KeyCode::Backspace, KeyModifiers::CONTROL) => state.title.backspace_word(),
-                (KeyCode::Delete, KeyModifiers::CONTROL) => state.title.delete_word(),
-                (KeyCode::Backspace, _) => state.title.backspace(),
-                (KeyCode::Delete, _) => state.title.delete(),
-                (KeyCode::Left, _) => state.title.move_left(),
-                (KeyCode::Right, _) => state.title.move_right(),
-                (KeyCode::Home, _) => state.title.move_home(true),
-                (KeyCode::End, _) => state.title.move_end(true),
-                (KeyCode::Char('u'), KeyModifiers::CONTROL) => state.title.clear(),
-                (KeyCode::Enter, _) => state.focus = CreateTaskFocus::Description,
-                (KeyCode::Char(c), KeyModifiers::NONE) => state.title.insert_char(c),
-                _ => {}
-            },
-            CreateTaskFocus::Description => match (key.code, key.modifiers) {
-                (KeyCode::Backspace, KeyModifiers::ALT)
-                | (KeyCode::Backspace, KeyModifiers::CONTROL) => state.description.backspace_word(),
-                (KeyCode::Delete, KeyModifiers::CONTROL) => state.description.delete_word(),
-                (KeyCode::Backspace, _) => state.description.backspace(),
-                (KeyCode::Delete, _) => state.description.delete(),
-                (KeyCode::Left, _) => state.description.move_left(),
-                (KeyCode::Right, _) => state.description.move_right(),
-                (KeyCode::Up, _) => state.description.move_up(),
-                (KeyCode::Down, _) => state.description.move_down(),
-                (KeyCode::Home, _) => state.description.move_home(true),
-                (KeyCode::End, _) => state.description.move_end(true),
-                (KeyCode::Char('u'), KeyModifiers::CONTROL) => state.description.clear(),
-                (KeyCode::Enter, _) => state.description.insert_char('\n'),
-                (KeyCode::Char(c), KeyModifiers::NONE) => state.description.insert_char(c),
-                _ => {}
-            },
+            CreateTaskFocus::Title => {
+                if matches!(key.code, KeyCode::Enter) {
+                    state.focus = CreateTaskFocus::Description;
+                } else {
+                    let _ = text_edit::apply_text_field_key(&mut state.title, key, false);
+                }
+            }
+            CreateTaskFocus::Description => {
+                let _ = text_edit::apply_text_field_key(&mut state.description, key, true);
+            }
             CreateTaskFocus::Status => match (key.code, key.modifiers) {
                 (KeyCode::Left, _) | (KeyCode::Char('h'), _) => {
                     state.status = status_cycle(state.status, -1)
@@ -242,4 +222,3 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
         }
     });
 }
-

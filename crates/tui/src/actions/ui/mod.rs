@@ -20,6 +20,7 @@ mod keys_global;
 mod modals;
 mod mouse;
 mod scroll;
+mod text_edit;
 
 pub(super) enum Effect {
     CopyOsc52(String),

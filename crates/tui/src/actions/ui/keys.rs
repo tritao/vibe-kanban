@@ -12,6 +12,7 @@ use super::keys_exec;
 use super::keys_global;
 use super::modals;
 use super::sel;
+use super::text_edit;
 use super::{CopyTarget, Effect};
 
 pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<Effect>) {
@@ -242,51 +243,9 @@ fn reduce_search_key(app: &mut AppState, key: KeyEvent) -> Option<(bool, Vec<Eff
         return None;
     };
 
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
-            input.field.undo();
-        }
-        (KeyCode::Char('y'), KeyModifiers::CONTROL)
-        | (KeyCode::Char('Z'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
-            input.field.redo();
-        }
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-            input.field.clear();
-        }
-        (KeyCode::Left, KeyModifiers::CONTROL) => {
-            input.field.move_word_left();
-        }
-        (KeyCode::Right, KeyModifiers::CONTROL) => {
-            input.field.move_word_right();
-        }
-        (KeyCode::Left, _) => {
-            input.field.move_left();
-        }
-        (KeyCode::Right, _) => {
-            input.field.move_right();
-        }
-        (KeyCode::Home, _) => {
-            input.field.move_home(false);
-        }
-        (KeyCode::End, _) => {
-            input.field.move_end(false);
-        }
-        (KeyCode::Backspace, KeyModifiers::ALT) | (KeyCode::Backspace, KeyModifiers::CONTROL) => {
-            input.field.backspace_word();
-        }
-        (KeyCode::Backspace, _) => {
-            input.field.backspace();
-        }
-        (KeyCode::Delete, KeyModifiers::CONTROL) => {
-            input.field.delete_word();
-        }
-        (KeyCode::Delete, _) => {
-            input.field.delete();
-        }
-        (KeyCode::Char(c), KeyModifiers::NONE) => {
-            input.field.insert_char(c);
-        }
-        _ => return None,
+    if !text_edit::apply_text_field_key(&mut input.field, key, false) {
+        app.ui.input = Some(input);
+        return None;
     }
 
     app.board.task_filter = input.field.buffer.clone();
