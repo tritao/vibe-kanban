@@ -379,6 +379,24 @@ pub(super) fn select_adjacent_diff_file(app: &mut AppState, delta: i32) {
     schedule_diff_preview_refresh(app, Duration::from_millis(0));
 }
 
+pub(super) fn select_diff_file(app: &mut AppState, idx: usize) {
+    let rows = diff_rows_with_all(&app.diff.diff_store);
+    if rows.is_empty() {
+        app.diff.selected_diff_index = 0;
+        return;
+    }
+
+    let next = idx.min(rows.len().saturating_sub(1));
+    if next == app.diff.selected_diff_index {
+        return;
+    }
+
+    app.diff.selected_diff_index = next;
+    app.diff.diff_scroll_offset = 0;
+    sync_selected_repo_from_diff_selection(app);
+    schedule_diff_preview_refresh(app, Duration::from_millis(0));
+}
+
 pub(super) fn request_move_selected_task(app: &mut AppState, direction: i32) {
     let Some(task_id) = app.board.selected_task_id else {
         return;

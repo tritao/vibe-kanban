@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::layout::Rect;
@@ -14,7 +14,10 @@ use crate::state::{
     AppState, ConfirmAction, ConfirmState, DiffFocus, FocusPane, InputMode, InputState, LogMode,
     LogRenderMode, LogViewMode, TaskStatus,
 };
-use crate::ui::{board_hit_at, diff_repo_bar_action_at, open_create_task_modal, sync_selected_repo_from_diff_selection, trigger_diff_repo_action, DiffRepoAction};
+use crate::ui::{
+    board_hit_at, diff_repo_bar_action_at, open_create_task_modal, trigger_diff_repo_action,
+    DiffRepoAction,
+};
 use crate::util::window_for_list;
 
 pub(super) enum Effect {
@@ -725,12 +728,7 @@ fn reduce_mouse(app: &mut AppState, mouse: crossterm::event::MouseEvent) -> bool
                 if rect_contains(layout.diff_files, col, row) {
                     app.ui.diff_focus = DiffFocus::Files;
                     if let Some(idx) = diff_files_hit_at(app, layout.diff_files, col, row) {
-                        if idx != app.diff.selected_diff_index {
-                            app.diff.selected_diff_index = idx;
-                            app.diff.diff_scroll_offset = 0;
-                            sync_selected_repo_from_diff_selection(app);
-                            crate::diff_preview::schedule_diff_preview_refresh(app, Duration::from_millis(0));
-                        }
+                        sel::select_diff_file(app, idx);
                     }
                     return true;
                 }
