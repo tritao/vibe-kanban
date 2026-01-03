@@ -19,4 +19,4 @@ pub(crate) use execution::{
 };
 
 pub(crate) use modals::{render_confirm_modal, render_help_modal, render_input_modal};
-pub(crate) use create_task::{handle_create_task_key, open_create_task_modal, render_create_task_modal};
+pub(crate) use create_task::{open_create_task_modal, render_create_task_modal};

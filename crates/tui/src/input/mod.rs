@@ -18,8 +18,7 @@ use crate::state::{
     LogRenderMode, LogViewMode, InputMode, TaskStatus,
 };
 use crate::ui::{
-    board_hit_at, diff_repo_bar_action_at, handle_create_task_key, open_create_task_modal,
-    sync_selected_repo_from_diff_selection,
+    board_hit_at, diff_repo_bar_action_at, open_create_task_modal, sync_selected_repo_from_diff_selection,
     trigger_diff_repo_action, DiffRepoAction,
 };
 use crate::util::window_for_list;
@@ -77,7 +76,8 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                 }
 
                 if app.ui.create_task.is_some() {
-                    handle_create_task_key(app, key);
+                    // Editing/navigation handled by the dispatcher; we only swallow keys here to
+                    // avoid background actions while the modal is open.
                     return Ok(false);
                 }
 
