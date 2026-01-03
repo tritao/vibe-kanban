@@ -7,14 +7,12 @@ use ratatui::style::Color;
 use crate::commands::submit_composer;
 use crate::layout::{compute_main_layout, current_terminal_rect};
 use crate::prefs::save_prefs;
-use crate::state::{
-    AppState, ConfirmAction, ConfirmState, DiffFocus, FocusPane, InputMode, InputState, LogMode,
-    LogRenderMode, LogViewMode,
-};
+use crate::state::{AppState, ConfirmAction, ConfirmState, DiffFocus, FocusPane, LogMode, LogRenderMode, LogViewMode};
 use crate::ui::{open_create_task_modal, trigger_diff_repo_action, DiffRepoAction};
 
 use super::copy::reduce_copy;
 use super::focus;
+use super::modals;
 use super::scroll;
 use super::{CopyTarget, Effect};
 use super::{sel};
@@ -25,11 +23,11 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
         match key.code {
             KeyCode::Char('y') | KeyCode::Enter => {
                 let action = confirm.action;
-                app.ui.confirm = None;
+                modals::close_confirm(app);
                 crate::handle_confirm_action(app, action);
             }
             KeyCode::Char('n') | KeyCode::Esc => {
-                app.ui.confirm = None;
+                modals::close_confirm(app);
             }
             _ => {}
         }
@@ -40,15 +38,11 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
     if app.ui.input.is_some() {
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) => {
-                if let Some(input) = app.ui.input.take() {
-                    app.board.task_filter = input.original;
-                }
-                sel::ensure_selection_visible(app);
+                modals::close_search(app, true);
                 return (false, true, vec![]);
             }
             (KeyCode::Enter, _) => {
-                app.ui.input = None;
-                sel::ensure_selection_visible(app);
+                modals::close_search_keep(app);
                 return (false, true, vec![]);
             }
             _ => {}
@@ -63,7 +57,7 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
     if app.ui.show_help {
         match key.code {
             KeyCode::Char('?') | KeyCode::Esc => {
-                app.ui.show_help = false;
+                modals::close_help(app);
                 return (false, true, vec![]);
             }
             _ => return (false, false, vec![]),
@@ -80,9 +74,7 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
     if app.ui.composer_active {
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) => {
-                app.ui.composer_active = false;
-                app.ui.composer.clear();
-                app.ui.composer_suggest_index = 0;
+                modals::close_composer(app);
                 return (false, true, vec![]);
             }
             (KeyCode::Enter, _) => {
@@ -101,7 +93,7 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) => return (true, false, vec![]),
         (KeyCode::Char('?'), _) => {
-            app.ui.show_help = true;
+            modals::open_help(app);
             return (false, true, vec![]);
         }
         (KeyCode::Tab, KeyModifiers::NONE) => {
@@ -109,19 +101,7 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
             return (false, true, vec![]);
         }
         (KeyCode::Char('/'), _) => {
-            let mut field = crate::state::TextFieldState::default();
-            field.buffer = app.board.task_filter.clone();
-            field.set_end();
-            let term = current_terminal_rect();
-            let area = crate::ui::layout::centered_rect(80, 25, term);
-            let inner_w = area.width.saturating_sub(2) as usize;
-            let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1);
-            field.ensure_cursor_visible(content_w, 1);
-            app.ui.input = Some(InputState {
-                mode: InputMode::SearchTasks,
-                field,
-                original: app.board.task_filter.clone(),
-            });
+            modals::open_search(app);
             return (false, true, vec![]);
         }
         (KeyCode::Char('r'), _) => {
@@ -189,25 +169,19 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
             return (false, true, vec![]);
         }
         (KeyCode::Char('i'), _) if app.ui.focus == FocusPane::Execution => {
-            app.ui.composer_active = true;
-            app.ui.composer_suggest_index = 0;
-            app.ui.composer.set_end();
-            let layout = compute_main_layout(current_terminal_rect());
-            let area = layout.exec_input;
-            let inner_w = area.width.saturating_sub(2) as usize;
-            let inner_h = area.height.saturating_sub(2) as usize;
-            let prefix_w = crate::text::display_width("  ");
-            let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
-            app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
+            modals::open_composer(app);
             return (false, true, vec![]);
         }
         (KeyCode::Char('x'), _) => {
             if let Some(exec_id) = app.exec.selected_exec_id {
-                app.ui.confirm = Some(ConfirmState {
+                modals::open_confirm(
+                    app,
+                    ConfirmState {
                     title: "Stop execution?".to_string(),
                     body: format!("Stop execution process {exec_id}? (y/n)"),
                     action: ConfirmAction::StopExec { exec_id },
-                });
+                },
+                );
                 return (false, true, vec![]);
             }
         }

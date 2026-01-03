@@ -12,6 +12,7 @@ pub(super) use super::selection as sel;
 mod copy;
 mod focus;
 mod keys;
+mod modals;
 mod mouse;
 mod scroll;
 

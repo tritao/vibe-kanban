@@ -8,6 +8,7 @@ use crate::ui::board_hit_at;
 use crate::util::window_for_list;
 
 use super::focus;
+use super::modals;
 use super::sel;
 use super::scroll;
 
@@ -55,7 +56,7 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         return false;
     }
 
-    if app.ui.confirm.is_some() || app.ui.show_help || app.ui.create_task.is_some() {
+    if modals::modal_blocks_mouse(app) {
         return false;
     }
 
