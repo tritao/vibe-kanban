@@ -6,6 +6,12 @@ use uuid::Uuid;
 
 use crate::events::GitOpKind;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum JobKey {
+    DiffPreview,
+    BranchStatus,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct GitOpState {
     pub(crate) kind: GitOpKind,

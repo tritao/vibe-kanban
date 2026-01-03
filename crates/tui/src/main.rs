@@ -7,7 +7,6 @@ mod render;
 mod util;
 mod net;
 mod app;
-mod controller;
 mod fmt;
 mod cli_parse;
 mod events;
@@ -17,6 +16,7 @@ mod diff_preview;
 mod prefs;
 mod commands;
 mod actions;
+mod jobs;
 
 use std::time::Duration;
 

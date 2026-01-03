@@ -4,32 +4,34 @@ use ratatui::style::Color;
 use uuid::Uuid;
 
 use crate::events::{GitOpKind, NetEvent};
+use crate::jobs::replace_job;
 use crate::net::ops::branch_status_http;
 use crate::state::{AppState, GitOpState, ToastState};
+use crate::state::JobKey;
 
 pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
     let Some(attempt_id) = app.board.selected_attempt_id else {
         return;
     };
 
-    if let Some(job) = app.diff.branch_status_job.take() {
-        job.abort();
-    }
-
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
-    app.diff.branch_status_job = Some(tokio::spawn(async move {
-        match branch_status_http(&base_url, attempt_id).await {
-            Ok(statuses) => {
-                let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+    replace_job(
+        app,
+        JobKey::BranchStatus,
+        tokio::spawn(async move {
+            match branch_status_http(&base_url, attempt_id).await {
+                Ok(statuses) => {
+                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::Error(format!("branch status failed: {e}")))
+                        .await;
+                }
             }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::Error(format!("branch status failed: {e}")))
-                    .await;
-            }
-        }
-    }));
+        }),
+    );
 }
 
 pub(crate) fn request_diff_reconnect(app: &mut AppState) {

@@ -5,7 +5,9 @@ use ratatui::text::{Line, Span};
 
 use crate::diff::{build_diff_preview_request, compute_diff_preview};
 use crate::events::NetEvent;
+use crate::jobs::{cancel_job, replace_job};
 use crate::state::AppState;
+use crate::state::JobKey;
 
 fn json_pointer_escape_segment(s: &str) -> String {
     s.replace('~', "~0").replace('/', "~1")
@@ -43,9 +45,7 @@ pub(crate) fn diff_preview_refresh_ready(app: &AppState, now: Instant) -> bool {
 
 pub(crate) fn cancel_diff_preview_job(app: &mut AppState) {
     app.diff.diff_preview_gen = app.diff.diff_preview_gen.wrapping_add(1);
-    if let Some(job) = app.diff.diff_preview_job.take() {
-        job.abort();
-    }
+    cancel_job(app, JobKey::DiffPreview);
 }
 
 pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
@@ -64,14 +64,18 @@ pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
         Style::default().add_modifier(Modifier::DIM),
     ))];
 
-    app.diff.diff_preview_job = Some(tokio::task::spawn_blocking(move || {
-        let (cache_key, cache_hash, lines) = compute_diff_preview(req, width, theme, wrap);
-        let _ = net_tx.blocking_send(NetEvent::DiffPreviewReady {
-            generation,
-            cache_key,
-            cache_hash,
-            width: width_u16,
-            lines,
-        });
-    }));
+    replace_job(
+        app,
+        JobKey::DiffPreview,
+        tokio::task::spawn_blocking(move || {
+            let (cache_key, cache_hash, lines) = compute_diff_preview(req, width, theme, wrap);
+            let _ = net_tx.blocking_send(NetEvent::DiffPreviewReady {
+                generation,
+                cache_key,
+                cache_hash,
+                width: width_u16,
+                lines,
+            });
+        }),
+    );
 }

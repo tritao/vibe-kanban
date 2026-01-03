@@ -7,12 +7,17 @@ use crate::commands::update_git_activity_indicators;
 use crate::diff_preview::{
     diff_preview_refresh_ready, request_diff_preview_async, schedule_diff_preview_refresh,
 };
+use crate::jobs::{job_running, reap_finished_jobs};
 use crate::layout::{clamp_scroll_offsets, compute_main_layout};
 use crate::logs::{flush_log_buffers, mark_all_log_buffers_dirty};
-use crate::state::AppState;
+use crate::state::{AppState, JobKey};
 
 pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool {
     let mut dirty = false;
+
+    if reap_finished_jobs(app) {
+        dirty = true;
+    }
 
     let layout = compute_main_layout(term);
     let inner_width = layout.exec_logs.width.saturating_sub(2);
@@ -43,12 +48,12 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     }
     if app.diff.diff_preview_cache_key.is_none()
         && !app.diff.diff_preview_pending
-        && app.diff.diff_preview_job.is_none()
+        && !job_running(app, JobKey::DiffPreview)
         && has_diffs
     {
         schedule_diff_preview_refresh(app, Duration::from_millis(0));
     }
-    if diff_preview_refresh_ready(app, now) && app.diff.diff_preview_job.is_none() {
+    if diff_preview_refresh_ready(app, now) && !job_running(app, JobKey::DiffPreview) {
         if has_diffs {
             request_diff_preview_async(app, diff_inner_width);
             dirty = true;
@@ -69,4 +74,3 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
 
     dirty
 }
-

@@ -9,8 +9,8 @@ use crate::logs::{ExecLogBuffer, LogSelection};
 
 use super::types::{
     AttemptRow, ConfirmState, CreateTaskState, DiffFocus, DiffTheme, FocusPane, GitOpState,
-    InputState, LogMode, LogRenderMode, LogViewMode, RepoBranchStatus, TaskStatus, TextFieldState,
-    ToastState, TuiPrefs,
+    InputState, JobKey, LogMode, LogRenderMode, LogViewMode, RepoBranchStatus, TaskStatus,
+    TextFieldState, ToastState, TuiPrefs,
 };
 
 pub(crate) struct BoardState {
@@ -72,15 +72,12 @@ pub(crate) struct DiffState {
     pub(crate) diff_preview_pending: bool,
     pub(crate) diff_preview_next_refresh_at: Option<Instant>,
     pub(crate) diff_preview_gen: u64,
-    pub(crate) diff_preview_job: Option<tokio::task::JoinHandle<()>>,
 
     pub(crate) repo_statuses: Vec<RepoBranchStatus>,
     pub(crate) selected_repo_index: usize,
 
     pub(crate) git_ops: HashMap<Uuid, GitOpState>,
     pub(crate) git_op_global: Option<GitOpState>,
-
-    pub(crate) branch_status_job: Option<tokio::task::JoinHandle<()>>,
 }
 
 pub(crate) struct UiState {
@@ -113,6 +110,8 @@ pub(crate) struct AppState {
     pub(crate) board: BoardState,
     pub(crate) exec: ExecState,
     pub(crate) diff: DiffState,
+
+    pub(crate) jobs: HashMap<JobKey, tokio::task::JoinHandle<()>>,
 
     pub(crate) net_tx: mpsc::Sender<NetEvent>,
     pub(crate) project_sel_tx: watch::Sender<Option<Uuid>>,
@@ -223,15 +222,15 @@ impl AppState {
                 diff_preview_pending: false,
                 diff_preview_next_refresh_at: None,
                 diff_preview_gen: 0,
-                diff_preview_job: None,
 
                 repo_statuses: vec![],
                 selected_repo_index: 0,
 
                 git_ops: HashMap::new(),
                 git_op_global: None,
-                branch_status_job: None,
             },
+
+            jobs: HashMap::new(),
 
             net_tx,
             project_sel_tx,

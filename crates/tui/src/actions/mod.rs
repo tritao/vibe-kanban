@@ -1,11 +1,11 @@
 mod tick;
 mod ui;
+mod net;
 
 use std::time::Instant;
 
 use ratatui::layout::Rect;
 
-use crate::controller::handle_net_event;
 use crate::events::{NetEvent, UiEvent};
 use crate::state::AppState;
 
@@ -56,10 +56,9 @@ pub(crate) fn dispatch(app: &mut AppState, action: Action) -> anyhow::Result<Dis
             })
         }
         Action::Net(evt) => {
-            handle_net_event(app, evt);
             Ok(DispatchOutcome {
                 quit: false,
-                dirty: true,
+                dirty: net::reduce_net_event(app, evt),
             })
         }
         Action::Tick { now, term } => Ok(DispatchOutcome {
