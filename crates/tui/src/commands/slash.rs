@@ -185,18 +185,14 @@ pub(crate) fn trigger_abort_conflicts(
 }
 
 fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let mut repo_arg: Option<String> = None;
-    let mut i = 1;
-    while i < tokens.len() {
-        match tokens[i].as_str() {
-            "--repo" => {
-                i += 1;
-                repo_arg = tokens.get(i).cloned();
-            }
-            other => return Err(format!("unexpected arg: {other}")),
-        }
-        i += 1;
-    }
+    let help = crate::slash::help_syntax_for_command("abort").unwrap_or("/abort");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        1,
+        crate::slash::flags_for_command("abort"),
+        help,
+    )?;
+    let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
     let attempt_id = app
         .board
@@ -209,18 +205,14 @@ fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
 }
 
 fn handle_resolve_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let mut repo_arg: Option<String> = None;
-    let mut i = 1;
-    while i < tokens.len() {
-        match tokens[i].as_str() {
-            "--repo" => {
-                i += 1;
-                repo_arg = tokens.get(i).cloned();
-            }
-            other => return Err(format!("unexpected arg: {other}")),
-        }
-        i += 1;
-    }
+    let help = crate::slash::help_syntax_for_command("resolve").unwrap_or("/resolve [--repo R]");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        1,
+        crate::slash::flags_for_command("resolve"),
+        help,
+    )?;
+    let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
     if app.board.selected_attempt_id.is_none() {
         return Err("no attempt selected".to_string());
@@ -296,29 +288,16 @@ fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), Stri
 }
 
 fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let mut repo_arg: Option<String> = None;
-    let mut onto: Option<String> = None;
-    let mut old: Option<String> = None;
-
-    let mut i = 1;
-    while i < tokens.len() {
-        match tokens[i].as_str() {
-            "--repo" => {
-                i += 1;
-                repo_arg = tokens.get(i).cloned();
-            }
-            "--onto" => {
-                i += 1;
-                onto = tokens.get(i).cloned();
-            }
-            "--old" => {
-                i += 1;
-                old = tokens.get(i).cloned();
-            }
-            other => return Err(format!("unexpected arg: {other}")),
-        }
-        i += 1;
-    }
+    let help = crate::slash::help_syntax_for_command("rebase").unwrap_or("/rebase [--onto B]");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        1,
+        crate::slash::flags_for_command("rebase"),
+        help,
+    )?;
+    let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
+    let onto = parsed.get_value("--onto").map(ToString::to_string);
+    let old = parsed.get_value("--old").map(ToString::to_string);
 
     let attempt_id = app
         .board
@@ -391,18 +370,14 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
 }
 
 fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let mut repo_arg: Option<String> = None;
-    let mut i = 1;
-    while i < tokens.len() {
-        match tokens[i].as_str() {
-            "--repo" => {
-                i += 1;
-                repo_arg = tokens.get(i).cloned();
-            }
-            other => return Err(format!("unexpected arg: {other}")),
-        }
-        i += 1;
-    }
+    let help = crate::slash::help_syntax_for_command("merge").unwrap_or("/merge");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        1,
+        crate::slash::flags_for_command("merge"),
+        help,
+    )?;
+    let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
     let attempt_id = app
         .board
@@ -474,21 +449,15 @@ fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
 }
 
 fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let mut repo_arg: Option<String> = None;
-    let mut force = false;
-
-    let mut i = 1;
-    while i < tokens.len() {
-        match tokens[i].as_str() {
-            "--repo" => {
-                i += 1;
-                repo_arg = tokens.get(i).cloned();
-            }
-            "--force" => force = true,
-            other => return Err(format!("unexpected arg: {other}")),
-        }
-        i += 1;
-    }
+    let help = crate::slash::help_syntax_for_command("push").unwrap_or("/push [--force]");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        1,
+        crate::slash::flags_for_command("push"),
+        help,
+    )?;
+    let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
+    let force = parsed.get_bool("--force");
 
     let attempt_id = app
         .board
@@ -572,18 +541,14 @@ fn handle_pr_command(app: &mut AppState, tokens: &[String]) -> Result<(), String
 }
 
 fn handle_pr_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let mut repo_arg: Option<String> = None;
-    let mut i = 2;
-    while i < tokens.len() {
-        match tokens[i].as_str() {
-            "--repo" => {
-                i += 1;
-                repo_arg = tokens.get(i).cloned();
-            }
-            other => return Err(format!("unexpected arg: {other}")),
-        }
-        i += 1;
-    }
+    let help = crate::slash::help_syntax_for_subcommand("pr", "open").unwrap_or("/pr open");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        2,
+        crate::slash::flags_for_subcommand("pr", "open").unwrap_or(&[]),
+        help,
+    )?;
+    let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
     let (_repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
     let repo = app
@@ -620,42 +585,19 @@ fn handle_pr_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
 }
 
 fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let mut repo_arg: Option<String> = None;
-    let mut title: Option<String> = None;
-    let mut body: Option<String> = None;
-    let mut base: Option<String> = None;
-    let mut draft: Option<bool> = None;
-    let mut auto_desc = false;
-
-    let mut i = 2;
-    while i < tokens.len() {
-        match tokens[i].as_str() {
-            "--repo" => {
-                i += 1;
-                repo_arg = tokens.get(i).cloned();
-            }
-            "--title" => {
-                i += 1;
-                title = tokens.get(i).cloned();
-            }
-            "--body" => {
-                i += 1;
-                body = tokens.get(i).cloned();
-            }
-            "--base" => {
-                i += 1;
-                base = tokens.get(i).cloned();
-            }
-            "--draft" => {
-                draft = Some(true);
-            }
-            "--auto-desc" => {
-                auto_desc = true;
-            }
-            other => return Err(format!("unexpected arg: {other}")),
-        }
-        i += 1;
-    }
+    let help = crate::slash::help_syntax_for_subcommand("pr", "create").unwrap_or("/pr create --title T");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        2,
+        crate::slash::flags_for_subcommand("pr", "create").unwrap_or(&[]),
+        help,
+    )?;
+    let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
+    let title: Option<String> = parsed.get_value("--title").map(ToString::to_string);
+    let body: Option<String> = parsed.get_value("--body").map(ToString::to_string);
+    let base: Option<String> = parsed.get_value("--base").map(ToString::to_string);
+    let draft = Some(parsed.get_bool("--draft"));
+    let auto_desc = parsed.get_bool("--auto-desc");
 
     let attempt_id = app
         .board
@@ -704,8 +646,6 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
                 .and_then(|id| find_task(&app.board.tasks_store, id).map(|t| t.title))
         })
         .ok_or_else(|| "missing --title and no task selected".to_string())?;
-
-    let draft = draft.or(Some(false));
 
     if !begin_git_op(app, Some(repo_id), GitOpKind::CreatePr, &repo_name) {
         return Ok(());
@@ -765,18 +705,14 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
 }
 
 fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let mut repo_arg: Option<String> = None;
-    let mut i = 2;
-    while i < tokens.len() {
-        match tokens[i].as_str() {
-            "--repo" => {
-                i += 1;
-                repo_arg = tokens.get(i).cloned();
-            }
-            other => return Err(format!("unexpected arg: {other}")),
-        }
-        i += 1;
-    }
+    let help = crate::slash::help_syntax_for_subcommand("pr", "attach").unwrap_or("/pr attach");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        2,
+        crate::slash::flags_for_subcommand("pr", "attach").unwrap_or(&[]),
+        help,
+    )?;
+    let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
     let attempt_id = app
         .board
@@ -834,18 +770,14 @@ fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(),
 }
 
 fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let mut repo_arg: Option<String> = None;
-    let mut i = 2;
-    while i < tokens.len() {
-        match tokens[i].as_str() {
-            "--repo" => {
-                i += 1;
-                repo_arg = tokens.get(i).cloned();
-            }
-            other => return Err(format!("unexpected arg: {other}")),
-        }
-        i += 1;
-    }
+    let help = crate::slash::help_syntax_for_subcommand("pr", "comments").unwrap_or("/pr comments");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        2,
+        crate::slash::flags_for_subcommand("pr", "comments").unwrap_or(&[]),
+        help,
+    )?;
+    let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
     let attempt_id = app
         .board

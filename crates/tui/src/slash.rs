@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::selection::clamp_index;
 use crate::state::{AppState, RepoBranchStatus};
@@ -7,6 +7,7 @@ use crate::state::{AppState, RepoBranchStatus};
 pub(crate) struct FlagSpec {
     pub(crate) name: &'static str,
     pub(crate) desc: &'static str,
+    pub(crate) takes_value: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -35,72 +36,93 @@ const REBASE_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         name: "--onto",
         desc: "new base branch",
+        takes_value: true,
     },
     FlagSpec {
         name: "--old",
         desc: "old base branch",
+        takes_value: true,
     },
     FlagSpec {
         name: "--repo",
         desc: "repo name or index",
+        takes_value: true,
     },
 ];
 const MERGE_FLAGS: &[FlagSpec] = &[FlagSpec {
     name: "--repo",
     desc: "repo name or index",
+    takes_value: true,
 }];
 const PUSH_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         name: "--force",
         desc: "force push",
+        takes_value: false,
     },
     FlagSpec {
         name: "--repo",
         desc: "repo name or index",
+        takes_value: true,
     },
 ];
 const ABORT_FLAGS: &[FlagSpec] = &[FlagSpec {
     name: "--repo",
     desc: "repo name or index",
+    takes_value: true,
 }];
 const RESOLVE_FLAGS: &[FlagSpec] = &[FlagSpec {
     name: "--repo",
     desc: "repo name or index",
+    takes_value: true,
 }];
 
 const PR_CREATE_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         name: "--title",
         desc: "PR title (required)",
+        takes_value: true,
     },
     FlagSpec {
         name: "--body",
         desc: "PR body",
+        takes_value: true,
     },
     FlagSpec {
         name: "--base",
         desc: "target branch",
+        takes_value: true,
     },
     FlagSpec {
         name: "--draft",
         desc: "create as draft",
+        takes_value: false,
     },
     FlagSpec {
         name: "--auto-desc",
         desc: "auto-generate description",
+        takes_value: false,
     },
     FlagSpec {
         name: "--repo",
         desc: "repo name or index",
+        takes_value: true,
     },
 ];
 const PR_ATTACH_FLAGS: &[FlagSpec] = &[FlagSpec {
     name: "--repo",
     desc: "repo name or index",
+    takes_value: true,
 }];
 const PR_COMMENTS_FLAGS: &[FlagSpec] = &[FlagSpec {
     name: "--repo",
     desc: "repo name or index",
+    takes_value: true,
+}];
+const PR_OPEN_FLAGS: &[FlagSpec] = &[FlagSpec {
+    name: "--repo",
+    desc: "repo name or index",
+    takes_value: true,
 }];
 
 const PR_SUBCOMMANDS: &[SubcommandSpec] = &[
@@ -125,7 +147,7 @@ const PR_SUBCOMMANDS: &[SubcommandSpec] = &[
     SubcommandSpec {
         name: "open",
         desc: "open PR in browser",
-        flags: EMPTY_FLAGS,
+        flags: PR_OPEN_FLAGS,
         help_syntax: "/pr open",
     },
 ];
@@ -229,6 +251,88 @@ pub(crate) fn usage_for_command(cmd: &str) -> Option<&'static str> {
 
 pub(crate) fn canonical_command_name(cmd: &str) -> Option<&'static str> {
     find_command_spec(cmd).map(|c| c.name)
+}
+
+pub(crate) fn help_syntax_for_command(cmd: &str) -> Option<&'static str> {
+    find_command_spec(cmd).map(|c| c.help_syntax)
+}
+
+pub(crate) fn flags_for_command(cmd: &str) -> &'static [FlagSpec] {
+    find_command_spec(cmd).map(|c| c.flags).unwrap_or(EMPTY_FLAGS)
+}
+
+pub(crate) fn flags_for_subcommand(cmd: &str, sub: &str) -> Option<&'static [FlagSpec]> {
+    let cmd = find_command_spec(cmd)?;
+    let sub = cmd.subcommands.iter().find(|s| s.name == sub)?;
+    Some(sub.flags)
+}
+
+pub(crate) fn help_syntax_for_subcommand(cmd: &str, sub: &str) -> Option<&'static str> {
+    let cmd = find_command_spec(cmd)?;
+    let sub = cmd.subcommands.iter().find(|s| s.name == sub)?;
+    Some(sub.help_syntax)
+}
+
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ParsedFlags {
+    bools: HashSet<&'static str>,
+    values: HashMap<&'static str, String>,
+}
+
+impl ParsedFlags {
+    pub(crate) fn get_bool(&self, name: &str) -> bool {
+        self.bools.contains(name)
+    }
+
+    pub(crate) fn get_value(&self, name: &str) -> Option<&str> {
+        self.values.get(name).map(|s| s.as_str())
+    }
+}
+
+pub(crate) fn parse_flags(
+    tokens: &[String],
+    start_index: usize,
+    flags: &'static [FlagSpec],
+    help_hint: &'static str,
+) -> Result<ParsedFlags, String> {
+    let mut lookup: HashMap<&str, &FlagSpec> = HashMap::with_capacity(flags.len());
+    for flag in flags {
+        lookup.insert(flag.name, flag);
+    }
+
+    let mut out = ParsedFlags::default();
+    let mut i = start_index;
+    while i < tokens.len() {
+        let token = tokens[i].as_str();
+        if !token.starts_with("--") {
+            return Err(format!("unexpected arg: {token} (try {help_hint})"));
+        }
+        let Some(spec) = lookup.get(token).copied() else {
+            return Err(format!("unknown flag: {token} (try {help_hint})"));
+        };
+
+        if spec.takes_value {
+            i += 1;
+            let value = tokens
+                .get(i)
+                .ok_or_else(|| format!("missing value for {} (try {help_hint})", spec.name))?;
+            if value.starts_with("--") {
+                return Err(format!("missing value for {} (try {help_hint})", spec.name));
+            }
+            if out.values.contains_key(spec.name) || out.bools.contains(spec.name) {
+                return Err(format!("duplicate flag: {} (try {help_hint})", spec.name));
+            }
+            out.values.insert(spec.name, value.clone());
+        } else {
+            if out.values.contains_key(spec.name) || out.bools.contains(spec.name) {
+                return Err(format!("duplicate flag: {} (try {help_hint})", spec.name));
+            }
+            out.bools.insert(spec.name);
+        }
+        i += 1;
+    }
+
+    Ok(out)
 }
 
 pub(crate) fn help_section_lines() -> Vec<String> {
