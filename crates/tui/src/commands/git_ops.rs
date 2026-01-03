@@ -12,9 +12,13 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
         return;
     };
 
+    if let Some(job) = app.diff.branch_status_job.take() {
+        job.abort();
+    }
+
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    app.diff.branch_status_job = Some(tokio::spawn(async move {
         match branch_status_http(&base_url, attempt_id).await {
             Ok(statuses) => {
                 let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
@@ -25,7 +29,7 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
                     .await;
             }
         }
-    });
+    }));
 }
 
 pub(crate) fn request_diff_reconnect(app: &mut AppState) {

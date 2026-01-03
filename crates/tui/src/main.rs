@@ -3,7 +3,6 @@ mod diff;
 mod logs;
 mod ui;
 mod layout;
-mod input;
 mod render;
 mod util;
 mod net;

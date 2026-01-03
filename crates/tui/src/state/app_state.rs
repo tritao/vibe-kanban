@@ -79,6 +79,8 @@ pub(crate) struct DiffState {
 
     pub(crate) git_ops: HashMap<Uuid, GitOpState>,
     pub(crate) git_op_global: Option<GitOpState>,
+
+    pub(crate) branch_status_job: Option<tokio::task::JoinHandle<()>>,
 }
 
 pub(crate) struct UiState {
@@ -228,6 +230,7 @@ impl AppState {
 
                 git_ops: HashMap::new(),
                 git_op_global: None,
+                branch_status_job: None,
             },
 
             net_tx,
