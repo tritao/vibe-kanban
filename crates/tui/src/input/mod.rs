@@ -18,8 +18,8 @@ use crate::state::{
     LogRenderMode, LogViewMode, InputMode, TaskStatus,
 };
 use crate::ui::{
-    apply_composer_autocomplete, board_hit_at, diff_repo_bar_action_at, handle_create_task_key,
-    move_composer_autocomplete, open_create_task_modal, sync_selected_repo_from_diff_selection,
+    board_hit_at, diff_repo_bar_action_at, handle_create_task_key, open_create_task_modal,
+    sync_selected_repo_from_diff_selection,
     trigger_diff_repo_action, DiffRepoAction,
 };
 use crate::util::window_for_list;
@@ -47,90 +47,21 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                     return Ok(false);
                 }
 
-                if let Some(mut input) = app.ui.input.take() {
-                    let mut close = false;
-                    let mut filter_changed = false;
-
+                if app.ui.input.is_some() {
                     match (key.code, key.modifiers) {
                         (KeyCode::Esc, _) => {
-                            app.board.task_filter = input.original.clone();
-                            close = true;
-                            filter_changed = true;
+                            if let Some(input) = app.ui.input.take() {
+                                app.board.task_filter = input.original;
+                            }
+                            ensure_selection_visible(app);
                         }
                         (KeyCode::Enter, _) => {
-                            close = true;
-                        }
-                        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
-                            if input.field.undo() {
-                                app.board.task_filter = input.field.buffer.clone();
-                                filter_changed = true;
-                            }
-                        }
-                        (KeyCode::Char('y'), KeyModifiers::CONTROL)
-                        | (KeyCode::Char('Z'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
-                            if input.field.redo() {
-                                app.board.task_filter = input.field.buffer.clone();
-                                filter_changed = true;
-                            }
-                        }
-                        (KeyCode::Backspace, KeyModifiers::ALT)
-                        | (KeyCode::Backspace, KeyModifiers::CONTROL) => {
-                            input.field.backspace_word();
-                            app.board.task_filter = input.field.buffer.clone();
-                            filter_changed = true;
-                        }
-                        (KeyCode::Backspace, _) => {
-                            input.field.backspace();
-                            app.board.task_filter = input.field.buffer.clone();
-                            filter_changed = true;
-                        }
-                        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                            input.field.clear();
-                            app.board.task_filter.clear();
-                            filter_changed = true;
-                        }
-                        (KeyCode::Left, KeyModifiers::CONTROL) => {
-                            input.field.move_word_left();
-                        }
-                        (KeyCode::Right, KeyModifiers::CONTROL) => {
-                            input.field.move_word_right();
-                        }
-                        (KeyCode::Left, _) => {
-                            input.field.move_left();
-                        }
-                        (KeyCode::Right, _) => {
-                            input.field.move_right();
-                        }
-                        (KeyCode::Home, _) => {
-                            input.field.move_home(false);
-                        }
-                        (KeyCode::End, _) => {
-                            input.field.move_end(false);
-                        }
-                        (KeyCode::Char(c), KeyModifiers::NONE) => {
-                            input.field.insert_char(c);
-                            app.board.task_filter = input.field.buffer.clone();
-                            filter_changed = true;
-                        }
-                        _ => {}
-                    }
-
-                    // Keep the caret visible (single-line input).
-                    let term = current_terminal_rect();
-                    let area = crate::ui::layout::centered_rect(80, 25, term);
-                    let inner_w = area.width.saturating_sub(2) as usize;
-                    let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1); // "/" + free cell
-                    input.field.ensure_cursor_visible(content_w, 1);
-
-                    if close {
-                        if filter_changed {
+                            app.ui.input = None;
                             ensure_selection_visible(app);
                         }
-                    } else {
-                        if filter_changed {
-                            ensure_selection_visible(app);
+                        _ => {
+                            // Editing/navigation is handled by the dispatcher.
                         }
-                        app.ui.input = Some(input);
                     }
                     return Ok(false);
                 }
@@ -157,116 +88,12 @@ pub(crate) fn handle_ui_event(app: &mut AppState, event: UiEvent) -> anyhow::Res
                             app.ui.composer.clear();
                             app.ui.composer_suggest_index = 0;
                         }
-                        (KeyCode::Char('z'), KeyModifiers::CONTROL) => {
-                            app.ui.composer.undo();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Char('y'), KeyModifiers::CONTROL)
-                        | (KeyCode::Char('Z'), KeyModifiers::CONTROL | KeyModifiers::SHIFT) => {
-                            app.ui.composer.redo();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Enter, KeyModifiers::CONTROL) => {
-                            app.ui.composer.insert_char('\n');
-                            app.ui.composer_suggest_index = 0;
-                        }
                         (KeyCode::Enter, _) => {
                             submit_composer(app);
                         }
-                        (KeyCode::Tab, _) => {
-                            if apply_composer_autocomplete(app) {
-                                // keep composing
-                            }
+                        _ => {
+                            // Editing/navigation/autocomplete handled by the dispatcher.
                         }
-                        (KeyCode::Up, _) => {
-                            if app.ui.composer.buffer.trim_start().starts_with('/')
-                                && {
-                                    app.ui.composer.clamp_cursor();
-                                    app.ui.composer.cursor == app.ui.composer.buffer.len()
-                                }
-                            {
-                                move_composer_autocomplete(app, -1);
-                            } else {
-                                app.ui.composer.move_up();
-                                app.ui.composer_suggest_index = 0;
-                            }
-                        }
-                        (KeyCode::Down, _) => {
-                            if app.ui.composer.buffer.trim_start().starts_with('/')
-                                && {
-                                    app.ui.composer.clamp_cursor();
-                                    app.ui.composer.cursor == app.ui.composer.buffer.len()
-                                }
-                            {
-                                move_composer_autocomplete(app, 1);
-                            } else {
-                                app.ui.composer.move_down();
-                                app.ui.composer_suggest_index = 0;
-                            }
-                        }
-                        (KeyCode::Left, KeyModifiers::CONTROL) => {
-                            app.ui.composer.move_word_left();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Right, KeyModifiers::CONTROL) => {
-                            app.ui.composer.move_word_right();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Left, _) => {
-                            app.ui.composer.move_left();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Right, _) => {
-                            app.ui.composer.move_right();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Home, _) => {
-                            app.ui.composer.move_home(true);
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::End, _) => {
-                            app.ui.composer.move_end(true);
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Backspace, KeyModifiers::ALT)
-                        | (KeyCode::Backspace, KeyModifiers::CONTROL) => {
-                            app.ui.composer.backspace_word();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Backspace, _) => {
-                            app.ui.composer.backspace();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Delete, KeyModifiers::CONTROL) => {
-                            app.ui.composer.delete_word();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Delete, _) => {
-                            app.ui.composer.delete();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {
-                            app.ui.composer.clear();
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        (KeyCode::Char(c), KeyModifiers::NONE) => {
-                            app.ui.composer.insert_char(c);
-                            app.ui.composer_suggest_index = 0;
-                        }
-                        _ => {}
-                    }
-
-                    if app.ui.composer_active {
-                        let layout = compute_main_layout(current_terminal_rect());
-                        let area = layout.exec_input;
-                        let inner_w = area.width.saturating_sub(2) as usize;
-                        let inner_h = area.height.saturating_sub(2) as usize;
-                        let prefix_w = crate::text::display_width("  ");
-                        let content_w = inner_w
-                            .saturating_sub(prefix_w)
-                            .saturating_sub(1)
-                            .max(1);
-                        app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
                     }
                     return Ok(false);
                 }
