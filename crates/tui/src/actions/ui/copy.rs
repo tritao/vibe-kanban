@@ -19,7 +19,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
                 None
             }
             .unwrap_or_else(|| {
-                let layout = compute_main_layout(current_terminal_rect());
+                let layout = compute_main_layout(current_terminal_rect(), app.ui.focus);
                 let area = layout.exec_logs;
                 let len = app.exec.log_lines.len();
                 let max_render = area.height.saturating_sub(2) as usize;
@@ -67,4 +67,3 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
         },
     ]
 }
-

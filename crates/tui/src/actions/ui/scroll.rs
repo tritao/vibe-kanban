@@ -1,13 +1,13 @@
 use crate::layout::{compute_main_layout, current_terminal_rect};
-use crate::state::AppState;
+use crate::state::{AppState, FocusPane};
 
 fn exec_visible_lines() -> usize {
-    let layout = compute_main_layout(current_terminal_rect());
+    let layout = compute_main_layout(current_terminal_rect(), FocusPane::Execution);
     layout.exec_logs.height.saturating_sub(2) as usize
 }
 
 fn diff_visible_lines() -> usize {
-    let layout = compute_main_layout(current_terminal_rect());
+    let layout = compute_main_layout(current_terminal_rect(), FocusPane::Diff);
     layout.diff_preview.height.saturating_sub(2) as usize
 }
 

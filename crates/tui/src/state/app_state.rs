@@ -55,6 +55,10 @@ pub(crate) struct ExecState {
     pub(crate) log_buffers: HashMap<Uuid, ExecLogBuffer>,
     pub(crate) log_exec_order: Vec<Uuid>,
     pub(crate) log_view_dirty: bool,
+
+    pub(crate) pending_user_log: Option<String>,
+    pub(crate) pending_user_log_prev_exec_id: Option<Uuid>,
+    pub(crate) pending_user_log_wait_new_exec: bool,
 }
 
 pub(crate) struct DiffState {
@@ -92,6 +96,7 @@ pub(crate) struct UiState {
     pub(crate) composer_active: bool,
     pub(crate) composer: TextFieldState,
     pub(crate) composer_suggest_index: usize,
+    pub(crate) refresh_branch_status_after_send: bool,
 
     pub(crate) last_error: Option<String>,
     pub(crate) last_notice: Option<String>,
@@ -156,6 +161,7 @@ impl AppState {
                 composer_active: false,
                 composer: Default::default(),
                 composer_suggest_index: 0,
+                refresh_branch_status_after_send: false,
 
                 last_error: None,
                 last_notice: None,
@@ -205,6 +211,10 @@ impl AppState {
                 log_buffers: HashMap::new(),
                 log_exec_order: vec![],
                 log_view_dirty: true,
+
+                pending_user_log: None,
+                pending_user_log_prev_exec_id: None,
+                pending_user_log_wait_new_exec: false,
             },
 
             diff: DiffState {

@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::ui::{trigger_diff_repo_action, DiffRepoAction};
 use crate::events::{GitOpKind, NetEvent};
+use crate::logs::{append_local_user_message, set_pending_user_log};
 use crate::net::ops::{
     abort_conflicts_http, attach_pr_http, branch_status_http, create_pr_http, follow_up_http,
     force_push_task_attempt_branch_http, get_pr_comments_http, latest_session_id_http,
@@ -14,7 +15,7 @@ use crate::net::ops::{
 use crate::selection::{exec_list, find_task};
 use crate::state::{AppState, Merge};
 use crate::commands::open_url;
-use super::git_ops::{begin_git_op, request_branch_status_refresh, set_toast};
+use super::git_ops::{begin_git_op, request_branch_status_refresh, schedule_branch_status_refresh, set_toast};
 
 pub(crate) fn submit_composer(app: &mut AppState) {
     let msg = app.ui.composer.buffer.trim_end().to_string();
@@ -24,10 +25,25 @@ pub(crate) fn submit_composer(app: &mut AppState) {
         return;
     }
 
+    let refresh_branch_status_after_send = app.ui.refresh_branch_status_after_send;
+    app.ui.refresh_branch_status_after_send = false;
+
+    // Keep a local record of what the user sent in the run logs, since the backend log stream
+    // does not always include user messages.
+    let mut execs_for_log = exec_list(&app.exec.exec_store);
+    execs_for_log.sort_by_key(|e| e.created_at.clone().unwrap_or_default());
+    let current_exec_id = app
+        .exec
+        .selected_exec_id
+        .or_else(|| execs_for_log.last().map(|e| e.id));
+
     app.ui.composer_active = false;
     app.ui.composer.clear();
 
     if crate::slash::composer_is_slash_mode(&msg) {
+        if let Some(exec_id) = current_exec_id {
+            append_local_user_message(app, exec_id, &msg);
+        }
         submit_slash_command(app, &msg);
         return;
     }
@@ -43,6 +59,19 @@ pub(crate) fn submit_composer(app: &mut AppState) {
         .and_then(|id| execs.iter().find(|e| e.id == id));
     let session_id = active.and_then(|e| e.session_id);
     let is_running = active.and_then(|e| e.status.as_deref()) == Some("running");
+
+    if let Some(exec_id) = current_exec_id {
+        if is_running {
+            append_local_user_message(app, exec_id, &msg);
+        } else {
+            set_pending_user_log(app, msg.clone());
+        }
+    }
+    if refresh_branch_status_after_send {
+        // The agent will typically resolve conflicts asynchronously; poll status shortly after
+        // sending so the diff/repo UI updates without requiring a manual refresh.
+        schedule_branch_status_refresh(app, Duration::from_secs(3));
+    }
 
     tokio::spawn(async move {
         let session_id = match session_id {

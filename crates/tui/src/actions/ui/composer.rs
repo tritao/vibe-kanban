@@ -41,7 +41,7 @@ pub(super) fn handle_composer_key(app: &mut AppState, key: KeyEvent) -> bool {
     }
 
     app.ui.composer_suggest_index = 0;
-    let layout = compute_main_layout(current_terminal_rect());
+    let layout = compute_main_layout(current_terminal_rect(), app.ui.focus);
     let area = layout.exec_input;
     let inner_w = area.width.saturating_sub(2) as usize;
     let inner_h = area.height.saturating_sub(2) as usize;

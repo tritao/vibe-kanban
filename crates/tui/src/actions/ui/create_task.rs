@@ -127,27 +127,27 @@ fn prev_focus(f: CreateTaskFocus) -> CreateTaskFocus {
 }
 
 fn create_task_modal_desc_inner_dims(term: Rect) -> (usize, usize) {
-    let area = crate::ui::layout::centered_rect(80, 25, term);
+    // Keep this in sync with `crates/tui/src/ui/create_task.rs`.
+    let area = crate::ui::layout::centered_rect(75, 80, term);
     let inner_w = area.width.saturating_sub(2) as usize;
     let inner_h = area.height.saturating_sub(2) as usize;
     // Layout in render_create_task_modal:
     // - Title field: 3
-    // - Description: 8
+    // - Description: min 10 (rest)
     // - Status: 3
-    // - Buttons: 3
-    // Total: 17 (+2 borders) within modal content.
+    // - Buttons: 4
     let desc_inner_w = inner_w.saturating_sub(2).max(1);
-    let desc_inner_h = (inner_h
-        .saturating_sub(3)
-        .saturating_sub(3)
-        .saturating_sub(3))
-    .saturating_sub(2)
-    .max(1);
+    let desc_inner_h = inner_h
+        .saturating_sub(3) // title
+        .saturating_sub(3) // status
+        .saturating_sub(4) // buttons
+        .saturating_sub(2) // description borders
+        .max(1);
     (desc_inner_w, desc_inner_h)
 }
 
 fn create_task_modal_title_inner_w(term: Rect) -> usize {
-    let area = crate::ui::layout::centered_rect(80, 25, term);
+    let area = crate::ui::layout::centered_rect(75, 80, term);
     let inner_w = area.width.saturating_sub(2) as usize;
     inner_w.saturating_sub(2).max(1)
 }

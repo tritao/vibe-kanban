@@ -30,7 +30,8 @@ fn create_task_focus_border(focus: CreateTaskFocus, current: CreateTaskFocus) ->
 }
 
 pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &CreateTaskState) {
-    let area = centered_rect(75, 70, f.area());
+    // Slightly taller modal so the description editor can be more comfortable.
+    let area = centered_rect(75, 80, f.area());
     f.render_widget(Clear, area);
 
     let project_name = app.board.selected_project_id.and_then(|id| {
@@ -51,9 +52,9 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
 
     let constraints = [
         Constraint::Length(3), // title
-        Constraint::Length(7), // description
+        Constraint::Min(10),   // description (expands as space allows)
         Constraint::Length(3), // status
-        Constraint::Length(3), // buttons
+        Constraint::Length(4), // buttons + hints
     ];
     let chunks = Layout::default()
         .direction(Direction::Vertical)

@@ -10,6 +10,7 @@ use crate::events::GitOpKind;
 pub(crate) enum JobKey {
     DiffPreview,
     BranchStatus,
+    BranchStatusAuto,
 }
 
 #[derive(Debug, Clone)]

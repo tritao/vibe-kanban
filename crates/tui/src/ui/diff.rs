@@ -540,9 +540,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             app.ui.focus = FocusPane::Execution;
             app.ui.composer_active = true;
             app.ui.composer_suggest_index = 0;
+            app.ui.refresh_branch_status_after_send = true;
             app.ui.composer.buffer = instructions;
             app.ui.composer.set_end();
-            let layout = compute_main_layout(current_terminal_rect());
+            let layout = compute_main_layout(current_terminal_rect(), FocusPane::Execution);
             let area = layout.exec_input;
             let inner_w = area.width.saturating_sub(2) as usize;
             let inner_h = area.height.saturating_sub(2) as usize;

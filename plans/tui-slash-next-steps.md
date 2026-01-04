@@ -1,0 +1,6 @@
+- Add positional-arg support to the slash spec (e.g. `/open <file>`), with a shared parser that validates arity and produces consistent `usage:` errors.
+- Let the spec drive `/help` content inside `crates/tui/src/commands/slash.rs` too (e.g. `/help pr`, `/help rebase`), not just the modal, so CLI messages and UI help never drift.
+- Add “did you mean …” suggestions for unknown flags/subcommands using prefix + small edit-distance (bounded) against the spec lists.
+- Add completion for positional args (e.g. `/open` suggests recently-touched files from diff list) while keeping flags completion spec-driven.
+- Normalize quoting behavior between completion + execution (currently completion is whitespace-based; execution uses `tokenize_command_line`).
+- Add a tiny unit test module for the slash parser/spec (`parse_flags`, `unknown_command_error`, `unknown_subcommand_error`) to lock behavior and prevent regressions.

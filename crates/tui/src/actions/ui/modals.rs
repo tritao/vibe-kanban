@@ -57,7 +57,7 @@ pub(super) fn open_composer(app: &mut AppState) {
     app.ui.composer_active = true;
     app.ui.composer_suggest_index = 0;
     app.ui.composer.set_end();
-    let layout = crate::layout::compute_main_layout(current_terminal_rect());
+    let layout = crate::layout::compute_main_layout(current_terminal_rect(), app.ui.focus);
     let area = layout.exec_input;
     let inner_w = area.width.saturating_sub(2) as usize;
     let inner_h = area.height.saturating_sub(2) as usize;
@@ -70,4 +70,5 @@ pub(super) fn close_composer(app: &mut AppState) {
     app.ui.composer_active = false;
     app.ui.composer.clear();
     app.ui.composer_suggest_index = 0;
+    app.ui.refresh_branch_status_after_send = false;
 }

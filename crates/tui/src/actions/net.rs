@@ -7,6 +7,7 @@ use crate::diff_preview::{
 };
 use crate::events::{NetEvent, StreamStatus};
 use crate::logs::{enqueue_log_patch, reset_logs};
+use crate::logs::maybe_attach_pending_user_log;
 use crate::state::AppState;
 use crate::ui::sync_selected_repo_from_diff_selection;
 
@@ -76,6 +77,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 return true;
             }
             sel::ensure_exec_selection(app);
+            maybe_attach_pending_user_log(app);
             true
         }
         NetEvent::DiffStreamStatus(status) => {

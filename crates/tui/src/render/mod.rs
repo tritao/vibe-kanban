@@ -24,27 +24,19 @@ pub(crate) fn render(f: &mut Frame, app: &AppState) {
             Constraint::Length(1),
         ])
         .split(f.area());
-
-    let main = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(18),
-            Constraint::Percentage(54),
-            Constraint::Percentage(28),
-        ])
-        .split(root[1]);
+    let layout = compute_main_layout(f.area(), app.ui.focus);
 
     let top = render_top_bar(app);
     f.render_widget(top, root[0]);
 
-    render_board_pane(f, app, main[0]);
-    render_execution_pane(f, app, main[1]);
-    render_diff_pane(f, app, main[2]);
+    render_board_pane(f, app, layout.board);
+    render_execution_pane(f, app, layout.exec);
+    render_diff_pane(f, app, layout.diff);
 
     let bottom = render_bottom_bar(app);
     f.render_widget(bottom, root[2]);
 
-    render_composer_autocomplete(f, app, compute_main_layout(f.area()).exec_input);
+    render_composer_autocomplete(f, app, layout.exec_input);
 
     if app.ui.show_help {
         render_help_modal(f);

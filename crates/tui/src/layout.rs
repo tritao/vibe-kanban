@@ -1,6 +1,6 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
-use crate::state::AppState;
+use crate::state::{AppState, FocusPane};
 
 pub(crate) fn current_terminal_rect() -> Rect {
     let (w, h) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -32,7 +32,7 @@ pub(crate) struct MainLayoutRects {
     pub(crate) diff_preview: Rect,
 }
 
-pub(crate) fn compute_main_layout(area: Rect) -> MainLayoutRects {
+pub(crate) fn compute_main_layout(area: Rect, focus: FocusPane) -> MainLayoutRects {
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -42,12 +42,18 @@ pub(crate) fn compute_main_layout(area: Rect) -> MainLayoutRects {
         ])
         .split(area);
 
+    let (board_pct, exec_pct, diff_pct) = if focus == FocusPane::Diff {
+        // Give the diff pane more room while it has focus for easier reviewing.
+        (18, 46, 36)
+    } else {
+        (18, 54, 28)
+    };
     let main = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(18),
-            Constraint::Percentage(54),
-            Constraint::Percentage(28),
+            Constraint::Percentage(board_pct),
+            Constraint::Percentage(exec_pct),
+            Constraint::Percentage(diff_pct),
         ])
         .split(root[1]);
 

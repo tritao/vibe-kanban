@@ -193,6 +193,79 @@ impl ExecLogBuffer {
 
 }
 
+pub(crate) fn append_local_user_message(app: &mut AppState, exec_id: Uuid, message: &str) {
+    let msg = message.trim_end_matches('\n');
+    if msg.trim().is_empty() {
+        return;
+    }
+
+    if !app.exec.log_exec_order.contains(&exec_id) {
+        app.exec.log_exec_order.push(exec_id);
+    }
+
+    let buf = app.exec.log_buffers.entry(exec_id).or_default();
+    buf.ensure_init();
+    if !buf
+        .store
+        .get("entries")
+        .and_then(|v| v.as_array())
+        .is_some()
+    {
+        buf.store = serde_json::json!({ "entries": [] });
+    }
+    let entries = buf
+        .store
+        .get_mut("entries")
+        .and_then(|v| v.as_array_mut())
+        .expect("entries array");
+
+    let entry_idx = entries.len();
+    entries.push(serde_json::json!({
+        "type": "NORMALIZED_ENTRY",
+        "content": {
+            "entry_type": { "type": "user_message" },
+            "content": msg,
+        }
+    }));
+    buf.mark_dirty_from(entry_idx);
+    app.exec.log_view_dirty = true;
+}
+
+pub(crate) fn set_pending_user_log(app: &mut AppState, message: String) {
+    app.exec.pending_user_log_prev_exec_id = app.exec.selected_exec_id;
+    app.exec.pending_user_log_wait_new_exec = true;
+    app.exec.pending_user_log = Some(message);
+}
+
+pub(crate) fn maybe_attach_pending_user_log(app: &mut AppState) {
+    if !app.exec.pending_user_log_wait_new_exec {
+        return;
+    }
+    let Some(msg) = app.exec.pending_user_log.clone() else {
+        app.exec.pending_user_log_wait_new_exec = false;
+        return;
+    };
+
+    let prev = app.exec.pending_user_log_prev_exec_id;
+    let mut execs = exec_list(&app.exec.exec_store);
+    execs.sort_by_key(|e| e.created_at.clone().unwrap_or_default());
+    let latest = execs.last().map(|e| e.id);
+
+    let target = latest.or(app.exec.selected_exec_id);
+    let Some(target) = target else {
+        return;
+    };
+
+    if prev == Some(target) {
+        return;
+    }
+
+    append_local_user_message(app, target, &msg);
+    app.exec.pending_user_log = None;
+    app.exec.pending_user_log_prev_exec_id = None;
+    app.exec.pending_user_log_wait_new_exec = false;
+}
+
 pub(crate) fn mark_all_log_buffers_dirty(app: &mut AppState, entry_idx: usize) {
     for buf in app.exec.log_buffers.values_mut() {
         buf.mark_dirty_from(entry_idx);

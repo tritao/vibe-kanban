@@ -30,7 +30,7 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         return false;
     }
 
-    let layout = compute_main_layout(current_terminal_rect());
+    let layout = compute_main_layout(current_terminal_rect(), app.ui.focus);
 
     const LOG_WHEEL_STEP: usize = 3;
     const DIFF_WHEEL_STEP: usize = 3;
@@ -103,4 +103,3 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
 
     false
 }
-

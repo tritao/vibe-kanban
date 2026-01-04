@@ -19,7 +19,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         dirty = true;
     }
 
-    let layout = compute_main_layout(term);
+    let layout = compute_main_layout(term, app.ui.focus);
     let inner_width = layout.exec_logs.width.saturating_sub(2);
     let width = inner_width as usize;
     if app.exec.log_render_width != inner_width {

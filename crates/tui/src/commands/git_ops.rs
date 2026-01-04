@@ -34,6 +34,32 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
     );
 }
 
+pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration) {
+    let Some(attempt_id) = app.board.selected_attempt_id else {
+        return;
+    };
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    replace_job(
+        app,
+        JobKey::BranchStatusAuto,
+        tokio::spawn(async move {
+            tokio::time::sleep(delay).await;
+            match branch_status_http(&base_url, attempt_id).await {
+                Ok(statuses) => {
+                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::Error(format!("branch status failed: {e}")))
+                        .await;
+                }
+            }
+        }),
+    );
+}
+
 pub(crate) fn request_diff_reconnect(app: &mut AppState) {
     let next = *app.diff_reconnect_tx.borrow() + 1;
     let _ = app.diff_reconnect_tx.send(next);
