@@ -10,7 +10,7 @@ use crate::logs::{ExecLogBuffer, LogSelection};
 use super::types::{
     AttemptRow, ConfirmState, CreateTaskState, DiffFocus, DiffTheme, FocusPane, GitOpState,
     InputState, JobKey, LogMode, LogRenderMode, LogViewMode, RepoBranchStatus, TaskStatus,
-    TextFieldState, ToastState, TuiPrefs,
+    TextFieldState, ToastState, TuiPrefs, PendingExecHook,
 };
 
 pub(crate) struct BoardState {
@@ -60,9 +60,7 @@ pub(crate) struct ExecState {
     pub(crate) pending_user_log_prev_exec_id: Option<Uuid>,
     pub(crate) pending_user_log_wait_new_exec: bool,
 
-    pub(crate) pending_branch_refresh_exec_id: Option<Uuid>,
-    pub(crate) pending_branch_refresh_prev_exec_id: Option<Uuid>,
-    pub(crate) pending_branch_refresh_wait_new_exec: bool,
+    pub(crate) pending_branch_refresh: Option<PendingExecHook>,
 }
 
 pub(crate) struct DiffState {
@@ -220,9 +218,7 @@ impl AppState {
                 pending_user_log_prev_exec_id: None,
                 pending_user_log_wait_new_exec: false,
 
-                pending_branch_refresh_exec_id: None,
-                pending_branch_refresh_prev_exec_id: None,
-                pending_branch_refresh_wait_new_exec: false,
+                pending_branch_refresh: None,
             },
 
             diff: DiffState {

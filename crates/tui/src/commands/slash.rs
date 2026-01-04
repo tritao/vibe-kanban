@@ -15,7 +15,10 @@ use crate::net::ops::{
 use crate::selection::{exec_list, find_task};
 use crate::state::{AppState, Merge};
 use crate::commands::open_url;
-use super::git_ops::{begin_git_op, request_branch_status_refresh, set_toast};
+use super::git_ops::{
+    arm_branch_status_refresh_after_next_exec, arm_branch_status_refresh_for_exec, begin_git_op,
+    request_branch_status_refresh, set_toast,
+};
 
 pub(crate) fn submit_composer(app: &mut AppState) {
     let msg = app.ui.composer.buffer.trim_end().to_string();
@@ -69,13 +72,11 @@ pub(crate) fn submit_composer(app: &mut AppState) {
     }
     if refresh_branch_status_after_send {
         if is_running {
-            app.exec.pending_branch_refresh_exec_id = current_exec_id;
-            app.exec.pending_branch_refresh_wait_new_exec = false;
-            app.exec.pending_branch_refresh_prev_exec_id = None;
+            if let Some(exec_id) = current_exec_id {
+                arm_branch_status_refresh_for_exec(app, exec_id);
+            }
         } else {
-            app.exec.pending_branch_refresh_prev_exec_id = current_exec_id;
-            app.exec.pending_branch_refresh_wait_new_exec = true;
-            app.exec.pending_branch_refresh_exec_id = None;
+            arm_branch_status_refresh_after_next_exec(app, current_exec_id);
         }
     }
 
