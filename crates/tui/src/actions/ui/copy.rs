@@ -14,7 +14,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
                 app.exec
                     .log_buffers
                     .get(&sel.exec_id)
-                    .and_then(|b| b.rendered_entry_text(sel.entry_idx))
+                    .and_then(|b| b.rendered_entry_text(sel.entry_idx, app.exec.log_render_width))
             } else {
                 None
             }

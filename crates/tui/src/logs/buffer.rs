@@ -40,20 +40,74 @@ pub(crate) struct LogSelection {
     pub(crate) entry_idx: usize,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
+struct RenderCache {
+    lines: Vec<Line<'static>>,
+    line_entry_index: Vec<usize>,
+    entry_line_starts: Vec<usize>,
+    entry_end_states: Vec<LogAssemblerState>,
+    assembler_state: LogAssemblerState,
+    dirty_from_entry: Option<usize>,
+}
+
+impl RenderCache {
+    fn new(_width: u16) -> Self {
+        Self {
+            lines: vec![],
+            line_entry_index: vec![],
+            entry_line_starts: vec![],
+            entry_end_states: vec![],
+            assembler_state: LogAssemblerState::default(),
+            dirty_from_entry: Some(0),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct ExecLogBuffer {
     pub(crate) store: serde_json::Value,
-    pub(crate) lines: Vec<Line<'static>>,
-    pub(crate) line_entry_index: Vec<usize>,
-    pub(crate) entry_line_starts: Vec<usize>,
-    pub(crate) entry_end_states: Vec<LogAssemblerState>,
-    pub(crate) assembler_state: LogAssemblerState,
     pub(crate) pending_patch: json_patch::Patch,
-    pub(crate) pending_dirty_from_entry: Option<usize>,
     pub(crate) collapsed: Vec<bool>,
+    render_caches: HashMap<u16, RenderCache>,
+    render_cache_lru: Vec<u16>,
+}
+
+impl Default for ExecLogBuffer {
+    fn default() -> Self {
+        Self {
+            store: serde_json::Value::Null,
+            pending_patch: Default::default(),
+            collapsed: vec![],
+            render_caches: HashMap::new(),
+            render_cache_lru: vec![],
+        }
+    }
 }
 
 impl ExecLogBuffer {
+    fn touch_cache_key(&mut self, width: u16) {
+        if let Some(pos) = self.render_cache_lru.iter().position(|w| *w == width) {
+            self.render_cache_lru.remove(pos);
+        }
+        self.render_cache_lru.push(width);
+        const MAX_CACHES: usize = 2;
+        while self.render_cache_lru.len() > MAX_CACHES {
+            let evict = self.render_cache_lru.remove(0);
+            self.render_caches.remove(&evict);
+        }
+    }
+
+    fn cache(&self, width: u16) -> Option<&RenderCache> {
+        self.render_caches.get(&width)
+    }
+
+    fn any_cache(&self) -> Option<&RenderCache> {
+        self.render_cache_lru
+            .last()
+            .and_then(|w| self.render_caches.get(w))
+            .or_else(|| self.render_caches.values().next())
+    }
+
     pub(crate) fn ensure_init(&mut self) {
         if self.store.is_null() {
             self.store = serde_json::json!({ "entries": [] });
@@ -62,34 +116,26 @@ impl ExecLogBuffer {
 
     pub(crate) fn reset(&mut self) {
         self.store = serde_json::json!({ "entries": [] });
-        self.lines.clear();
-        self.line_entry_index.clear();
-        self.entry_line_starts.clear();
-        self.entry_end_states.clear();
-        self.assembler_state = LogAssemblerState::default();
         self.pending_patch.0.clear();
-        self.pending_dirty_from_entry = None;
         self.collapsed.clear();
+        self.render_caches.clear();
+        self.render_cache_lru.clear();
     }
 
     pub(crate) fn enqueue_patch(&mut self, patch: json_patch::Patch) {
         self.ensure_init();
         if let Some(min_idx) = log_patch_min_entry_index(&patch) {
-            self.pending_dirty_from_entry = Some(
-                self.pending_dirty_from_entry
-                    .map(|v| v.min(min_idx))
-                    .unwrap_or(min_idx),
-            );
+            for c in self.render_caches.values_mut() {
+                c.dirty_from_entry = Some(c.dirty_from_entry.map(|v| v.min(min_idx)).unwrap_or(min_idx));
+            }
         }
         self.pending_patch.0.extend(patch.0);
     }
 
     pub(crate) fn mark_dirty_from(&mut self, entry_idx: usize) {
-        self.pending_dirty_from_entry = Some(
-            self.pending_dirty_from_entry
-                .map(|v| v.min(entry_idx))
-                .unwrap_or(entry_idx),
-        );
+        for c in self.render_caches.values_mut() {
+            c.dirty_from_entry = Some(c.dirty_from_entry.map(|v| v.min(entry_idx)).unwrap_or(entry_idx));
+        }
     }
 
     pub(crate) fn flush(
@@ -102,23 +148,72 @@ impl ExecLogBuffer {
         self.ensure_init();
 
         let has_patch = !self.pending_patch.0.is_empty();
-        let has_dirty = self.pending_dirty_from_entry.is_some();
-        if !has_patch && !has_dirty {
+        let width_u16 = width.max(1).min(u16::MAX as usize) as u16;
+        let cache_missing = !self.render_caches.contains_key(&width_u16);
+        let has_dirty = self
+            .render_caches
+            .get(&width_u16)
+            .is_some_and(|c| c.dirty_from_entry.is_some());
+        if !has_patch && !has_dirty && !cache_missing {
             return Ok(false);
         }
 
         let width = width.max(1);
-        let processed_entries_before = self.entry_line_starts.len();
-        let rebuild_from = self
-            .pending_dirty_from_entry
-            .take()
-            .unwrap_or(processed_entries_before);
 
         if has_patch {
             let patch = std::mem::take(&mut self.pending_patch);
             json_patch::patch(&mut self.store, &patch).context("apply patch")?;
         } else {
             self.pending_patch.0.clear();
+        }
+
+        {
+            let entries = self
+                .store
+                .get("entries")
+                .and_then(|v| v.as_array())
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+
+            if self.collapsed.len() > entries.len() {
+                self.collapsed.truncate(entries.len());
+            }
+            if self.collapsed.len() < entries.len() {
+                let before = self.collapsed.len();
+                self.collapsed.resize(entries.len(), false);
+                for idx in before..entries.len() {
+                    self.collapsed[idx] =
+                        super::assemble::default_collapsed_for_log_entry(&entries[idx]);
+                }
+            }
+        }
+
+        self.touch_cache_key(width_u16);
+        if cache_missing {
+            self.render_caches
+                .insert(width_u16, RenderCache::new(width_u16));
+        }
+        let cache = self
+            .render_caches
+            .get_mut(&width_u16)
+            .expect("render cache");
+        let processed_entries_before = cache.entry_line_starts.len();
+        let rebuild_from = cache.dirty_from_entry.take().unwrap_or(processed_entries_before);
+
+        let rebuild_from = rebuild_from.min(processed_entries_before);
+        if rebuild_from == 0 {
+            cache.lines.clear();
+            cache.line_entry_index.clear();
+            cache.entry_line_starts.clear();
+            cache.entry_end_states.clear();
+            cache.assembler_state = LogAssemblerState::default();
+        } else if rebuild_from < processed_entries_before {
+            let truncate_to = cache.entry_line_starts[rebuild_from];
+            cache.lines.truncate(truncate_to);
+            cache.line_entry_index.truncate(truncate_to);
+            cache.entry_line_starts.truncate(rebuild_from);
+            cache.entry_end_states.truncate(rebuild_from);
+            cache.assembler_state = cache.entry_end_states.last().copied().unwrap_or_default();
         }
 
         let entries = self
@@ -128,41 +223,13 @@ impl ExecLogBuffer {
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
-        if self.collapsed.len() > entries.len() {
-            self.collapsed.truncate(entries.len());
-        }
-        if self.collapsed.len() < entries.len() {
-            let before = self.collapsed.len();
-            self.collapsed.resize(entries.len(), false);
-            for idx in before..entries.len() {
-                self.collapsed[idx] =
-                    super::assemble::default_collapsed_for_log_entry(&entries[idx]);
-            }
-        }
-
-        let rebuild_from = rebuild_from.min(processed_entries_before);
-        if rebuild_from == 0 {
-            self.lines.clear();
-            self.line_entry_index.clear();
-            self.entry_line_starts.clear();
-            self.entry_end_states.clear();
-            self.assembler_state = LogAssemblerState::default();
-        } else if rebuild_from < processed_entries_before {
-            let truncate_to = self.entry_line_starts[rebuild_from];
-            self.lines.truncate(truncate_to);
-            self.line_entry_index.truncate(truncate_to);
-            self.entry_line_starts.truncate(rebuild_from);
-            self.entry_end_states.truncate(rebuild_from);
-            self.assembler_state = self.entry_end_states.last().copied().unwrap_or_default();
-        }
-
         for idx in rebuild_from..entries.len() {
             let entry = &entries[idx];
-            self.entry_line_starts.push(self.lines.len());
+            cache.entry_line_starts.push(cache.lines.len());
             super::assemble::append_log_entry(
-                &mut self.lines,
-                &mut self.line_entry_index,
-                &mut self.assembler_state,
+                &mut cache.lines,
+                &mut cache.line_entry_index,
+                &mut cache.assembler_state,
                 idx,
                 entry,
                 width,
@@ -171,26 +238,26 @@ impl ExecLogBuffer {
                 diff_theme,
                 &self.collapsed,
             );
-            self.entry_end_states.push(self.assembler_state);
+            cache.entry_end_states.push(cache.assembler_state);
         }
 
         Ok(true)
     }
 
-    pub(crate) fn rendered_entry_text(&self, entry_idx: usize) -> Option<String> {
-        if entry_idx >= self.entry_line_starts.len() {
+    pub(crate) fn rendered_entry_text(&self, entry_idx: usize, width: u16) -> Option<String> {
+        let cache = self.cache(width).or_else(|| self.any_cache())?;
+        if entry_idx >= cache.entry_line_starts.len() {
             return None;
         }
-        let start = self.entry_line_starts[entry_idx];
-        let end = self
+        let start = cache.entry_line_starts[entry_idx];
+        let end = cache
             .entry_line_starts
             .get(entry_idx + 1)
             .copied()
-            .unwrap_or(self.lines.len());
-        let slice = self.lines.get(start..end).unwrap_or(&[]);
+            .unwrap_or(cache.lines.len());
+        let slice = cache.lines.get(start..end).unwrap_or(&[]);
         Some(crate::util::lines_plain_text(slice))
     }
-
 }
 
 pub(crate) fn append_local_user_message(app: &mut AppState, exec_id: Uuid, message: &str) {
@@ -332,6 +399,7 @@ fn rebuild_log_view_cache(app: &mut AppState) {
 
     let exec_by_id: HashMap<Uuid, ExecRow> = execs.into_iter().map(|e| (e.id, e)).collect();
 
+    let width = app.exec.log_render_width;
     for (idx, exec_id) in include.iter().copied().enumerate() {
         let meta = exec_by_id.get(&exec_id);
         let status = meta
@@ -354,16 +422,26 @@ fn rebuild_log_view_cache(app: &mut AppState) {
         app.exec.log_line_targets.push(None);
 
         if let Some(buf) = app.exec.log_buffers.get(&exec_id) {
-            if buf.lines.is_empty() {
+            let cache = buf.cache(width).or_else(|| buf.any_cache());
+            let Some(cache) = cache else {
+                app.exec.log_lines.push(Line::from(Span::styled(
+                    "  (no output yet)",
+                    Style::default().add_modifier(Modifier::DIM),
+                )));
+                app.exec.log_line_targets.push(None);
+                continue;
+            };
+
+            if cache.lines.is_empty() {
                 app.exec.log_lines.push(Line::from(Span::styled(
                     "  (no output yet)",
                     Style::default().add_modifier(Modifier::DIM),
                 )));
                 app.exec.log_line_targets.push(None);
             } else {
-                for (line_idx, line) in buf.lines.iter().enumerate() {
+                for (line_idx, line) in cache.lines.iter().enumerate() {
                     app.exec.log_lines.push(line.clone());
-                    let entry_idx = buf.line_entry_index.get(line_idx).copied();
+                    let entry_idx = cache.line_entry_index.get(line_idx).copied();
                     app.exec
                         .log_line_targets
                         .push(entry_idx.map(|entry_idx| LogSelection {

@@ -9,7 +9,7 @@ use crate::diff_preview::{
 };
 use crate::jobs::{job_running, reap_finished_jobs};
 use crate::layout::{clamp_scroll_offsets, compute_main_layout};
-use crate::logs::{flush_log_buffers, mark_all_log_buffers_dirty};
+use crate::logs::flush_log_buffers;
 use crate::state::{AppState, JobKey};
 
 pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool {
@@ -24,7 +24,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     let width = inner_width as usize;
     if app.exec.log_render_width != inner_width {
         app.exec.log_render_width = inner_width;
-        mark_all_log_buffers_dirty(app, 0);
+        app.exec.log_view_dirty = true;
     }
     if flush_log_buffers(app, width) {
         dirty = true;
