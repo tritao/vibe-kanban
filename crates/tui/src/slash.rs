@@ -243,6 +243,19 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         help_syntax: "/open <file>",
         usage: Some("usage: /open <file_path>"),
     },
+    CommandSpec {
+        name: "executor",
+        aliases: &[],
+        desc: "set default executor profile",
+        flags: &[FlagSpec {
+            name: "--variant",
+            desc: "optional profile variant",
+            takes_value: true,
+        }],
+        subcommands: EMPTY_SUBS,
+        help_syntax: "/executor <name> [--variant V]",
+        usage: Some("usage: /executor <name> [--variant V]"),
+    },
 ];
 
 pub(crate) fn usage_for_command(cmd: &str) -> Option<&'static str> {
@@ -549,6 +562,26 @@ pub(crate) fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
             }
         }
         "help" | "status" | "open" => {}
+        "executor" => {
+            // Suggest executor names for the first positional argument, then flags.
+            if tokens.len() == 1 && !current.starts_with("--") {
+                for name in app.ui.available_executors.iter() {
+                    let name_l = name.to_ascii_lowercase();
+                    if current_is_empty
+                        || name_l.starts_with(&current_lower)
+                        || name_l.contains(&current_lower)
+                    {
+                        out.push(CompletionItem {
+                            insert: format!("{name} "),
+                            desc: "executor".to_string(),
+                        });
+                    }
+                }
+            }
+            if current.starts_with("--") || ends_with_space || tokens.len() >= 2 {
+                push_flags(&mut out, cmd_spec.flags, &used_flags, &current_lower, current_is_empty);
+            }
+        }
         _ => {
             if tokens.last().is_some_and(|t| *t == "--repo") {
                 push_repos(&mut out, &app.diff.repo_statuses, &current_lower, current_is_empty);

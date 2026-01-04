@@ -8,7 +8,7 @@ use utils::{port_file::read_port_file, response::ApiResponse};
 use uuid::Uuid;
 
 use crate::events::{NetEvent, StreamStatus};
-use crate::state::{AttemptRow, LogMode};
+use crate::state::{AttemptRow, ExecutorProfileSelection, LogMode};
 use crate::Args;
 
 pub(crate) mod ops;
@@ -54,8 +54,14 @@ pub(crate) async fn load_info_task(base_url: String, net_tx: mpsc::Sender<NetEve
             match parsed {
                 Ok(api) => {
                     let ok = api.is_success();
-                    let summary = api
-                        .into_data()
+                    let data = api.into_data();
+                    if let Some(info) = data.as_ref() {
+                        let (available, selected) = extract_executor_profiles(info);
+                        let _ = net_tx
+                            .send(NetEvent::ExecutorProfilesLoaded { available, selected })
+                            .await;
+                    }
+                    let summary = data
                         .and_then(|d| summarize_info(&d))
                         .unwrap_or_else(|| "loaded /api/info".to_string());
                     let _ = net_tx.send(NetEvent::InfoLoaded { ok, summary }).await;
@@ -79,6 +85,27 @@ pub(crate) async fn load_info_task(base_url: String, net_tx: mpsc::Sender<NetEve
                 .await;
         }
     }
+}
+
+fn extract_executor_profiles(
+    info: &serde_json::Value,
+) -> (Vec<String>, Option<ExecutorProfileSelection>) {
+    let available = info
+        .get("executors")
+        .and_then(|v| v.as_object())
+        .map(|o| {
+            let mut keys: Vec<String> = o.keys().cloned().collect();
+            keys.sort();
+            keys
+        })
+        .unwrap_or_default();
+
+    let selected = info
+        .get("config")
+        .and_then(|c| c.get("executor_profile"))
+        .and_then(|p| serde_json::from_value::<ExecutorProfileSelection>(p.clone()).ok());
+
+    (available, selected)
 }
 
 fn summarize_info(info: &serde_json::Value) -> Option<String> {

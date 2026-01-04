@@ -10,7 +10,8 @@ use crate::net::ops::{
     abort_conflicts_http, attach_pr_http, branch_status_http, create_pr_http, follow_up_http,
     force_push_task_attempt_branch_http, get_pr_comments_http, latest_session_id_http,
     merge_task_attempt_http, open_editor_http, push_task_attempt_branch_http,
-    queue_follow_up_http, rebase_task_attempt_http, CreateGitHubPrRequest,
+    queue_follow_up_http, rebase_task_attempt_http, update_executor_profile_http,
+    CreateGitHubPrRequest,
 };
 use crate::selection::{exec_list, find_task};
 use crate::state::{AppState, Merge};
@@ -166,8 +167,86 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
         "push" => handle_push_command(app, tokens),
         "pr" => handle_pr_command(app, tokens),
         "open" => handle_open_command(app, tokens),
+        "executor" => handle_executor_command(app, tokens),
         _ => Err(crate::slash::unknown_command_error(tokens[0].as_str())),
     }
+}
+
+fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    if tokens.len() == 1 {
+        let current = app
+            .ui
+            .selected_executor_profile
+            .as_ref()
+            .map(|p| match p.variant.as_deref() {
+                Some(v) if !v.trim().is_empty() => format!("{}:{v}", p.executor),
+                _ => p.executor.clone(),
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+
+        if app.ui.available_executors.is_empty() {
+            return Err("no executor profiles loaded yet (try reconnect or wait for /api/info)".to_string());
+        }
+        let list = app.ui.available_executors.join(", ");
+        app.ui.last_notice = Some(format!("Executor: {current}\nAvailable: {list}"));
+        return Ok(());
+    }
+
+    let exec = tokens[1].trim();
+    if exec.is_empty() {
+        return Err("usage: /executor <NAME> [--variant V]".to_string());
+    }
+
+    let help = crate::slash::help_syntax_for_command("executor").unwrap_or("/executor <name> [--variant V]");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        2,
+        crate::slash::flags_for_command("executor"),
+        help,
+    )?;
+    let variant = parsed.get_value("--variant").map(ToString::to_string);
+
+    if !app.ui.available_executors.is_empty()
+        && !app
+            .ui
+            .available_executors
+            .iter()
+            .any(|e| e.eq_ignore_ascii_case(exec))
+    {
+        return Err(format!("unknown executor: {exec} (try /executor)"));
+    }
+
+    let selection = crate::state::ExecutorProfileSelection {
+        executor: exec.to_string(),
+        variant: variant.clone().filter(|s| !s.trim().is_empty()),
+    };
+    app.ui.selected_executor_profile = Some(selection.clone());
+    app.ui.last_notice = Some(format!(
+        "Setting executor profile: {}{}",
+        selection.executor,
+        selection
+            .variant
+            .as_deref()
+            .map(|v| format!(":{v}"))
+            .unwrap_or_default()
+    ));
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match update_executor_profile_http(&base_url, &selection).await {
+            Ok(()) => {
+                let _ = net_tx.send(NetEvent::Notice("Executor profile updated.".to_string())).await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("failed to update executor profile: {e}")))
+                    .await;
+            }
+        }
+    });
+
+    Ok(())
 }
 
 pub(crate) fn trigger_abort_conflicts(

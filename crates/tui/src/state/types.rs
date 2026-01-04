@@ -13,6 +13,12 @@ pub(crate) enum JobKey {
     BranchStatusAuto,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ExecutorProfileSelection {
+    pub(crate) executor: String,
+    pub(crate) variant: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct PendingExecHook {
     pub(crate) exec_id: Option<Uuid>,

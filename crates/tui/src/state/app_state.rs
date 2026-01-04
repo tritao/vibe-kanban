@@ -10,7 +10,7 @@ use crate::logs::{ExecLogBuffer, LogSelection};
 use super::types::{
     AttemptRow, ConfirmState, CreateTaskState, DiffFocus, DiffTheme, FocusPane, GitOpState,
     InputState, JobKey, LogMode, LogRenderMode, LogViewMode, RepoBranchStatus, TaskStatus,
-    TextFieldState, ToastState, TuiPrefs, PendingExecHook,
+    TextFieldState, ToastState, TuiPrefs, PendingExecHook, ExecutorProfileSelection,
 };
 
 pub(crate) struct BoardState {
@@ -106,6 +106,9 @@ pub(crate) struct UiState {
     pub(crate) last_notice: Option<String>,
 
     pub(crate) toast: Option<ToastState>,
+
+    pub(crate) available_executors: Vec<String>,
+    pub(crate) selected_executor_profile: Option<ExecutorProfileSelection>,
 }
 
 pub(crate) struct AppState {
@@ -171,6 +174,9 @@ impl AppState {
                 last_notice: None,
 
                 toast: None,
+
+                available_executors: vec![],
+                selected_executor_profile: None,
             },
 
             board: BoardState {

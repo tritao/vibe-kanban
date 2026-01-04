@@ -4,6 +4,7 @@ use uuid::Uuid;
 use utils::response::ApiResponse;
 
 use crate::state::{ConflictOp, MergeStatus, RepoBranchStatus, TaskStatus};
+use crate::state::ExecutorProfileSelection;
 
 pub(crate) async fn update_task_status_http(
     base_url: &str,
@@ -160,6 +161,47 @@ pub(crate) async fn follow_up_http(
     let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected follow-up request");
+    }
+    Ok(())
+}
+
+pub(crate) async fn update_executor_profile_http(
+    base_url: &str,
+    profile: &ExecutorProfileSelection,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    // Fetch current config from /api/info so we can PUT the full config object.
+    let info_url = format!("{}/api/info", base_url.trim_end_matches('/'));
+    let resp = client.get(info_url).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected info request");
+    }
+    let info = api
+        .into_data()
+        .ok_or_else(|| anyhow::anyhow!("missing info payload"))?;
+    let mut config = info
+        .get("config")
+        .cloned()
+        .ok_or_else(|| anyhow::anyhow!("missing config in info payload"))?;
+
+    if let Some(obj) = config.as_object_mut() {
+        obj.insert(
+            "executor_profile".to_string(),
+            serde_json::to_value(profile).context("serialize executor_profile")?,
+        );
+    } else {
+        anyhow::bail!("invalid config payload");
+    }
+
+    let url = format!("{}/api/config", base_url.trim_end_matches('/'));
+    let resp = client.put(url).json(&config).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected config update");
     }
     Ok(())
 }

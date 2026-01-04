@@ -23,6 +23,11 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.info_summary = summary;
             true
         }
+        NetEvent::ExecutorProfilesLoaded { available, selected } => {
+            app.ui.available_executors = available;
+            app.ui.selected_executor_profile = selected;
+            true
+        }
         NetEvent::ProjectsStreamStatus(status) => {
             app.board.projects_status = status;
             true

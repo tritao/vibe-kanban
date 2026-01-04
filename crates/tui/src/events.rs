@@ -4,6 +4,7 @@ use ratatui::text::Line;
 use uuid::Uuid;
 
 use crate::state::{AttemptRow, RepoBranchStatus, TaskStatus};
+use crate::state::ExecutorProfileSelection;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StreamStatus {
@@ -52,6 +53,10 @@ pub(crate) enum UiEvent {
 #[derive(Debug)]
 pub(crate) enum NetEvent {
     InfoLoaded { ok: bool, summary: String },
+    ExecutorProfilesLoaded {
+        available: Vec<String>,
+        selected: Option<ExecutorProfileSelection>,
+    },
     ProjectsStreamStatus(StreamStatus),
     ProjectsPatch(json_patch::Patch),
     TasksStreamStatus(StreamStatus),
