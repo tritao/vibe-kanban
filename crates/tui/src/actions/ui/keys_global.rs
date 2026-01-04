@@ -26,6 +26,11 @@ pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bo
             let _ = app.reconnect_tx.send(next);
             return Some((false, true));
         }
+        (KeyCode::Char('i'), KeyModifiers::NONE) => {
+            focus::focus_execution(app);
+            modals::open_composer(app);
+            return Some((false, true));
+        }
         (KeyCode::Char('o'), _) => {
             app.exec.log_mode = match app.exec.log_mode {
                 LogMode::Normalized => LogMode::Raw,
@@ -62,4 +67,3 @@ pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bo
 
     None
 }
-
