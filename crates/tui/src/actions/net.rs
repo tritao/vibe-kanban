@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::commands::{finish_git_op, request_diff_reconnect};
+use crate::commands::{finish_git_op, maybe_refresh_branch_status_after_exec_end, request_diff_reconnect};
 use crate::diff::{diff_rows_with_all, DIFF_ALL_KEY};
 use crate::diff_preview::{
     diff_patch_touches_key, schedule_diff_preview_refresh,
@@ -68,6 +68,9 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         NetEvent::ExecReset => {
             app.exec.exec_store = serde_json::json!({ "execution_processes": {} });
             sel::select_exec(app, None);
+            app.exec.pending_branch_refresh_exec_id = None;
+            app.exec.pending_branch_refresh_prev_exec_id = None;
+            app.exec.pending_branch_refresh_wait_new_exec = false;
             true
         }
         NetEvent::ExecPatch(patch) => {
@@ -78,6 +81,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             }
             sel::ensure_exec_selection(app);
             maybe_attach_pending_user_log(app);
+            maybe_refresh_branch_status_after_exec_end(app);
             true
         }
         NetEvent::DiffStreamStatus(status) => {

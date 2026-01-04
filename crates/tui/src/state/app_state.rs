@@ -59,6 +59,10 @@ pub(crate) struct ExecState {
     pub(crate) pending_user_log: Option<String>,
     pub(crate) pending_user_log_prev_exec_id: Option<Uuid>,
     pub(crate) pending_user_log_wait_new_exec: bool,
+
+    pub(crate) pending_branch_refresh_exec_id: Option<Uuid>,
+    pub(crate) pending_branch_refresh_prev_exec_id: Option<Uuid>,
+    pub(crate) pending_branch_refresh_wait_new_exec: bool,
 }
 
 pub(crate) struct DiffState {
@@ -215,6 +219,10 @@ impl AppState {
                 pending_user_log: None,
                 pending_user_log_prev_exec_id: None,
                 pending_user_log_wait_new_exec: false,
+
+                pending_branch_refresh_exec_id: None,
+                pending_branch_refresh_prev_exec_id: None,
+                pending_branch_refresh_wait_new_exec: false,
             },
 
             diff: DiffState {
