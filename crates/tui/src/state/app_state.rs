@@ -49,6 +49,8 @@ pub(crate) struct ExecState {
     pub(crate) log_render_mode: LogRenderMode,
     pub(crate) log_view_mode: LogViewMode,
     pub(crate) log_render_width: u16,
+    pub(crate) log_target_render_width: u16,
+    pub(crate) log_prewarm_cursor: usize,
     pub(crate) log_autoscroll: bool,
     pub(crate) log_scroll_offset: usize,
 
@@ -205,6 +207,8 @@ impl AppState {
                 log_render_mode: prefs.log_render_mode,
                 log_view_mode: prefs.log_view_mode,
                 log_render_width: 0,
+                log_target_render_width: 0,
+                log_prewarm_cursor: 0,
                 log_autoscroll: true,
                 log_scroll_offset: 0,
                 log_line_targets: vec![],

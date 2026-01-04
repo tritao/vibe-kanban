@@ -9,8 +9,9 @@ use crate::diff_preview::{
 };
 use crate::jobs::{job_running, reap_finished_jobs};
 use crate::layout::{clamp_scroll_offsets, compute_main_layout};
-use crate::logs::flush_log_buffers;
+use crate::logs::{flush_log_buffers, prewarm_log_cache_for_exec};
 use crate::state::{AppState, JobKey};
+use crate::selection::exec_list;
 
 pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool {
     let mut dirty = false;
@@ -21,13 +22,54 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
 
     let layout = compute_main_layout(term, app.ui.focus);
     let inner_width = layout.exec_logs.width.saturating_sub(2);
-    let width = inner_width as usize;
-    if app.exec.log_render_width != inner_width {
-        app.exec.log_render_width = inner_width;
-        app.exec.log_view_dirty = true;
+    let target_width = inner_width;
+    if app.exec.log_target_render_width != target_width {
+        app.exec.log_target_render_width = target_width;
+        app.exec.log_prewarm_cursor = 0;
     }
-    if flush_log_buffers(app, width) {
+    if app.exec.log_render_width == 0 {
+        app.exec.log_render_width = target_width;
+    }
+
+    // Keep the currently displayed width up-to-date (fast path).
+    if flush_log_buffers(app, app.exec.log_render_width as usize) {
         dirty = true;
+    }
+
+    // If the pane width changed (e.g. diff focus zoom), pre-warm caches for the target width in
+    // small chunks and only switch once the primary buffer is ready.
+    if app.exec.log_render_width != app.exec.log_target_render_width
+        && !app.exec.log_buffers.is_empty()
+    {
+        let mut execs = exec_list(&app.exec.exec_store);
+        execs.sort_by_key(|e| e.created_at.clone().unwrap_or_default());
+        let primary_opt = app
+            .exec
+            .selected_exec_id
+            .or_else(|| execs.last().map(|e| e.id));
+
+        // Prewarm one buffer per tick (round-robin over visible execs).
+        let include: Vec<uuid::Uuid> = match app.exec.log_view_mode {
+            crate::state::LogViewMode::Single => primary_opt.into_iter().collect(),
+            crate::state::LogViewMode::Timeline => execs.iter().map(|e| e.id).collect(),
+        };
+        if !include.is_empty() {
+            let idx = app.exec.log_prewarm_cursor % include.len();
+            let id = include[idx];
+            prewarm_log_cache_for_exec(app, id, app.exec.log_target_render_width as usize);
+            app.exec.log_prewarm_cursor = app.exec.log_prewarm_cursor.wrapping_add(1);
+        }
+
+        // If the primary execution's cache is ready for the target width, swap.
+        if let Some(primary_id) = primary_opt {
+            if let Some(buf) = app.exec.log_buffers.get(&primary_id) {
+                if buf.cache_ready(app.exec.log_target_render_width) {
+                    app.exec.log_render_width = app.exec.log_target_render_width;
+                    app.exec.log_view_dirty = true;
+                    dirty = true;
+                }
+            }
+        }
     }
 
     let diff_inner_width_u16 = layout.diff_preview.width.saturating_sub(2);

@@ -108,6 +108,22 @@ impl ExecLogBuffer {
             .or_else(|| self.render_caches.values().next())
     }
 
+    pub(crate) fn cache_ready(&self, width: u16) -> bool {
+        let Some(cache) = self.render_caches.get(&width) else {
+            return false;
+        };
+        if cache.dirty_from_entry.is_some() {
+            return false;
+        }
+        let entries_len = self
+            .store
+            .get("entries")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
+        cache.entry_line_starts.len() >= entries_len
+    }
+
     pub(crate) fn ensure_init(&mut self) {
         if self.store.is_null() {
             self.store = serde_json::json!({ "entries": [] });
@@ -257,6 +273,25 @@ impl ExecLogBuffer {
             .unwrap_or(cache.lines.len());
         let slice = cache.lines.get(start..end).unwrap_or(&[]);
         Some(crate::util::lines_plain_text(slice))
+    }
+}
+
+pub(crate) fn prewarm_log_cache_for_exec(app: &mut AppState, exec_id: Uuid, width: usize) -> bool {
+    let log_mode = app.exec.log_mode;
+    let render_mode = app.exec.log_render_mode;
+    let diff_theme = app.diff.diff_theme;
+
+    let Some(buf) = app.exec.log_buffers.get_mut(&exec_id) else {
+        return false;
+    };
+
+    match buf.flush(width, log_mode, render_mode, diff_theme) {
+        Ok(changed) => changed,
+        Err(e) => {
+            app.ui.last_error = Some(format!("failed to build log cache: {e}"));
+            app.exec.log_status = StreamStatus::Error;
+            true
+        }
     }
 }
 
