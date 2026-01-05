@@ -3,30 +3,48 @@ use std::time::{Duration, Instant};
 use ratatui::style::Color;
 use uuid::Uuid;
 
-use crate::ui::{trigger_diff_repo_action, DiffRepoAction};
-use crate::events::{GitOpKind, NetEvent};
-use crate::logs::{append_local_user_message, set_pending_user_log};
-use crate::net::ops::{
-    abort_conflicts_http, attach_pr_http, branch_status_http, create_pr_http, follow_up_http,
-    force_push_task_attempt_branch_http, get_pr_comments_http, latest_session_id_http,
-    merge_task_attempt_http, open_editor_http, push_task_attempt_branch_http,
-    queue_follow_up_http, rebase_task_attempt_http, update_executor_profile_http,
-    CreateGitHubPrRequest,
-};
-use crate::selection::{exec_list, find_task};
-use crate::state::{AppState, Merge};
-use crate::commands::open_url;
 use super::git_ops::{
     arm_branch_status_refresh_after_next_exec, arm_branch_status_refresh_for_exec, begin_git_op,
     request_branch_status_refresh, set_toast,
 };
+use crate::{
+    commands::open_url,
+    events::{GitOpKind, NetEvent},
+    logs::{append_local_user_message, set_pending_user_log},
+    net::ops::{
+        CreateGitHubPrRequest, abort_conflicts_http, attach_pr_http, branch_status_http,
+        create_pr_http, follow_up_http, force_push_task_attempt_branch_http, get_pr_comments_http,
+        latest_session_id_http, merge_task_attempt_http, open_editor_http,
+        push_task_attempt_branch_http, queue_follow_up_http, rebase_task_attempt_http,
+        update_executor_profile_http, update_model_settings_http,
+    },
+    selection::{exec_list, find_task},
+    state::{AppState, Merge},
+    ui::{DiffRepoAction, trigger_diff_repo_action},
+};
 
-pub(crate) fn submit_composer(app: &mut AppState) {
+fn is_quit_slash(message: &str) -> bool {
+    let trimmed = message.trim_start();
+    let Some(cmdline) = trimmed.strip_prefix('/') else {
+        return false;
+    };
+    let tokens = crate::cli_parse::tokenize_command_line(cmdline).ok();
+    let Some(tokens) = tokens else {
+        return false;
+    };
+    let Some(first) = tokens.get(0) else {
+        return false;
+    };
+    let cmd = crate::slash::canonical_command_name(first.as_str()).unwrap_or(first.as_str());
+    cmd == "quit"
+}
+
+pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     let msg = app.ui.composer.buffer.trim_end().to_string();
     if msg.trim().is_empty() {
         app.ui.composer_active = false;
         app.ui.composer.clear();
-        return;
+        return false;
     }
 
     let refresh_branch_status_after_send = app.ui.refresh_branch_status_after_send;
@@ -45,11 +63,13 @@ pub(crate) fn submit_composer(app: &mut AppState) {
     app.ui.composer.clear();
 
     if crate::slash::composer_is_slash_mode(&msg) {
+        if is_quit_slash(&msg) {
+            return true;
+        }
         if let Some(exec_id) = current_exec_id {
             append_local_user_message(app, exec_id, &msg);
         }
-        submit_slash_command(app, &msg);
-        return;
+        return submit_slash_command(app, &msg);
     }
 
     let base_url = app.backend_url.clone();
@@ -122,52 +142,88 @@ pub(crate) fn submit_composer(app: &mut AppState) {
             }
         }
     });
+
+    false
 }
 
-pub(crate) fn submit_slash_command(app: &mut AppState, raw: &str) {
+pub(crate) fn submit_slash_command(app: &mut AppState, raw: &str) -> bool {
     let cmdline = raw.trim_start().trim_start_matches('/');
     let tokens = match crate::cli_parse::tokenize_command_line(cmdline) {
         Ok(t) => t,
         Err(e) => {
             app.ui.last_error = Some(format!("invalid command: {e}"));
-            return;
+            return false;
         }
     };
 
     if tokens.is_empty() {
         app.ui.last_error = Some("invalid command: empty".to_string());
-        return;
+        return false;
     }
 
     match parse_slash_command(app, &tokens) {
-        Ok(()) => {}
+        Ok(quit) => return quit,
         Err(e) => {
             app.ui.last_error = Some(e);
         }
     }
+    false
 }
 
-fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let cmd = crate::slash::canonical_command_name(tokens[0].as_str()).unwrap_or(tokens[0].as_str());
+fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, String> {
+    let cmd =
+        crate::slash::canonical_command_name(tokens[0].as_str()).unwrap_or(tokens[0].as_str());
     match cmd {
         "help" => {
             app.ui.show_help = true;
             app.ui.last_notice = Some("Opened help. (Press Esc to close)".to_string());
-            Ok(())
+            Ok(false)
         }
+        "quit" => Ok(true),
         "status" => {
             trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
-            Ok(())
+            Ok(false)
         }
-        "resolve" => handle_resolve_command(app, tokens),
-        "repo" => handle_repo_command(app, tokens.get(1).map(|s| s.as_str())),
-        "rebase" => handle_rebase_command(app, tokens),
-        "abort" => handle_abort_command(app, tokens),
-        "merge" => handle_merge_command(app, tokens),
-        "push" => handle_push_command(app, tokens),
-        "pr" => handle_pr_command(app, tokens),
-        "open" => handle_open_command(app, tokens),
-        "executor" => handle_executor_command(app, tokens),
+        "resolve" => {
+            handle_resolve_command(app, tokens)?;
+            Ok(false)
+        }
+        "repo" => {
+            handle_repo_command(app, tokens.get(1).map(|s| s.as_str()))?;
+            Ok(false)
+        }
+        "rebase" => {
+            handle_rebase_command(app, tokens)?;
+            Ok(false)
+        }
+        "abort" => {
+            handle_abort_command(app, tokens)?;
+            Ok(false)
+        }
+        "merge" => {
+            handle_merge_command(app, tokens)?;
+            Ok(false)
+        }
+        "push" => {
+            handle_push_command(app, tokens)?;
+            Ok(false)
+        }
+        "pr" => {
+            handle_pr_command(app, tokens)?;
+            Ok(false)
+        }
+        "open" => {
+            handle_open_command(app, tokens)?;
+            Ok(false)
+        }
+        "executor" => {
+            handle_executor_command(app, tokens)?;
+            Ok(false)
+        }
+        "model" => {
+            handle_model_command(app, tokens)?;
+            Ok(false)
+        }
         _ => Err(crate::slash::unknown_command_error(tokens[0].as_str())),
     }
 }
@@ -185,7 +241,9 @@ fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> Result<(), 
             .unwrap_or_else(|| "unknown".to_string());
 
         if app.ui.available_executors.is_empty() {
-            return Err("no executor profiles loaded yet (try reconnect or wait for /api/info)".to_string());
+            return Err(
+                "no executor profiles loaded yet (try reconnect or wait for /api/info)".to_string(),
+            );
         }
         let list = app.ui.available_executors.join(", ");
         app.ui.last_notice = Some(format!("Executor: {current}\nAvailable: {list}"));
@@ -197,13 +255,10 @@ fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> Result<(), 
         return Err("usage: /executor <NAME> [--variant V]".to_string());
     }
 
-    let help = crate::slash::help_syntax_for_command("executor").unwrap_or("/executor <name> [--variant V]");
-    let parsed = crate::slash::parse_flags(
-        tokens,
-        2,
-        crate::slash::flags_for_command("executor"),
-        help,
-    )?;
+    let help = crate::slash::help_syntax_for_command("executor")
+        .unwrap_or("/executor <name> [--variant V]");
+    let parsed =
+        crate::slash::parse_flags(tokens, 2, crate::slash::flags_for_command("executor"), help)?;
     let variant = parsed.get_value("--variant").map(ToString::to_string);
 
     if !app.ui.available_executors.is_empty()
@@ -236,11 +291,155 @@ fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> Result<(), 
     tokio::spawn(async move {
         match update_executor_profile_http(&base_url, &selection).await {
             Ok(()) => {
-                let _ = net_tx.send(NetEvent::Notice("Executor profile updated.".to_string())).await;
+                let _ = net_tx
+                    .send(NetEvent::Notice("Executor profile updated.".to_string()))
+                    .await;
             }
             Err(e) => {
                 let _ = net_tx
-                    .send(NetEvent::Error(format!("failed to update executor profile: {e}")))
+                    .send(NetEvent::Error(format!(
+                        "failed to update executor profile: {e}"
+                    )))
+                    .await;
+            }
+        }
+    });
+
+    Ok(())
+}
+
+fn current_model_and_effort(
+    profiles_executors: &serde_json::Value,
+    selection: &crate::state::ExecutorProfileSelection,
+) -> (Option<String>, Option<String>) {
+    let Some(execs) = profiles_executors.as_object() else {
+        return (None, None);
+    };
+    let exec_key = execs
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case(&selection.executor))
+        .cloned()
+        .unwrap_or_else(|| selection.executor.clone());
+    let Some(variants) = execs.get(&exec_key).and_then(|v| v.as_object()) else {
+        return (None, None);
+    };
+    let wanted_variant = selection.variant.as_deref().unwrap_or("DEFAULT");
+    let variant_key = variants
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case(wanted_variant))
+        .cloned()
+        .unwrap_or_else(|| wanted_variant.to_string());
+    let Some(variant) = variants.get(&variant_key).and_then(|v| v.as_object()) else {
+        return (None, None);
+    };
+    let nested_key = variant
+        .keys()
+        .find(|k| k.eq_ignore_ascii_case(&exec_key))
+        .cloned()
+        .unwrap_or_else(|| exec_key.clone());
+    let Some(cfg) = variant.get(&nested_key).and_then(|v| v.as_object()) else {
+        return (None, None);
+    };
+
+    let model = cfg
+        .get("model")
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    let effort = cfg
+        .get("model_reasoning_effort")
+        .or_else(|| cfg.get("reasoning_effort"))
+        .and_then(|v| v.as_str())
+        .map(ToString::to_string);
+    (model, effort)
+}
+
+fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let Some(selection) = app.ui.selected_executor_profile.clone() else {
+        return Err("no executor selected (try /executor)".to_string());
+    };
+
+    if tokens.len() == 1 {
+        let (model, effort) = current_model_and_effort(&app.ui.executor_profiles, &selection);
+        let model = model.unwrap_or_else(|| "unset".to_string());
+        let effort = effort.unwrap_or_else(|| "unset".to_string());
+        app.ui.last_notice = Some(format!(
+            "Model: {model}\nReasoning effort: {effort}\n\nSet: /model <MODEL> [--effort E]"
+        ));
+        return Ok(());
+    }
+
+    let mut model: Option<String> = None;
+    let mut flags_start = 1;
+    if let Some(tok) = tokens.get(1).map(|s| s.as_str()) {
+        if !tok.starts_with("--") {
+            model = Some(tok.to_string());
+            flags_start = 2;
+        }
+    }
+
+    let help =
+        crate::slash::help_syntax_for_command("model").unwrap_or("/model <MODEL> [--effort E]");
+    let parsed = crate::slash::parse_flags(
+        tokens,
+        flags_start,
+        crate::slash::flags_for_command("model"),
+        help,
+    )?;
+    let effort = parsed.get_value("--effort").map(ToString::to_string);
+
+    let model_empty = model
+        .as_deref()
+        .map(|m| m.trim().is_empty())
+        .unwrap_or(true);
+    let effort_empty = effort
+        .as_deref()
+        .map(|e| e.trim().is_empty())
+        .unwrap_or(true);
+    if model_empty && effort_empty {
+        return Err("usage: /model <MODEL> [--effort E]".to_string());
+    }
+
+    let desc = match (model.as_deref(), effort.as_deref()) {
+        (Some(m), Some(e)) => format!("{m} (effort {e})"),
+        (Some(m), None) => m.to_string(),
+        (None, Some(e)) => format!("(effort {e})"),
+        (None, None) => "unknown".to_string(),
+    };
+    app.ui.last_notice = Some(format!(
+        "Updating model settings for {}{}: {desc}",
+        selection.executor,
+        selection
+            .variant
+            .as_deref()
+            .map(|v| format!(":{v}"))
+            .unwrap_or_default()
+    ));
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    let selection2 = selection.clone();
+    tokio::spawn(async move {
+        match update_model_settings_http(
+            &base_url,
+            &selection2,
+            model.as_deref(),
+            effort.as_deref(),
+        )
+        .await
+        {
+            Ok(()) => {
+                let info_tx = net_tx.clone();
+                let info_url = base_url.clone();
+                let _ = net_tx
+                    .send(NetEvent::Notice("Model settings updated.".to_string()))
+                    .await;
+                tokio::spawn(crate::net::load_info_task(info_url, info_tx));
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!(
+                        "failed to update model settings: {e}"
+                    )))
                     .await;
             }
         }
@@ -301,12 +500,8 @@ pub(crate) fn trigger_abort_conflicts(
 
 fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("abort").unwrap_or("/abort");
-    let parsed = crate::slash::parse_flags(
-        tokens,
-        1,
-        crate::slash::flags_for_command("abort"),
-        help,
-    )?;
+    let parsed =
+        crate::slash::parse_flags(tokens, 1, crate::slash::flags_for_command("abort"), help)?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
     let attempt_id = app
@@ -321,12 +516,8 @@ fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
 
 fn handle_resolve_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("resolve").unwrap_or("/resolve [--repo R]");
-    let parsed = crate::slash::parse_flags(
-        tokens,
-        1,
-        crate::slash::flags_for_command("resolve"),
-        help,
-    )?;
+    let parsed =
+        crate::slash::parse_flags(tokens, 1, crate::slash::flags_for_command("resolve"), help)?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
     if app.board.selected_attempt_id.is_none() {
@@ -343,7 +534,9 @@ fn handle_resolve_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
             .diff
             .repo_statuses
             .get(app.diff.selected_repo_index)
-            .is_some_and(|r| r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty());
+            .is_some_and(|r| {
+                r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty()
+            });
         if !ok {
             return Err(format!("repo has no conflicts: {arg}"));
         }
@@ -404,12 +597,8 @@ fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), Stri
 
 fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("rebase").unwrap_or("/rebase [--onto B]");
-    let parsed = crate::slash::parse_flags(
-        tokens,
-        1,
-        crate::slash::flags_for_command("rebase"),
-        help,
-    )?;
+    let parsed =
+        crate::slash::parse_flags(tokens, 1, crate::slash::flags_for_command("rebase"), help)?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
     let onto = parsed.get_value("--onto").map(ToString::to_string);
     let old = parsed.get_value("--old").map(ToString::to_string);
@@ -486,12 +675,8 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
 
 fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("merge").unwrap_or("/merge");
-    let parsed = crate::slash::parse_flags(
-        tokens,
-        1,
-        crate::slash::flags_for_command("merge"),
-        help,
-    )?;
+    let parsed =
+        crate::slash::parse_flags(tokens, 1, crate::slash::flags_for_command("merge"), help)?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
     let attempt_id = app
@@ -565,12 +750,8 @@ fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
 
 fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("push").unwrap_or("/push [--force]");
-    let parsed = crate::slash::parse_flags(
-        tokens,
-        1,
-        crate::slash::flags_for_command("push"),
-        help,
-    )?;
+    let parsed =
+        crate::slash::parse_flags(tokens, 1, crate::slash::flags_for_command("push"), help)?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
     let force = parsed.get_bool("--force");
 
@@ -640,11 +821,9 @@ fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
 
 fn handle_pr_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     if tokens.len() < 2 {
-        return Err(
-            crate::slash::usage_for_command("pr")
-                .unwrap_or("usage: /pr <create|attach|comments|open>")
-                .to_string(),
-        );
+        return Err(crate::slash::usage_for_command("pr")
+            .unwrap_or("usage: /pr <create|attach|comments|open>")
+            .to_string());
     }
     match tokens[1].as_str() {
         "create" => handle_pr_create_command(app, tokens),
@@ -700,7 +879,8 @@ fn handle_pr_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
 }
 
 fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let help = crate::slash::help_syntax_for_subcommand("pr", "create").unwrap_or("/pr create --title T");
+    let help =
+        crate::slash::help_syntax_for_subcommand("pr", "create").unwrap_or("/pr create --title T");
     let parsed = crate::slash::parse_flags(
         tokens,
         2,
@@ -943,11 +1123,9 @@ fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(
 
 fn handle_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     if tokens.len() < 2 {
-        return Err(
-            crate::slash::usage_for_command("open")
-                .unwrap_or("usage: /open <file_path>")
-                .to_string(),
-        );
+        return Err(crate::slash::usage_for_command("open")
+            .unwrap_or("usage: /open <file_path>")
+            .to_string());
     }
     let attempt_id = app
         .board

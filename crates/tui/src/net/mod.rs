@@ -7,9 +7,11 @@ use tokio_tungstenite::tungstenite;
 use utils::{port_file::read_port_file, response::ApiResponse};
 use uuid::Uuid;
 
-use crate::events::{NetEvent, StreamStatus};
-use crate::state::{AttemptRow, ExecutorProfileSelection, LogMode};
-use crate::Args;
+use crate::{
+    Args,
+    events::{NetEvent, StreamStatus},
+    state::{AttemptRow, ExecutorProfileSelection, LogMode},
+};
 
 pub(crate) mod ops;
 
@@ -56,9 +58,14 @@ pub(crate) async fn load_info_task(base_url: String, net_tx: mpsc::Sender<NetEve
                     let ok = api.is_success();
                     let data = api.into_data();
                     if let Some(info) = data.as_ref() {
-                        let (available, selected) = extract_executor_profiles(info);
+                        let (available, selected, profiles_executors) =
+                            extract_executor_profiles(info);
                         let _ = net_tx
-                            .send(NetEvent::ExecutorProfilesLoaded { available, selected })
+                            .send(NetEvent::ExecutorProfilesLoaded {
+                                available,
+                                selected,
+                                profiles_executors,
+                            })
                             .await;
                     }
                     let summary = data
@@ -89,7 +96,11 @@ pub(crate) async fn load_info_task(base_url: String, net_tx: mpsc::Sender<NetEve
 
 fn extract_executor_profiles(
     info: &serde_json::Value,
-) -> (Vec<String>, Option<ExecutorProfileSelection>) {
+) -> (
+    Vec<String>,
+    Option<ExecutorProfileSelection>,
+    serde_json::Value,
+) {
     let available = info
         .get("executors")
         .and_then(|v| v.as_object())
@@ -100,12 +111,17 @@ fn extract_executor_profiles(
         })
         .unwrap_or_default();
 
+    let profiles_executors = info
+        .get("executors")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}));
+
     let selected = info
         .get("config")
         .and_then(|c| c.get("executor_profile"))
         .and_then(|p| serde_json::from_value::<ExecutorProfileSelection>(p.clone()).ok());
 
-    (available, selected)
+    (available, selected, profiles_executors)
 }
 
 fn summarize_info(info: &serde_json::Value) -> Option<String> {

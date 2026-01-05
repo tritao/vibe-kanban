@@ -94,4 +94,3 @@ pub(crate) fn diff_rows_with_all(store: &serde_json::Value) -> Vec<DiffRow> {
     );
     rows
 }
-

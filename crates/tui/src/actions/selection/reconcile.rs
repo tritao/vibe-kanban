@@ -1,12 +1,13 @@
 use uuid::Uuid;
 
-use crate::selection::lists_filters::tasks_filtered_by_status;
-use crate::selection::{
-    active_exec_id, exec_list, filtered_projects, find_task, tasks_by_status, tasks_filtered_base,
-};
-use crate::state::{AppState, AttemptRow, TaskStatus};
-
 use super::ids::{select_attempt, select_exec, select_project, select_task};
+use crate::{
+    selection::{
+        active_exec_id, exec_list, filtered_projects, find_task,
+        lists_filters::tasks_filtered_by_status, tasks_by_status, tasks_filtered_base,
+    },
+    state::{AppState, AttemptRow, TaskStatus},
+};
 
 pub(in crate::actions) fn reconcile_projects_selection(app: &mut AppState) {
     let projects: Vec<(Uuid, String)> = filtered_projects(app)
@@ -142,7 +143,8 @@ fn ensure_task_selection(app: &mut AppState) {
         return;
     }
 
-    let idx = app.board.board_index_by_status[app.board.tasks_active_column.idx()].min(list.len() - 1);
+    let idx =
+        app.board.board_index_by_status[app.board.tasks_active_column.idx()].min(list.len() - 1);
     select_task(app, Some(list[idx].id));
 }
 

@@ -1,13 +1,11 @@
 use crossterm::event::MouseEvent;
 
-use crate::layout::{compute_main_layout, current_terminal_rect, rect_contains};
-use crate::state::AppState;
-use crate::ui::board_hit_at;
-
-use super::focus;
-use super::modals;
-use super::sel;
-use super::scroll;
+use super::{focus, modals, scroll, sel};
+use crate::{
+    layout::{compute_main_layout, current_terminal_rect, rect_contains},
+    state::AppState,
+    ui::board_hit_at,
+};
 
 mod board;
 mod diff;

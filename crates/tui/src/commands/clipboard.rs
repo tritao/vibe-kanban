@@ -21,4 +21,3 @@ pub(crate) fn copy_to_clipboard_osc52(text: &str) -> anyhow::Result<()> {
     out.flush()?;
     Ok(())
 }
-

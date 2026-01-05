@@ -4,10 +4,12 @@ use ratatui::{
     widgets::Paragraph,
 };
 
-use crate::events::StreamStatus;
-use crate::fmt::truncate;
-use crate::selection::find_task;
-use crate::state::{AppState, FocusPane};
+use crate::{
+    events::StreamStatus,
+    fmt::truncate,
+    selection::find_task,
+    state::{AppState, FocusPane},
+};
 
 pub(crate) fn render_top_bar(app: &AppState) -> Paragraph<'static> {
     fn status_badge(label: &'static str, status: StreamStatus) -> Span<'static> {

@@ -2,10 +2,12 @@ use std::time::Duration;
 
 use ratatui::text::Line;
 
-use crate::diff::diff_rows_with_all;
-use crate::diff_preview::{cancel_diff_preview_job, schedule_diff_preview_refresh};
-use crate::state::AppState;
-use crate::ui::sync_selected_repo_from_diff_selection;
+use crate::{
+    diff::diff_rows_with_all,
+    diff_preview::{cancel_diff_preview_job, schedule_diff_preview_refresh},
+    state::AppState,
+    ui::sync_selected_repo_from_diff_selection,
+};
 
 pub(in crate::actions) fn reset_diff_stream_state(app: &mut AppState) {
     app.diff.diff_store = serde_json::json!({ "entries": {} });

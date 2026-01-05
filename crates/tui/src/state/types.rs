@@ -11,6 +11,7 @@ pub(crate) enum JobKey {
     DiffPreview,
     BranchStatus,
     BranchStatusAuto,
+    LogPrewarm,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -273,23 +274,15 @@ impl TextFieldState {
     }
 
     pub(crate) fn move_up(&mut self) {
-        let (next, goal) = crate::text::edit::move_cursor_vertically(
-            &self.buffer,
-            self.cursor,
-            -1,
-            self.goal_col,
-        );
+        let (next, goal) =
+            crate::text::edit::move_cursor_vertically(&self.buffer, self.cursor, -1, self.goal_col);
         self.cursor = next;
         self.goal_col = goal;
     }
 
     pub(crate) fn move_down(&mut self) {
-        let (next, goal) = crate::text::edit::move_cursor_vertically(
-            &self.buffer,
-            self.cursor,
-            1,
-            self.goal_col,
-        );
+        let (next, goal) =
+            crate::text::edit::move_cursor_vertically(&self.buffer, self.cursor, 1, self.goal_col);
         self.cursor = next;
         self.goal_col = goal;
     }
@@ -359,7 +352,8 @@ impl TextFieldState {
         let ranges = crate::text::edit::line_ranges(&self.buffer);
         let line = crate::text::edit::cursor_line_index(&ranges, cur);
         let (line_start, line_end) = ranges.get(line).copied().unwrap_or((0, 0));
-        let col = crate::text::edit::cursor_col_in_line(&self.buffer, line_start, cur.min(line_end));
+        let col =
+            crate::text::edit::cursor_col_in_line(&self.buffer, line_start, cur.min(line_end));
         (line, col)
     }
 
@@ -695,7 +689,9 @@ mod conflict_instruction_tests {
             Some("repo1"),
         );
 
-        assert!(out.contains("Rebase conflicts while rebasing 'feat/x' onto 'main' in repository 'repo1'."));
+        assert!(out.contains(
+            "Rebase conflicts while rebasing 'feat/x' onto 'main' in repository 'repo1'."
+        ));
         assert!(out.contains("Files with conflicts:\n- a.txt\n- b.txt"));
         assert!(out.contains("ensure the rebase does not hang"));
     }

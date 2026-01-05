@@ -164,5 +164,8 @@ pub(crate) fn move_cursor_vertically(
     let (t_start, t_end) = ranges[target_line];
     let line_str = s.get(t_start..t_end).unwrap_or("");
     let within = byte_index_at_display_col(line_str, cur_col);
-    (t_start + within.min(t_end.saturating_sub(t_start)), Some(cur_col))
+    (
+        t_start + within.min(t_end.saturating_sub(t_start)),
+        Some(cur_col),
+    )
 }

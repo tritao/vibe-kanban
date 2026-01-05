@@ -65,4 +65,3 @@ pub(super) fn apply_text_field_key(
 
     true
 }
-

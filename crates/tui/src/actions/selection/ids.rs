@@ -2,11 +2,8 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
-use crate::net;
-use crate::prefs::save_prefs;
-use crate::state::AppState;
-
 use super::diff::reset_diff_stream_state;
+use crate::{net, prefs::save_prefs, state::AppState};
 
 pub(in crate::actions) fn select_project(app: &mut AppState, project_id: Option<Uuid>) {
     if app.board.selected_project_id == project_id {
@@ -77,7 +74,11 @@ pub(in crate::actions) fn select_exec(app: &mut AppState, exec_id: Option<Uuid>)
     app.ui.last_error = None;
     app.ui.last_notice = None;
     if let Some(exec_id) = exec_id {
-        app.exec.log_buffers.entry(exec_id).or_default().ensure_init();
+        app.exec
+            .log_buffers
+            .entry(exec_id)
+            .or_default()
+            .ensure_init();
         app.exec.log_view_dirty = true;
     }
     app.exec.log_selected = None;

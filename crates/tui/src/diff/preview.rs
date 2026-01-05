@@ -8,9 +8,8 @@ use ratatui::{
     text::{Line, Span},
 };
 
+use super::{DIFF_ALL_KEY, diff_rows_with_all, highlight_unified_diff};
 use crate::state::DiffTheme;
-
-use super::{diff_rows_with_all, highlight_unified_diff, DIFF_ALL_KEY};
 
 fn hash_text_sample(hasher: &mut impl Hasher, s: &str) {
     s.len().hash(hasher);

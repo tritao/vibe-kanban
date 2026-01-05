@@ -6,9 +6,11 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
-use crate::text::{display_width, slice_by_display_cols, wrap_line_wordwise};
-use crate::events::StreamStatus;
-use crate::state::{AppState, FocusPane};
+use crate::{
+    events::StreamStatus,
+    state::{AppState, FocusPane},
+    text::{display_width, slice_by_display_cols, wrap_line_wordwise},
+};
 
 pub(crate) fn render_execution_pane(f: &mut Frame, app: &AppState, area: Rect) {
     let sections = Layout::default()
@@ -58,7 +60,11 @@ fn render_logs_viewer(f: &mut Frame, app: &AppState, area: Rect) {
     let len = app.exec.log_lines.len();
     let max_render = area.height.saturating_sub(2) as usize;
     let visible = max_render.min(len);
-    let mut offset = if app.exec.log_autoscroll { 0 } else { app.exec.log_scroll_offset };
+    let mut offset = if app.exec.log_autoscroll {
+        0
+    } else {
+        app.exec.log_scroll_offset
+    };
     offset = offset.min(len.saturating_sub(visible));
     let start = len.saturating_sub(visible + offset);
     let end = len.saturating_sub(offset);
@@ -131,10 +137,7 @@ fn render_composer(f: &mut Frame, app: &AppState, area: Rect) {
         let inner_h = inner_h.max(1);
         let prefix = "  ";
         let prefix_w = display_width(prefix);
-        let content_w = inner_w
-            .saturating_sub(prefix_w)
-            .saturating_sub(1)
-            .max(1);
+        let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
 
         let ranges = line_ranges(&app.ui.composer.buffer);
         let total_lines = ranges.len().max(1);
@@ -163,9 +166,7 @@ fn render_composer(f: &mut Frame, app: &AppState, area: Rect) {
             let mut take = content_w.saturating_sub(left as usize);
             if idx != cur_line && start_col.saturating_add(take) < line_w {
                 right = true;
-                take = content_w
-                    .saturating_sub(left as usize)
-                    .saturating_sub(1);
+                take = content_w.saturating_sub(left as usize).saturating_sub(1);
             }
 
             let mut visible = String::new();
@@ -255,8 +256,10 @@ pub(crate) fn render_composer_autocomplete(f: &mut Frame, app: &AppState, input_
         .iter()
         .cloned()
         .map(|it| {
-            let mut spans: Vec<Span<'static>> =
-                vec![Span::styled(it.insert.trim().to_string(), Style::default().add_modifier(Modifier::BOLD))];
+            let mut spans: Vec<Span<'static>> = vec![Span::styled(
+                it.insert.trim().to_string(),
+                Style::default().add_modifier(Modifier::BOLD),
+            )];
             if !it.desc.is_empty() {
                 spans.push(Span::raw(" "));
                 spans.push(Span::styled(
@@ -270,7 +273,9 @@ pub(crate) fn render_composer_autocomplete(f: &mut Frame, app: &AppState, input_
 
     let mut state = ratatui::widgets::ListState::default();
     let selected_in_window = app.ui.composer_suggest_index.saturating_sub(start);
-    state.select(Some(selected_in_window.min(list_items.len().saturating_sub(1))));
+    state.select(Some(
+        selected_in_window.min(list_items.len().saturating_sub(1)),
+    ));
 
     let w = List::new(list_items)
         .block(

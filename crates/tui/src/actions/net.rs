@@ -1,20 +1,18 @@
 use std::time::Duration;
 
-use crate::commands::{
-    clear_pending_branch_status_refresh, finish_git_op, on_exec_store_updated_for_branch_refresh,
-    request_diff_reconnect,
-};
-use crate::diff::{diff_rows_with_all, DIFF_ALL_KEY};
-use crate::diff_preview::{
-    diff_patch_touches_key, schedule_diff_preview_refresh,
-};
-use crate::events::{NetEvent, StreamStatus};
-use crate::logs::{enqueue_log_patch, reset_logs};
-use crate::logs::maybe_attach_pending_user_log;
-use crate::state::AppState;
-use crate::ui::sync_selected_repo_from_diff_selection;
-
 use super::selection as sel;
+use crate::{
+    commands::{
+        clear_pending_branch_status_refresh, finish_git_op,
+        on_exec_store_updated_for_branch_refresh, request_diff_reconnect,
+    },
+    diff::{DIFF_ALL_KEY, diff_rows_with_all},
+    diff_preview::{diff_patch_touches_key, schedule_diff_preview_refresh},
+    events::{NetEvent, StreamStatus},
+    logs::{enqueue_log_patch, maybe_attach_pending_user_log, reset_logs},
+    state::AppState,
+    ui::sync_selected_repo_from_diff_selection,
+};
 
 pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
     match event {
@@ -23,9 +21,14 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.info_summary = summary;
             true
         }
-        NetEvent::ExecutorProfilesLoaded { available, selected } => {
+        NetEvent::ExecutorProfilesLoaded {
+            available,
+            selected,
+            profiles_executors,
+        } => {
             app.ui.available_executors = available;
             app.ui.selected_executor_profile = selected;
+            app.ui.executor_profiles = profiles_executors;
             true
         }
         NetEvent::ProjectsStreamStatus(status) => {
@@ -117,8 +120,14 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             if rows.is_empty() {
                 return true;
             }
-            let sel = app.diff.selected_diff_index.min(rows.len().saturating_sub(1));
-            let sel_key = rows.get(sel).map(|r| r.key.as_str()).unwrap_or(DIFF_ALL_KEY);
+            let sel = app
+                .diff
+                .selected_diff_index
+                .min(rows.len().saturating_sub(1));
+            let sel_key = rows
+                .get(sel)
+                .map(|r| r.key.as_str())
+                .unwrap_or(DIFF_ALL_KEY);
 
             let should_refresh = if sel_key == DIFF_ALL_KEY {
                 true
@@ -152,6 +161,23 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.diff.diff_preview_cache_width = width;
             app.diff.diff_preview_lines = lines;
             true
+        }
+        NetEvent::LogPrewarmReady {
+            exec_id,
+            width,
+            generation,
+            cache,
+        } => {
+            if generation != app.exec.log_prewarm_gen {
+                return false;
+            }
+            if width != app.exec.log_target_render_width {
+                return false;
+            }
+            if let Some(buf) = app.exec.log_buffers.get_mut(&exec_id) {
+                buf.install_cache(width, cache);
+            }
+            false
         }
         NetEvent::GitOpFinished {
             repo_id,

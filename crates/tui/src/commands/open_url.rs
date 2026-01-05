@@ -36,4 +36,3 @@ pub(crate) fn open_url(url: &str) -> anyhow::Result<()> {
         return Ok(());
     }
 }
-

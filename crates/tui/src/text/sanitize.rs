@@ -80,4 +80,3 @@ pub(crate) fn sanitize_tui_text(s: &str) -> Cow<'_, str> {
 
     Cow::Owned(out)
 }
-

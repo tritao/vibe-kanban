@@ -7,8 +7,10 @@ use ratatui::{
 };
 
 use super::layout::centered_rect;
-use crate::selection::projects_list;
-use crate::state::{AppState, CreateTaskFocus, CreateTaskState, TaskStatus};
+use crate::{
+    selection::projects_list,
+    state::{AppState, CreateTaskFocus, CreateTaskState, TaskStatus},
+};
 
 pub(crate) fn open_create_task_modal(app: &mut AppState) {
     app.ui.create_task = Some(CreateTaskState {
@@ -80,8 +82,9 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
     let desc_border = create_task_focus_border(state.focus, CreateTaskFocus::Description);
     let desc_inner_h = chunks[1].height.saturating_sub(2) as usize;
     let desc_inner_w = chunks[1].width.saturating_sub(2) as usize;
-    let (desc_scroll_y, desc_scroll_x) =
-        state.description.ensured_scroll(desc_inner_w.max(1), desc_inner_h.max(1));
+    let (desc_scroll_y, desc_scroll_x) = state
+        .description
+        .ensured_scroll(desc_inner_w.max(1), desc_inner_h.max(1));
     let desc_lines: Vec<Line<'static>> = if state.description.buffer.is_empty() {
         vec![Line::from(Span::styled(
             "Optional. Markdown supported.",
@@ -122,7 +125,9 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
         }
         let mut st = Style::default();
         if s == state.status {
-            st = st.add_modifier(Modifier::REVERSED).add_modifier(Modifier::BOLD);
+            st = st
+                .add_modifier(Modifier::REVERSED)
+                .add_modifier(Modifier::BOLD);
         } else {
             st = st.add_modifier(Modifier::DIM);
         }
@@ -205,10 +210,13 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
             let x = chunks[0]
                 .x
                 .saturating_add(cursor_pad_x)
-                .saturating_add(
-                    cursor_col.saturating_sub(title_scroll_x as usize) as u16
-                )
-                .min(chunks[0].x.saturating_add(chunks[0].width).saturating_sub(2));
+                .saturating_add(cursor_col.saturating_sub(title_scroll_x as usize) as u16)
+                .min(
+                    chunks[0]
+                        .x
+                        .saturating_add(chunks[0].width)
+                        .saturating_sub(2),
+                );
             let y = chunks[0].y.saturating_add(1);
             f.set_cursor_position((x, y));
         }
@@ -231,7 +239,12 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
                 .x
                 .saturating_add(cursor_pad_x)
                 .saturating_add(vx.min(inner_w.saturating_sub(1)) as u16)
-                .min(chunks[1].x.saturating_add(chunks[1].width).saturating_sub(2));
+                .min(
+                    chunks[1]
+                        .x
+                        .saturating_add(chunks[1].width)
+                        .saturating_sub(2),
+                );
             let y = chunks[1]
                 .y
                 .saturating_add(1)

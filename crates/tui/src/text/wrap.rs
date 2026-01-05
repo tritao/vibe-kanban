@@ -268,7 +268,10 @@ pub(crate) fn wrap_line_wordwise(line: &Line<'static>, width: usize) -> Vec<Line
     out
 }
 
-pub(crate) fn truncate_spans_to_width(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
+pub(crate) fn truncate_spans_to_width(
+    mut spans: Vec<Span<'static>>,
+    width: usize,
+) -> Vec<Span<'static>> {
     if width == 0 {
         return vec![];
     }
@@ -335,7 +338,10 @@ fn split_spans_by_width(
     (left, vec![])
 }
 
-pub(crate) fn wrap_spans_hard(mut spans: Vec<Span<'static>>, width: usize) -> Vec<Vec<Span<'static>>> {
+pub(crate) fn wrap_spans_hard(
+    mut spans: Vec<Span<'static>>,
+    width: usize,
+) -> Vec<Vec<Span<'static>>> {
     let width = width.max(1);
     let mut out: Vec<Vec<Span<'static>>> = vec![];
     while !spans.is_empty() {

@@ -3,8 +3,10 @@ use std::hash::Hash;
 use ratatui::text::Line;
 use uuid::Uuid;
 
-use crate::state::{AttemptRow, RepoBranchStatus, TaskStatus};
-use crate::state::ExecutorProfileSelection;
+use crate::{
+    logs::PreparedLogCache,
+    state::{AttemptRow, ExecutorProfileSelection, RepoBranchStatus, TaskStatus},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StreamStatus {
@@ -52,17 +54,24 @@ pub(crate) enum UiEvent {
 
 #[derive(Debug)]
 pub(crate) enum NetEvent {
-    InfoLoaded { ok: bool, summary: String },
+    InfoLoaded {
+        ok: bool,
+        summary: String,
+    },
     ExecutorProfilesLoaded {
         available: Vec<String>,
         selected: Option<ExecutorProfileSelection>,
+        profiles_executors: serde_json::Value,
     },
     ProjectsStreamStatus(StreamStatus),
     ProjectsPatch(json_patch::Patch),
     TasksStreamStatus(StreamStatus),
     TasksReset,
     TasksPatch(json_patch::Patch),
-    AttemptsLoaded { task_id: Uuid, attempts: Vec<AttemptRow> },
+    AttemptsLoaded {
+        task_id: Uuid,
+        attempts: Vec<AttemptRow>,
+    },
     ExecStreamStatus(StreamStatus),
     ExecReset,
     ExecPatch(json_patch::Patch),
@@ -77,6 +86,12 @@ pub(crate) enum NetEvent {
         width: u16,
         lines: Vec<Line<'static>>,
     },
+    LogPrewarmReady {
+        exec_id: Uuid,
+        width: u16,
+        generation: u64,
+        cache: PreparedLogCache,
+    },
     GitOpFinished {
         repo_id: Option<Uuid>,
         kind: GitOpKind,
@@ -85,9 +100,15 @@ pub(crate) enum NetEvent {
     },
     LogStreamStatus(StreamStatus),
     LogReset(Option<Uuid>),
-    LogPatch { exec_id: Uuid, patch: json_patch::Patch },
+    LogPatch {
+        exec_id: Uuid,
+        patch: json_patch::Patch,
+    },
     BranchStatusLoaded(Vec<RepoBranchStatus>),
-    TaskCreated { task_id: Uuid, status: TaskStatus },
+    TaskCreated {
+        task_id: Uuid,
+        status: TaskStatus,
+    },
     Notice(String),
     Error(String),
 }

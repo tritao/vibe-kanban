@@ -1,5 +1,6 @@
-use crate::state::{AppState, TaskStatus};
 use ratatui::text::Line;
+
+use crate::state::{AppState, TaskStatus};
 
 pub(crate) fn board_statuses(app: &AppState) -> Vec<TaskStatus> {
     if app.board.show_cancelled {

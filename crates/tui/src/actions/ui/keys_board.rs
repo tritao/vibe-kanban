@@ -1,10 +1,11 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::prefs::save_prefs;
-use crate::state::{AppState, FocusPane};
-use crate::ui::open_create_task_modal;
-
 use super::sel;
+use crate::{
+    prefs::save_prefs,
+    state::{AppState, FocusPane},
+    ui::open_create_task_modal,
+};
 
 pub(super) fn handle_board_key(app: &mut AppState, key: KeyEvent) -> Option<bool> {
     if app.ui.focus != FocusPane::Board {
@@ -50,4 +51,3 @@ pub(super) fn handle_board_key(app: &mut AppState, key: KeyEvent) -> Option<bool
         _ => None,
     }
 }
-

@@ -1,10 +1,12 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
-use crate::diff::diff_rows_with_all;
-use crate::layout::{current_terminal_rect, rect_contains};
-use crate::state::AppState;
-use crate::util::window_for_list;
+use crate::{
+    diff::diff_rows_with_all,
+    layout::{current_terminal_rect, rect_contains},
+    state::AppState,
+    util::window_for_list,
+};
 
 pub(super) fn handle_search_caret_click(app: &mut AppState, mouse: MouseEvent) -> bool {
     let col = mouse.column;
@@ -129,4 +131,3 @@ pub(super) fn log_entry_hit_at(
     let line_idx = start.saturating_add(inner_row);
     app.exec.log_line_targets.get(line_idx).and_then(|v| *v)
 }
-

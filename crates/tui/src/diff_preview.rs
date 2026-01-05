@@ -1,13 +1,16 @@
 use std::time::{Duration, Instant};
 
-use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::{
+    style::{Modifier, Style},
+    text::{Line, Span},
+};
 
-use crate::diff::{build_diff_preview_request, compute_diff_preview};
-use crate::events::NetEvent;
-use crate::jobs::{cancel_job, replace_job};
-use crate::state::AppState;
-use crate::state::JobKey;
+use crate::{
+    diff::{build_diff_preview_request, compute_diff_preview},
+    events::NetEvent,
+    jobs::{cancel_job, replace_job},
+    state::{AppState, JobKey},
+};
 
 fn json_pointer_escape_segment(s: &str) -> String {
     s.replace('~', "~0").replace('/', "~1")

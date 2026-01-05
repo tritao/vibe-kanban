@@ -1,21 +1,14 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::commands::submit_composer;
-use crate::layout::{current_terminal_rect};
-use crate::state::{AppState, DiffFocus, FocusPane};
-
-use super::confirm;
-use super::copy::reduce_copy;
-use super::composer;
-use super::create_task;
-use super::keys_board;
-use super::keys_diff;
-use super::keys_exec;
-use super::keys_global;
-use super::modals;
-use super::sel;
-use super::text_edit;
-use super::{CopyTarget, Effect};
+use super::{
+    CopyTarget, Effect, composer, confirm, copy::reduce_copy, create_task, keys_board, keys_diff,
+    keys_exec, keys_global, modals, sel, text_edit,
+};
+use crate::{
+    commands::submit_composer,
+    layout::current_terminal_rect,
+    state::{AppState, DiffFocus, FocusPane},
+};
 
 pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<Effect>) {
     // Confirm modal has highest priority.
@@ -67,8 +60,11 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
                 return (false, true, vec![]);
             }
             (KeyCode::Enter, _) => {
-                submit_composer(app);
-                return (false, true, vec![]);
+                if crate::slash::apply_composer_autocomplete(app) {
+                    return (false, true, vec![]);
+                }
+                let quit = submit_composer(app);
+                return (quit, true, vec![]);
             }
             _ => {}
         }

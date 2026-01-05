@@ -7,10 +7,12 @@ use ratatui::{
 };
 use uuid::Uuid;
 
-use crate::events::StreamStatus;
-use crate::fmt::short_time;
-use crate::selection::exec_list;
-use crate::state::{AppState, DiffTheme, ExecRow, LogMode, LogRenderMode, LogViewMode};
+use crate::{
+    events::StreamStatus,
+    fmt::short_time,
+    selection::exec_list,
+    state::{AppState, DiffTheme, ExecRow, LogMode, LogRenderMode, LogViewMode},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LogKind {
@@ -63,6 +65,28 @@ impl RenderCache {
     }
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct PreparedLogCache {
+    pub(crate) lines: Vec<Line<'static>>,
+    pub(crate) line_entry_index: Vec<usize>,
+    pub(crate) entry_line_starts: Vec<usize>,
+    pub(crate) entry_end_states: Vec<LogAssemblerState>,
+    pub(crate) assembler_state: LogAssemblerState,
+}
+
+impl PreparedLogCache {
+    fn into_render_cache(self) -> RenderCache {
+        RenderCache {
+            lines: self.lines,
+            line_entry_index: self.line_entry_index,
+            entry_line_starts: self.entry_line_starts,
+            entry_end_states: self.entry_end_states,
+            assembler_state: self.assembler_state,
+            dirty_from_entry: None,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct ExecLogBuffer {
     pub(crate) store: serde_json::Value,
@@ -108,20 +132,13 @@ impl ExecLogBuffer {
             .or_else(|| self.render_caches.values().next())
     }
 
-    pub(crate) fn cache_ready(&self, width: u16) -> bool {
-        let Some(cache) = self.render_caches.get(&width) else {
-            return false;
-        };
-        if cache.dirty_from_entry.is_some() {
-            return false;
-        }
-        let entries_len = self
-            .store
-            .get("entries")
-            .and_then(|v| v.as_array())
-            .map(|a| a.len())
-            .unwrap_or(0);
-        cache.entry_line_starts.len() >= entries_len
+    pub(crate) fn cache_exists(&self, width: u16) -> bool {
+        self.render_caches.contains_key(&width)
+    }
+
+    pub(crate) fn install_cache(&mut self, width: u16, cache: PreparedLogCache) {
+        self.touch_cache_key(width);
+        self.render_caches.insert(width, cache.into_render_cache());
     }
 
     pub(crate) fn ensure_init(&mut self) {
@@ -142,7 +159,11 @@ impl ExecLogBuffer {
         self.ensure_init();
         if let Some(min_idx) = log_patch_min_entry_index(&patch) {
             for c in self.render_caches.values_mut() {
-                c.dirty_from_entry = Some(c.dirty_from_entry.map(|v| v.min(min_idx)).unwrap_or(min_idx));
+                c.dirty_from_entry = Some(
+                    c.dirty_from_entry
+                        .map(|v| v.min(min_idx))
+                        .unwrap_or(min_idx),
+                );
             }
         }
         self.pending_patch.0.extend(patch.0);
@@ -150,7 +171,11 @@ impl ExecLogBuffer {
 
     pub(crate) fn mark_dirty_from(&mut self, entry_idx: usize) {
         for c in self.render_caches.values_mut() {
-            c.dirty_from_entry = Some(c.dirty_from_entry.map(|v| v.min(entry_idx)).unwrap_or(entry_idx));
+            c.dirty_from_entry = Some(
+                c.dirty_from_entry
+                    .map(|v| v.min(entry_idx))
+                    .unwrap_or(entry_idx),
+            );
         }
     }
 
@@ -214,7 +239,10 @@ impl ExecLogBuffer {
             .get_mut(&width_u16)
             .expect("render cache");
         let processed_entries_before = cache.entry_line_starts.len();
-        let rebuild_from = cache.dirty_from_entry.take().unwrap_or(processed_entries_before);
+        let rebuild_from = cache
+            .dirty_from_entry
+            .take()
+            .unwrap_or(processed_entries_before);
 
         let rebuild_from = rebuild_from.min(processed_entries_before);
         if rebuild_from == 0 {
@@ -276,23 +304,47 @@ impl ExecLogBuffer {
     }
 }
 
-pub(crate) fn prewarm_log_cache_for_exec(app: &mut AppState, exec_id: Uuid, width: usize) -> bool {
-    let log_mode = app.exec.log_mode;
-    let render_mode = app.exec.log_render_mode;
-    let diff_theme = app.diff.diff_theme;
-
-    let Some(buf) = app.exec.log_buffers.get_mut(&exec_id) else {
-        return false;
+pub(crate) fn build_prepared_log_cache(
+    store: &serde_json::Value,
+    collapsed: &[bool],
+    width: usize,
+    log_mode: LogMode,
+    render_mode: LogRenderMode,
+    diff_theme: DiffTheme,
+) -> PreparedLogCache {
+    let width = width.max(1);
+    let mut out = PreparedLogCache {
+        lines: vec![],
+        line_entry_index: vec![],
+        entry_line_starts: vec![],
+        entry_end_states: vec![],
+        assembler_state: LogAssemblerState::default(),
     };
 
-    match buf.flush(width, log_mode, render_mode, diff_theme) {
-        Ok(changed) => changed,
-        Err(e) => {
-            app.ui.last_error = Some(format!("failed to build log cache: {e}"));
-            app.exec.log_status = StreamStatus::Error;
-            true
-        }
+    let entries = store
+        .get("entries")
+        .and_then(|v| v.as_array())
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+
+    for (idx, entry) in entries.iter().enumerate() {
+        out.entry_line_starts.push(out.lines.len());
+        super::assemble::append_log_entry(
+            &mut out.lines,
+            &mut out.line_entry_index,
+            &mut out.assembler_state,
+            idx,
+            entry,
+            width,
+            log_mode,
+            render_mode,
+            diff_theme,
+            collapsed,
+        );
+        out.entry_end_states.push(out.assembler_state);
     }
+
+    out
 }
 
 pub(crate) fn append_local_user_message(app: &mut AppState, exec_id: Uuid, message: &str) {
@@ -437,9 +489,7 @@ fn rebuild_log_view_cache(app: &mut AppState) {
     let width = app.exec.log_render_width;
     for (idx, exec_id) in include.iter().copied().enumerate() {
         let meta = exec_by_id.get(&exec_id);
-        let status = meta
-            .and_then(|e| e.status.as_deref())
-            .unwrap_or("unknown");
+        let status = meta.and_then(|e| e.status.as_deref()).unwrap_or("unknown");
         let when = meta
             .and_then(|e| e.created_at.as_deref())
             .and_then(short_time)
@@ -479,10 +529,7 @@ fn rebuild_log_view_cache(app: &mut AppState) {
                     let entry_idx = cache.line_entry_index.get(line_idx).copied();
                     app.exec
                         .log_line_targets
-                        .push(entry_idx.map(|entry_idx| LogSelection {
-                        exec_id,
-                        entry_idx,
-                    }));
+                        .push(entry_idx.map(|entry_idx| LogSelection { exec_id, entry_idx }));
                 }
             }
         } else {

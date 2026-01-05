@@ -1,21 +1,25 @@
-mod tick;
-mod ui;
 mod net;
 mod selection;
+mod tick;
+mod ui;
 
 use std::time::Instant;
 
 use ratatui::layout::Rect;
 
-use crate::events::{NetEvent, UiEvent};
-use crate::state::AppState;
+use crate::{
+    events::{NetEvent, UiEvent},
+    state::AppState,
+};
 
 fn trace_actions_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ENABLED.get_or_init(|| {
         std::env::var("VIBE_TUI_TRACE_ACTIONS")
             .ok()
-            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+            .is_some_and(|v| {
+                v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes")
+            })
     })
 }
 
@@ -56,12 +60,10 @@ pub(crate) fn dispatch(app: &mut AppState, action: Action) -> anyhow::Result<Dis
                 dirty: dirty || effects_dirty,
             })
         }
-        Action::Net(evt) => {
-            Ok(DispatchOutcome {
-                quit: false,
-                dirty: net::reduce_net_event(app, evt),
-            })
-        }
+        Action::Net(evt) => Ok(DispatchOutcome {
+            quit: false,
+            dirty: net::reduce_net_event(app, evt),
+        }),
         Action::Tick { now, term } => Ok(DispatchOutcome {
             quit: false,
             dirty: tick::reduce_tick(app, now, term),

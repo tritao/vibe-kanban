@@ -1,10 +1,10 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use crate::prefs::save_prefs;
-use crate::state::{AppState, FocusPane, LogMode, LogRenderMode, LogViewMode};
-
-use super::focus;
-use super::modals;
+use super::{focus, modals};
+use crate::{
+    prefs::save_prefs,
+    state::{AppState, FocusPane, LogMode, LogRenderMode, LogViewMode},
+};
 
 pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bool, bool)> {
     match (key.code, key.modifiers) {

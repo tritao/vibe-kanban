@@ -8,14 +8,16 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
-use crate::fmt::short_time;
-use crate::selection::{
-    exec_list, filtered_projects, find_task, projects_list, task_index_in, tasks_by_status,
-    tasks_filtered_base,
+use crate::{
+    events::StreamStatus,
+    fmt::short_time,
+    render::render_task_line,
+    selection::{
+        exec_list, filtered_projects, find_task, projects_list, task_index_in, tasks_by_status,
+        tasks_filtered_base,
+    },
+    state::{AppState, FocusPane, TaskRow, TaskStatus},
 };
-use crate::events::StreamStatus;
-use crate::render::render_task_line;
-use crate::state::{AppState, FocusPane, TaskRow, TaskStatus};
 
 pub(crate) fn render_projects_pane(f: &mut Frame, app: &AppState, area: ratatui::layout::Rect) {
     let border_style = Style::default();
@@ -200,7 +202,8 @@ pub(crate) fn render_details_pane(f: &mut Frame, app: &AppState, area: ratatui::
     let attempts_items: Vec<ListItem> = if app.board.attempts.is_empty() {
         vec![ListItem::new(Line::from("No attempts"))]
     } else {
-        app.board.attempts
+        app.board
+            .attempts
             .iter()
             .map(|a| {
                 let when = a.created_at.as_deref().and_then(short_time).unwrap_or("");
@@ -317,8 +320,7 @@ pub(crate) fn render_logs_pane(f: &mut Frame, app: &AppState, area: ratatui::lay
     let start = len.saturating_sub(visible + offset);
     let end = len.saturating_sub(offset);
 
-    let mut text: Vec<Line<'static>> =
-        app.exec.log_lines.get(start..end).unwrap_or(&[]).to_vec();
+    let mut text: Vec<Line<'static>> = app.exec.log_lines.get(start..end).unwrap_or(&[]).to_vec();
     if text.is_empty() {
         text.push(Line::from("No logs"));
     }

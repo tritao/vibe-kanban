@@ -3,12 +3,15 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::diff::highlight_unified_diff;
-use crate::state::{DiffTheme, LogMode, LogRenderMode};
-use crate::text::{line_display_width, sanitize_tui_text, truncate_to_width, wrap_line_wordwise};
-
-use super::buffer::{LogAssemblerState, LogKind, ProgressKind};
-use super::markdown::{render_markdown, MdSoftBreakMode};
+use super::{
+    buffer::{LogAssemblerState, LogKind, ProgressKind},
+    markdown::{MdSoftBreakMode, render_markdown},
+};
+use crate::{
+    diff::highlight_unified_diff,
+    state::{DiffTheme, LogMode, LogRenderMode},
+    text::{line_display_width, sanitize_tui_text, truncate_to_width, wrap_line_wordwise},
+};
 
 pub(crate) fn default_collapsed_for_log_entry(entry: &serde_json::Value) -> bool {
     const THRESHOLD_LINES: usize = 24;

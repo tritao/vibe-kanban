@@ -1,5 +1,7 @@
-use crate::layout::{compute_main_layout, current_terminal_rect};
-use crate::state::{AppState, FocusPane};
+use crate::{
+    layout::{compute_main_layout, current_terminal_rect},
+    state::{AppState, FocusPane},
+};
 
 fn exec_visible_lines() -> usize {
     let layout = compute_main_layout(current_terminal_rect(), FocusPane::Execution);

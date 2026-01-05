@@ -1,13 +1,13 @@
 use std::time::Instant;
 
 use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::layout::Rect;
-use ratatui::style::Color;
-
-use crate::layout::current_terminal_rect;
-use crate::state::{AppState, CreateTaskFocus, CreateTaskState, TaskStatus};
+use ratatui::{layout::Rect, style::Color};
 
 use super::text_edit;
+use crate::{
+    layout::current_terminal_rect,
+    state::{AppState, CreateTaskFocus, CreateTaskState, TaskStatus},
+};
 
 pub(super) fn handle_create_task_key(app: &mut AppState, key: KeyEvent) {
     let Some(mut state) = app.ui.create_task.take() else {
@@ -18,7 +18,8 @@ pub(super) fn handle_create_task_key(app: &mut AppState, key: KeyEvent) {
     let mut close = false;
     let mut submit = false;
 
-    let can_create = app.board.selected_project_id.is_some() && !state.title.buffer.trim().is_empty();
+    let can_create =
+        app.board.selected_project_id.is_some() && !state.title.buffer.trim().is_empty();
 
     match (key.code, key.modifiers) {
         (KeyCode::Esc, _) => {
@@ -211,12 +212,16 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
                     .send(crate::events::NetEvent::TaskCreated { task_id, status })
                     .await;
                 let _ = net_tx
-                    .send(crate::events::NetEvent::Notice(format!("Created task: {title}")))
+                    .send(crate::events::NetEvent::Notice(format!(
+                        "Created task: {title}"
+                    )))
                     .await;
             }
             Err(e) => {
                 let _ = net_tx
-                    .send(crate::events::NetEvent::Error(format!("create task failed: {e}")))
+                    .send(crate::events::NetEvent::Error(format!(
+                        "create task failed: {e}"
+                    )))
                     .await;
             }
         }

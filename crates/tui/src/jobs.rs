@@ -12,9 +12,7 @@ pub(crate) fn replace_job(app: &mut AppState, key: JobKey, job: tokio::task::Joi
 }
 
 pub(crate) fn job_running(app: &AppState, key: JobKey) -> bool {
-    app.jobs
-        .get(&key)
-        .is_some_and(|h| !h.is_finished())
+    app.jobs.get(&key).is_some_and(|h| !h.is_finished())
 }
 
 pub(crate) fn reap_finished_jobs(app: &mut AppState) -> bool {
@@ -22,4 +20,3 @@ pub(crate) fn reap_finished_jobs(app: &mut AppState) -> bool {
     app.jobs.retain(|_, h| !h.is_finished());
     app.jobs.len() != before
 }
-

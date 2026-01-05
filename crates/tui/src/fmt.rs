@@ -24,4 +24,3 @@ pub(crate) fn truncate(s: &str, max: usize) -> String {
     out.push('…');
     out
 }
-

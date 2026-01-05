@@ -3,15 +3,16 @@ use std::time::Instant;
 use crossterm::event::{Event, KeyEventKind};
 use ratatui::style::Color;
 
-use crate::commands::{copy_to_clipboard_osc52, set_toast};
-use crate::events::UiEvent;
-use crate::state::AppState;
-
 pub(super) use super::selection as sel;
+use crate::{
+    commands::{copy_to_clipboard_osc52, set_toast},
+    events::UiEvent,
+    state::AppState,
+};
 
-mod copy;
 mod composer;
 mod confirm;
+mod copy;
 mod create_task;
 mod focus;
 mod keys;
@@ -53,7 +54,9 @@ pub(super) fn reduce_ui(
             }
             Ok(keys::reduce_key(app, key))
         }
-        UiEvent::Crossterm(Event::Mouse(mouse)) => Ok((false, mouse::reduce_mouse(app, mouse), vec![])),
+        UiEvent::Crossterm(Event::Mouse(mouse)) => {
+            Ok((false, mouse::reduce_mouse(app, mouse), vec![]))
+        }
         _ => Ok((false, false, vec![])),
     }
 }

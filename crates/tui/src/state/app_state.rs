@@ -4,13 +4,14 @@ use ratatui::text::Line;
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
-use crate::events::{NetEvent, StreamStatus};
-use crate::logs::{ExecLogBuffer, LogSelection};
-
 use super::types::{
-    AttemptRow, ConfirmState, CreateTaskState, DiffFocus, DiffTheme, FocusPane, GitOpState,
-    InputState, JobKey, LogMode, LogRenderMode, LogViewMode, RepoBranchStatus, TaskStatus,
-    TextFieldState, ToastState, TuiPrefs, PendingExecHook, ExecutorProfileSelection,
+    AttemptRow, ConfirmState, CreateTaskState, DiffFocus, DiffTheme, ExecutorProfileSelection,
+    FocusPane, GitOpState, InputState, JobKey, LogMode, LogRenderMode, LogViewMode,
+    PendingExecHook, RepoBranchStatus, TaskStatus, TextFieldState, ToastState, TuiPrefs,
+};
+use crate::{
+    events::{NetEvent, StreamStatus},
+    logs::{ExecLogBuffer, LogSelection},
 };
 
 pub(crate) struct BoardState {
@@ -50,7 +51,8 @@ pub(crate) struct ExecState {
     pub(crate) log_view_mode: LogViewMode,
     pub(crate) log_render_width: u16,
     pub(crate) log_target_render_width: u16,
-    pub(crate) log_prewarm_cursor: usize,
+    pub(crate) log_prewarm_job_width: Option<u16>,
+    pub(crate) log_prewarm_gen: u64,
     pub(crate) log_autoscroll: bool,
     pub(crate) log_scroll_offset: usize,
 
@@ -109,6 +111,7 @@ pub(crate) struct UiState {
 
     pub(crate) available_executors: Vec<String>,
     pub(crate) selected_executor_profile: Option<ExecutorProfileSelection>,
+    pub(crate) executor_profiles: serde_json::Value,
 }
 
 pub(crate) struct AppState {
@@ -177,6 +180,7 @@ impl AppState {
 
                 available_executors: vec![],
                 selected_executor_profile: None,
+                executor_profiles: serde_json::json!({}),
             },
 
             board: BoardState {
@@ -214,7 +218,8 @@ impl AppState {
                 log_view_mode: prefs.log_view_mode,
                 log_render_width: 0,
                 log_target_render_width: 0,
-                log_prewarm_cursor: 0,
+                log_prewarm_job_width: None,
+                log_prewarm_gen: 0,
                 log_autoscroll: true,
                 log_scroll_offset: 0,
                 log_line_targets: vec![],

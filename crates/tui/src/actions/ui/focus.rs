@@ -29,4 +29,3 @@ pub(super) fn cycle_focus(app: &mut AppState) {
         FocusPane::Diff => FocusPane::Board,
     };
 }
-

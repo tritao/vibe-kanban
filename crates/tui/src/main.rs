@@ -1,32 +1,36 @@
-mod text;
-mod diff;
-mod logs;
-mod ui;
-mod layout;
-mod render;
-mod util;
-mod net;
-mod app;
-mod fmt;
-mod cli_parse;
-mod events;
-mod state;
-mod selection;
-mod diff_preview;
-mod prefs;
-mod commands;
 mod actions;
+mod app;
+mod cli_parse;
+mod commands;
+mod diff;
+mod diff_preview;
+mod events;
+mod fmt;
 mod jobs;
+mod layout;
+mod logs;
+mod net;
+mod prefs;
+mod render;
+mod selection;
 mod slash;
+#[cfg(test)]
+mod slash_tests;
+mod state;
+mod text;
+mod ui;
+mod util;
 
 use std::time::Duration;
 
 use clap::Parser;
 use tokio::sync::mpsc;
 
-use crate::events::{NetEvent, UiEvent};
-use crate::net::ops::stop_exec_http;
-use crate::state::{AppState, ConfirmAction};
+use crate::{
+    events::{NetEvent, UiEvent},
+    net::ops::stop_exec_http,
+    state::{AppState, ConfirmAction},
+};
 
 #[derive(Parser, Debug, Clone)]
 #[command(name = "vibe-kanban-tui")]
@@ -48,7 +52,6 @@ struct Args {
     #[arg(long, default_value_t = false)]
     verbose: bool,
 }
-
 
 // Core shared state/types live in `state` (import directly from `crate::state` in modules).
 

@@ -7,7 +7,9 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::text::{display_width, push_span_merged, sanitize_tui_text, split_by_width, truncate_to_width};
+use crate::text::{
+    display_width, push_span_merged, sanitize_tui_text, split_by_width, truncate_to_width,
+};
 
 #[derive(Debug, Clone)]
 enum MdToken {
@@ -120,7 +122,11 @@ fn wrap_md_tokens(
     out
 }
 
-pub(crate) fn render_markdown(md: &str, width: usize, softbreak_mode: MdSoftBreakMode) -> Vec<Line<'static>> {
+pub(crate) fn render_markdown(
+    md: &str,
+    width: usize,
+    softbreak_mode: MdSoftBreakMode,
+) -> Vec<Line<'static>> {
     let md = sanitize_tui_text(md);
     let width = width.max(1);
 
@@ -436,4 +442,3 @@ pub(crate) fn render_markdown(md: &str, width: usize, softbreak_mode: MdSoftBrea
 
     out
 }
-

@@ -1,5 +1,7 @@
-use std::io;
-use std::time::{Duration, Instant};
+use std::{
+    io,
+    time::{Duration, Instant},
+};
 
 use anyhow::Context;
 use clap::Parser;
@@ -12,13 +14,16 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
-use crate::events::{NetEvent, UiEvent};
-use crate::layout::current_terminal_rect;
-use crate::prefs::load_prefs;
-use crate::render;
-use crate::state::{AppState, LogMode};
-use crate::{Args, net, spawn_input_reader, spawn_tick};
-use crate::actions::{dispatch, Action};
+use crate::{
+    Args,
+    actions::{Action, dispatch},
+    events::{NetEvent, UiEvent},
+    layout::current_terminal_rect,
+    net,
+    prefs::load_prefs,
+    render, spawn_input_reader, spawn_tick,
+    state::{AppState, LogMode},
+};
 
 struct TerminalGuard;
 

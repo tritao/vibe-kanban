@@ -1,11 +1,10 @@
 use crossterm::event::MouseEvent;
 
-use crate::layout::rect_contains;
-use crate::state::AppState;
-
-use super::hit_test::log_entry_hit_at;
-use super::super::focus;
-use super::super::sel;
+use super::{
+    super::{focus, sel},
+    hit_test::log_entry_hit_at,
+};
+use crate::{layout::rect_contains, state::AppState};
 
 pub(super) fn handle_exec_left_click(
     app: &mut AppState,
@@ -62,7 +61,9 @@ pub(super) fn handle_exec_left_click(
             app.ui.composer.set_end();
         }
 
-        app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
+        app.ui
+            .composer
+            .ensure_cursor_visible(content_w, inner_h.max(1));
         return true;
     }
 

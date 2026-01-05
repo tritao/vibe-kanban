@@ -1,11 +1,12 @@
 use uuid::Uuid;
 
-use crate::events::NetEvent;
-use crate::selection::{find_task, tasks_by_status, tasks_filtered_base};
-use crate::state::{AppState, TaskRow, TaskStatus};
-use crate::ui::board::BoardHit;
-
 use super::ids::{select_attempt, select_task};
+use crate::{
+    events::NetEvent,
+    selection::{find_task, tasks_by_status, tasks_filtered_base},
+    state::{AppState, TaskRow, TaskStatus},
+    ui::board::BoardHit,
+};
 pub(in crate::actions) fn ensure_selected_task_in_active_column(app: &mut AppState) {
     let tasks = tasks_filtered_base(app);
     if tasks.is_empty() {
@@ -33,7 +34,8 @@ pub(in crate::actions) fn ensure_selected_task_in_active_column(app: &mut AppSta
         return;
     }
 
-    let idx = app.board.board_index_by_status[app.board.tasks_active_column.idx()].min(list.len() - 1);
+    let idx =
+        app.board.board_index_by_status[app.board.tasks_active_column.idx()].min(list.len() - 1);
     select_task(app, Some(list[idx].id));
 }
 
@@ -46,7 +48,11 @@ pub(in crate::actions) fn select_adjacent_attempt(app: &mut AppState, delta: i32
         .board
         .selected_attempt_id
         .and_then(|id| app.board.attempts.iter().position(|a| a.id == id))
-        .unwrap_or(app.board.selected_attempt_index.min(app.board.attempts.len() - 1));
+        .unwrap_or(
+            app.board
+                .selected_attempt_index
+                .min(app.board.attempts.len() - 1),
+        );
 
     let next = crate::selection::clamp_index(cur, delta, app.board.attempts.len());
     if next == cur {

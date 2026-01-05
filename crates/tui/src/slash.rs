@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::selection::clamp_index;
-use crate::state::{AppState, RepoBranchStatus};
+use crate::{
+    selection::clamp_index,
+    state::{AppState, RepoBranchStatus},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct FlagSpec {
@@ -74,6 +76,12 @@ const ABORT_FLAGS: &[FlagSpec] = &[FlagSpec {
 const RESOLVE_FLAGS: &[FlagSpec] = &[FlagSpec {
     name: "--repo",
     desc: "repo name or index",
+    takes_value: true,
+}];
+
+const MODEL_FLAGS: &[FlagSpec] = &[FlagSpec {
+    name: "--effort",
+    desc: "reasoning effort",
     takes_value: true,
 }];
 
@@ -161,6 +169,15 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         subcommands: EMPTY_SUBS,
         help_syntax: "/help",
         usage: None,
+    },
+    CommandSpec {
+        name: "quit",
+        aliases: &["exit"],
+        desc: "exit the app",
+        flags: EMPTY_FLAGS,
+        subcommands: EMPTY_SUBS,
+        help_syntax: "/quit",
+        usage: Some("usage: /quit"),
     },
     CommandSpec {
         name: "status",
@@ -256,6 +273,15 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         help_syntax: "/executor <name> [--variant V]",
         usage: Some("usage: /executor <name> [--variant V]"),
     },
+    CommandSpec {
+        name: "model",
+        aliases: &[],
+        desc: "set model / reasoning effort",
+        flags: MODEL_FLAGS,
+        subcommands: EMPTY_SUBS,
+        help_syntax: "/model <MODEL> [--effort E]",
+        usage: Some("usage: /model <MODEL> [--effort E]"),
+    },
 ];
 
 pub(crate) fn usage_for_command(cmd: &str) -> Option<&'static str> {
@@ -271,7 +297,9 @@ pub(crate) fn help_syntax_for_command(cmd: &str) -> Option<&'static str> {
 }
 
 pub(crate) fn flags_for_command(cmd: &str) -> &'static [FlagSpec] {
-    find_command_spec(cmd).map(|c| c.flags).unwrap_or(EMPTY_FLAGS)
+    find_command_spec(cmd)
+        .map(|c| c.flags)
+        .unwrap_or(EMPTY_FLAGS)
 }
 
 pub(crate) fn flags_for_subcommand(cmd: &str, sub: &str) -> Option<&'static [FlagSpec]> {
@@ -403,18 +431,15 @@ pub(crate) fn unknown_subcommand_error(cmd: &str, sub: &str) -> String {
 
     match subs.as_slice() {
         [only] => format!("unknown subcommand: {cmd} {sub} (did you mean {cmd} {only}?)"),
-        _ => format!(
-            "unknown subcommand: {cmd} {sub} (try {})",
-            spec.help_syntax
-        ),
+        _ => format!("unknown subcommand: {cmd} {sub} (try {})", spec.help_syntax),
     }
 }
 
 fn find_command_spec(token: &str) -> Option<&'static CommandSpec> {
     let t = token.to_ascii_lowercase();
-    COMMAND_SPECS.iter().find(|c| {
-        c.name == t || c.aliases.iter().any(|a| a.to_ascii_lowercase() == t)
-    })
+    COMMAND_SPECS
+        .iter()
+        .find(|c| c.name == t || c.aliases.iter().any(|a| a.to_ascii_lowercase() == t))
 }
 
 #[derive(Debug, Clone)]
@@ -449,7 +474,11 @@ pub(crate) fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
     let (tokens, current, ends_with_space) = split_for_completion(&app.ui.composer.buffer);
 
     let current_lower = current.to_ascii_lowercase();
-    let used_flags: HashSet<&str> = tokens.iter().copied().filter(|t| t.starts_with("--")).collect();
+    let used_flags: HashSet<&str> = tokens
+        .iter()
+        .copied()
+        .filter(|t| t.starts_with("--"))
+        .collect();
 
     let mut out: Vec<CompletionItem> = vec![];
 
@@ -482,7 +511,10 @@ pub(crate) fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
         for (idx, r) in repos.iter().enumerate() {
             let name = r.repo_name.as_str();
             let name_l = name.to_ascii_lowercase();
-            if current_is_empty || name_l.starts_with(current_lower) || name_l.contains(current_lower) {
+            if current_is_empty
+                || name_l.starts_with(current_lower)
+                || name_l.contains(current_lower)
+            {
                 out.push(CompletionItem {
                     insert: format!("{name} "),
                     desc: "repo".to_string(),
@@ -537,7 +569,12 @@ pub(crate) fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
 
     match cmd_spec.name {
         "repo" => {
-            push_repos(&mut out, &app.diff.repo_statuses, &current_lower, current_is_empty);
+            push_repos(
+                &mut out,
+                &app.diff.repo_statuses,
+                &current_lower,
+                current_is_empty,
+            );
         }
         "pr" => {
             if tokens.len() == 1 {
@@ -555,9 +592,20 @@ pub(crate) fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
                 };
 
                 if tokens.last().is_some_and(|t| *t == "--repo") {
-                    push_repos(&mut out, &app.diff.repo_statuses, &current_lower, current_is_empty);
+                    push_repos(
+                        &mut out,
+                        &app.diff.repo_statuses,
+                        &current_lower,
+                        current_is_empty,
+                    );
                 } else if current.starts_with("--") || ends_with_space {
-                    push_flags(&mut out, sub.flags, &used_flags, &current_lower, current_is_empty);
+                    push_flags(
+                        &mut out,
+                        sub.flags,
+                        &used_flags,
+                        &current_lower,
+                        current_is_empty,
+                    );
                 }
             }
         }
@@ -579,14 +627,139 @@ pub(crate) fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
                 }
             }
             if current.starts_with("--") || ends_with_space || tokens.len() >= 2 {
-                push_flags(&mut out, cmd_spec.flags, &used_flags, &current_lower, current_is_empty);
+                push_flags(
+                    &mut out,
+                    cmd_spec.flags,
+                    &used_flags,
+                    &current_lower,
+                    current_is_empty,
+                );
+            }
+        }
+        "model" => {
+            let selection = app.ui.selected_executor_profile.as_ref();
+            let execs = app.ui.executor_profiles.as_object();
+
+            let mut exec_key: Option<&str> = None;
+            if let (Some(sel), Some(execs)) = (selection, execs) {
+                exec_key = execs
+                    .keys()
+                    .find(|k| k.eq_ignore_ascii_case(&sel.executor))
+                    .map(|s| s.as_str())
+                    .or(Some(sel.executor.as_str()));
+            }
+
+            let wants_effort = tokens.last().is_some_and(|t| *t == "--effort")
+                || tokens
+                    .get(tokens.len().saturating_sub(2))
+                    .is_some_and(|t| *t == "--effort");
+
+            let allowed_efforts: &[&str] =
+                match exec_key.unwrap_or("").to_ascii_lowercase().as_str() {
+                    "codex" => &["low", "medium", "high", "xhigh"],
+                    "droid" => &["none", "dynamic", "off", "low", "medium", "high"],
+                    _ => &["low", "medium", "high"],
+                };
+
+            if wants_effort {
+                for e in allowed_efforts {
+                    if current_is_empty || e.starts_with(&current_lower) {
+                        out.push(CompletionItem {
+                            insert: format!("{e} "),
+                            desc: "effort".to_string(),
+                        });
+                    }
+                }
+                return out;
+            }
+
+            // Suggest models for the first positional argument, then flags.
+            if tokens.len() == 1 && !current.starts_with("--") {
+                if let (Some(sel), Some(execs)) = (selection, execs) {
+                    let key = execs
+                        .keys()
+                        .find(|k| k.eq_ignore_ascii_case(&sel.executor))
+                        .cloned()
+                        .unwrap_or_else(|| sel.executor.clone());
+                    if let Some(variants) = execs.get(&key).and_then(|v| v.as_object()) {
+                        let mut models: HashSet<String> = HashSet::new();
+                        for variant in variants.values() {
+                            let Some(vobj) = variant.as_object() else {
+                                continue;
+                            };
+                            let nested_key =
+                                vobj.keys().find(|k| k.eq_ignore_ascii_case(&key)).cloned();
+                            let Some(nested_key) = nested_key else {
+                                continue;
+                            };
+                            let Some(cfg) = vobj.get(&nested_key).and_then(|v| v.as_object())
+                            else {
+                                continue;
+                            };
+                            if let Some(m) = cfg.get("model").and_then(|v| v.as_str()) {
+                                if !m.trim().is_empty() {
+                                    models.insert(m.to_string());
+                                }
+                            }
+                        }
+                        let mut models: Vec<String> = models.into_iter().collect();
+                        models.sort();
+                        for m in models {
+                            let m_l = m.to_ascii_lowercase();
+                            if current_is_empty
+                                || m_l.starts_with(&current_lower)
+                                || m_l.contains(&current_lower)
+                            {
+                                out.push(CompletionItem {
+                                    insert: format!("{m} "),
+                                    desc: "model".to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Also allow picking effort directly without the intermediate `--effort` step.
+            // We only show this when completing the first arg (so it doesn't spam in other positions).
+            if tokens.len() == 1 && !current.starts_with("--") {
+                for e in allowed_efforts {
+                    if current_is_empty || e.starts_with(&current_lower) {
+                        out.push(CompletionItem {
+                            insert: format!("--effort {e} "),
+                            desc: "effort".to_string(),
+                        });
+                    }
+                }
+            }
+
+            // Only suggest flags when the user starts typing a flag.
+            if current.starts_with("--") {
+                push_flags(
+                    &mut out,
+                    cmd_spec.flags,
+                    &used_flags,
+                    &current_lower,
+                    current_is_empty,
+                );
             }
         }
         _ => {
             if tokens.last().is_some_and(|t| *t == "--repo") {
-                push_repos(&mut out, &app.diff.repo_statuses, &current_lower, current_is_empty);
+                push_repos(
+                    &mut out,
+                    &app.diff.repo_statuses,
+                    &current_lower,
+                    current_is_empty,
+                );
             } else if current.starts_with("--") || ends_with_space {
-                push_flags(&mut out, cmd_spec.flags, &used_flags, &current_lower, current_is_empty);
+                push_flags(
+                    &mut out,
+                    cmd_spec.flags,
+                    &used_flags,
+                    &current_lower,
+                    current_is_empty,
+                );
             }
         }
     }
@@ -621,7 +794,10 @@ pub(crate) fn apply_composer_autocomplete(app: &mut AppState) -> bool {
     let idx = app.ui.composer_suggest_index.min(items.len() - 1);
     let insert = items[idx].insert.as_str();
 
-    let cursor = crate::text::edit::clamp_cursor_to_boundary(&app.ui.composer.buffer, app.ui.composer.cursor);
+    let cursor = crate::text::edit::clamp_cursor_to_boundary(
+        &app.ui.composer.buffer,
+        app.ui.composer.cursor,
+    );
     let buf_head = app.ui.composer.buffer.get(..cursor).unwrap_or("");
     let mut token_start = buf_head
         .char_indices()
@@ -636,7 +812,10 @@ pub(crate) fn apply_composer_autocomplete(app: &mut AppState) -> bool {
         }
     }
 
-    app.ui.composer.buffer.replace_range(token_start..cursor, insert);
+    app.ui
+        .composer
+        .buffer
+        .replace_range(token_start..cursor, insert);
     app.ui.composer.cursor = token_start + insert.len();
     app.ui.composer.goal_col = None;
     app.ui.composer_suggest_index = 0;

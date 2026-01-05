@@ -1,17 +1,18 @@
 use std::time::{Duration, Instant};
 
-use ratatui::layout::Rect;
-use ratatui::text::Line;
+use ratatui::{layout::Rect, text::Line};
 
-use crate::commands::update_git_activity_indicators;
-use crate::diff_preview::{
-    diff_preview_refresh_ready, request_diff_preview_async, schedule_diff_preview_refresh,
+use crate::{
+    commands::update_git_activity_indicators,
+    diff_preview::{
+        diff_preview_refresh_ready, request_diff_preview_async, schedule_diff_preview_refresh,
+    },
+    jobs::{job_running, reap_finished_jobs, replace_job},
+    layout::{clamp_scroll_offsets, compute_main_layout},
+    logs::flush_log_buffers,
+    selection::exec_list,
+    state::{AppState, JobKey},
 };
-use crate::jobs::{job_running, reap_finished_jobs};
-use crate::layout::{clamp_scroll_offsets, compute_main_layout};
-use crate::logs::{flush_log_buffers, prewarm_log_cache_for_exec};
-use crate::state::{AppState, JobKey};
-use crate::selection::exec_list;
 
 pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool {
     let mut dirty = false;
@@ -25,7 +26,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     let target_width = inner_width;
     if app.exec.log_target_render_width != target_width {
         app.exec.log_target_render_width = target_width;
-        app.exec.log_prewarm_cursor = 0;
+        app.exec.log_prewarm_job_width = None;
     }
     if app.exec.log_render_width == 0 {
         app.exec.log_render_width = target_width;
@@ -48,22 +49,60 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
             .selected_exec_id
             .or_else(|| execs.last().map(|e| e.id));
 
-        // Prewarm one buffer per tick (round-robin over visible execs).
+        let target_width = app.exec.log_target_render_width;
         let include: Vec<uuid::Uuid> = match app.exec.log_view_mode {
             crate::state::LogViewMode::Single => primary_opt.into_iter().collect(),
             crate::state::LogViewMode::Timeline => execs.iter().map(|e| e.id).collect(),
         };
-        if !include.is_empty() {
-            let idx = app.exec.log_prewarm_cursor % include.len();
-            let id = include[idx];
-            prewarm_log_cache_for_exec(app, id, app.exec.log_target_render_width as usize);
-            app.exec.log_prewarm_cursor = app.exec.log_prewarm_cursor.wrapping_add(1);
+
+        if !job_running(app, JobKey::LogPrewarm)
+            || app.exec.log_prewarm_job_width != Some(target_width)
+        {
+            app.exec.log_prewarm_job_width = Some(target_width);
+            app.exec.log_prewarm_gen = app.exec.log_prewarm_gen.wrapping_add(1);
+            let generation = app.exec.log_prewarm_gen;
+            let log_mode = app.exec.log_mode;
+            let render_mode = app.exec.log_render_mode;
+            let diff_theme = app.diff.diff_theme;
+            let net_tx = app.net_tx.clone();
+
+            let mut snapshot: Vec<(uuid::Uuid, serde_json::Value, Vec<bool>)> = vec![];
+            for id in include.iter().copied() {
+                if let Some(buf) = app.exec.log_buffers.get(&id) {
+                    snapshot.push((id, buf.store.clone(), buf.collapsed.clone()));
+                }
+            }
+
+            replace_job(
+                app,
+                JobKey::LogPrewarm,
+                tokio::task::spawn_blocking(move || {
+                    for (exec_id, store, collapsed) in snapshot {
+                        let cache = crate::logs::buffer::build_prepared_log_cache(
+                            &store,
+                            &collapsed,
+                            target_width as usize,
+                            log_mode,
+                            render_mode,
+                            diff_theme,
+                        );
+                        let _ = net_tx.blocking_send(crate::events::NetEvent::LogPrewarmReady {
+                            exec_id,
+                            width: target_width,
+                            generation,
+                            cache,
+                        });
+                    }
+                }),
+            );
         }
 
-        // If the primary execution's cache is ready for the target width, swap.
+        // If the primary execution has a cache for the target width, swap. Even if it becomes
+        // dirty due to new incoming logs, the incremental rebuild is much cheaper than a full
+        // rebuild on focus changes.
         if let Some(primary_id) = primary_opt {
             if let Some(buf) = app.exec.log_buffers.get(&primary_id) {
-                if buf.cache_ready(app.exec.log_target_render_width) {
+                if buf.cache_exists(target_width) {
                     app.exec.log_render_width = app.exec.log_target_render_width;
                     app.exec.log_view_dirty = true;
                     dirty = true;

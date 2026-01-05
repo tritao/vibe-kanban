@@ -1,17 +1,19 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
 };
 
-use crate::layout::compute_main_layout;
-use crate::state::{AppState, TaskRow};
-use crate::ui::{
-    render_board_pane, render_bottom_bar, render_composer_autocomplete, render_confirm_modal,
-    render_create_task_modal, render_diff_pane, render_execution_pane, render_help_modal,
-    render_input_modal, render_top_bar,
+use crate::{
+    layout::compute_main_layout,
+    state::{AppState, TaskRow},
+    ui::{
+        render_board_pane, render_bottom_bar, render_composer_autocomplete, render_confirm_modal,
+        render_create_task_modal, render_diff_pane, render_execution_pane, render_help_modal,
+        render_input_modal, render_top_bar,
+    },
 };
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
 
 mod legacy;
 

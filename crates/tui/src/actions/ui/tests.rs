@@ -1,7 +1,9 @@
 use tokio::sync::{mpsc, watch};
 
-use crate::events::{NetEvent, UiEvent};
-use crate::state::{AppState, DiffFocus, FocusPane, InputMode, InputState, LogMode, TextFieldState};
+use crate::{
+    events::{NetEvent, UiEvent},
+    state::{AppState, DiffFocus, FocusPane, InputMode, InputState, LogMode, TextFieldState},
+};
 
 fn mk_app() -> AppState {
     let (net_tx, _net_rx) = mpsc::channel::<NetEvent>(8);
@@ -51,9 +53,11 @@ fn copy_diff_files_emits_copy_effect() {
     )
     .unwrap();
     assert!(!quit);
-    assert!(effects
-        .iter()
-        .any(|e| matches!(e, super::Effect::CopyOsc52(s) if s == "a.txt")));
+    assert!(
+        effects
+            .iter()
+            .any(|e| matches!(e, super::Effect::CopyOsc52(s) if s == "a.txt"))
+    );
 }
 
 #[test]
@@ -107,3 +111,28 @@ fn search_char_updates_filter() {
     assert_eq!(app.board.task_filter, "abc");
 }
 
+#[test]
+fn composer_enter_applies_slash_autocomplete_instead_of_submit() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+    let mut app = mk_app();
+    app.ui.focus = FocusPane::Execution;
+    app.ui.composer_active = true;
+    app.ui.composer.buffer = "/he".to_string();
+    app.ui.composer.set_end();
+
+    let (quit, dirty, _effects) = super::reduce_ui(
+        &mut app,
+        UiEvent::Crossterm(Event::Key(KeyEvent::new_with_kind(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+            KeyEventKind::Press,
+        ))),
+    )
+    .unwrap();
+
+    assert!(!quit);
+    assert!(dirty);
+    assert_eq!(app.ui.composer.buffer, "/help ");
+    assert!(app.ui.composer_active);
+}

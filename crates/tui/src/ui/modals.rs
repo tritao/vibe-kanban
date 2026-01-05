@@ -6,8 +6,10 @@ use ratatui::{
 };
 
 use super::layout::centered_rect;
-use crate::text::{display_width, slice_by_display_cols};
-use crate::state::{ConfirmState, InputMode, InputState};
+use crate::{
+    state::{ConfirmState, InputMode, InputState},
+    text::{display_width, slice_by_display_cols},
+};
 
 pub(crate) fn render_help_modal(f: &mut Frame) {
     let area = centered_rect(70, 70, f.area());
@@ -55,7 +57,11 @@ pub(crate) fn render_help_modal(f: &mut Frame) {
         Line::from(""),
         Line::from("Slash commands"),
     ];
-    lines.extend(crate::slash::help_section_lines().into_iter().map(Line::from));
+    lines.extend(
+        crate::slash::help_section_lines()
+            .into_iter()
+            .map(Line::from),
+    );
     lines.extend([
         Line::from(""),
         Line::from("Diff (right)"),
@@ -125,9 +131,7 @@ pub(crate) fn render_input_modal(f: &mut Frame, input: &InputState) {
     let mut take = content_w.saturating_sub(left as usize);
     if start_col.saturating_add(take) < buf_w {
         right = true;
-        take = content_w
-            .saturating_sub(left as usize)
-            .saturating_sub(1);
+        take = content_w.saturating_sub(left as usize).saturating_sub(1);
     }
 
     let mut visible = String::new();

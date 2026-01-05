@@ -8,23 +8,26 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, Paragraph},
 };
 
-use crate::diff::{diff_rows_with_all, DIFF_ALL_KEY};
-use crate::layout::{compute_main_layout, current_terminal_rect, rect_contains};
-use crate::commands::{
-    begin_git_op, request_branch_status_refresh, resolve_repo_for_command, set_toast,
-    trigger_abort_conflicts,
+use crate::{
+    commands::{
+        begin_git_op, open_url, request_branch_status_refresh, resolve_repo_for_command, set_toast,
+        trigger_abort_conflicts,
+    },
+    diff::{DIFF_ALL_KEY, diff_rows_with_all},
+    events::{GitOpKind, NetEvent, StreamStatus},
+    layout::{compute_main_layout, current_terminal_rect, rect_contains},
+    net::ops::{
+        CreateGitHubPrRequest, branch_status_http, create_pr_http, merge_task_attempt_http,
+        open_editor_http, rebase_task_attempt_http,
+    },
+    selection::find_task,
+    state::{
+        AppState, DiffFocus, FocusPane, Merge, MergeStatus, RepoBranchStatus,
+        build_resolve_conflicts_instructions,
+    },
+    text::{display_width, truncate_to_width},
+    util::window_for_list,
 };
-use crate::commands::open_url;
-use crate::net::ops::{
-    branch_status_http, create_pr_http, merge_task_attempt_http, open_editor_http,
-    rebase_task_attempt_http, CreateGitHubPrRequest,
-};
-use crate::selection::find_task;
-use crate::state::{AppState, DiffFocus, FocusPane, Merge, MergeStatus, RepoBranchStatus};
-use crate::state::build_resolve_conflicts_instructions;
-use crate::text::{display_width, truncate_to_width};
-use crate::events::{GitOpKind, NetEvent, StreamStatus};
-use crate::util::window_for_list;
 
 pub(crate) fn render_diff_pane(f: &mut Frame, app: &AppState, area: Rect) {
     let sections = Layout::default()
@@ -66,7 +69,10 @@ fn selected_repo_status_from_diff(app: &AppState) -> Option<usize> {
         .or(selected.old_path.as_deref())
         .unwrap_or(&selected.key);
     let repo = repo_name_from_path(path)?;
-    app.diff.repo_statuses.iter().position(|r| r.repo_name == repo)
+    app.diff
+        .repo_statuses
+        .iter()
+        .position(|r| r.repo_name == repo)
 }
 
 pub(crate) fn sync_selected_repo_from_diff_selection(app: &mut AppState) {
@@ -77,11 +83,13 @@ pub(crate) fn sync_selected_repo_from_diff_selection(app: &mut AppState) {
 
 fn repo_index_with_conflicts(app: &AppState) -> Option<usize> {
     let selected = app.diff.repo_statuses.get(app.diff.selected_repo_index);
-    if selected.is_some_and(|r| r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty())
+    if selected
+        .is_some_and(|r| r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty())
     {
         return Some(app.diff.selected_repo_index);
     }
-    app.diff.repo_statuses
+    app.diff
+        .repo_statuses
         .iter()
         .position(|r| r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty())
 }
@@ -121,7 +129,9 @@ fn git_kind_for_diff_action(action: DiffRepoAction) -> Option<GitOpKind> {
         DiffRepoAction::Rebase => Some(GitOpKind::Rebase),
         DiffRepoAction::CreatePr => Some(GitOpKind::CreatePr),
         DiffRepoAction::AbortConflicts => Some(GitOpKind::Abort),
-        DiffRepoAction::ResolveConflicts | DiffRepoAction::OpenConflict | DiffRepoAction::OpenPr => None,
+        DiffRepoAction::ResolveConflicts
+        | DiffRepoAction::OpenConflict
+        | DiffRepoAction::OpenPr => None,
     }
 }
 
@@ -183,7 +193,14 @@ fn repo_bar_button_specs(
             Merge::Pr(pr) => Some(pr.pr_info.url.clone()),
             _ => None,
         });
-        (ahead, behind, selected_has_conflicts, pr_open, pr_url, is_dirty)
+        (
+            ahead,
+            behind,
+            selected_has_conflicts,
+            pr_open,
+            pr_url,
+            is_dirty,
+        )
     } else {
         (0, 0, false, None, None, false)
     };
@@ -247,7 +264,8 @@ fn repo_bar_button_specs(
             let kind = git_kind_for_diff_action(action);
 
             let recently_done = done.is_some_and(|(done_kind, _, done_at)| {
-                kind == Some(done_kind) && now.saturating_duration_since(done_at) < Duration::from_secs(2)
+                kind == Some(done_kind)
+                    && now.saturating_duration_since(done_at) < Duration::from_secs(2)
             });
 
             let is_running = kind.is_some_and(|k| running_kind == Some(k));
@@ -273,8 +291,8 @@ fn repo_bar_button_specs(
                     .unwrap_or(now);
                 let elapsed = now.saturating_duration_since(started_at);
                 let secs = elapsed.as_secs().max(1);
-                let frame = GIT_SPINNER_FRAMES[((elapsed.as_millis() / 90) as usize)
-                    % GIT_SPINNER_FRAMES.len()];
+                let frame = GIT_SPINNER_FRAMES
+                    [((elapsed.as_millis() / 90) as usize) % GIT_SPINNER_FRAMES.len()];
                 rendered_label = format!("{label}… {frame} {secs}s");
             } else if recently_done {
                 let ok = done.map(|(_, ok, _)| ok).unwrap_or(true);
@@ -330,8 +348,18 @@ pub(crate) fn diff_repo_bar_action_at(
     );
     let branch = selected_attempt_branch(app);
 
-    let (repo_name, target_branch, ahead, behind, remote_ahead, remote_behind, dirty, untracked, conflicts, pr_open) =
-        if let Some(r) = repo {
+    let (
+        repo_name,
+        target_branch,
+        ahead,
+        behind,
+        remote_ahead,
+        remote_behind,
+        dirty,
+        untracked,
+        conflicts,
+        pr_open,
+    ) = if let Some(r) = repo {
         let ahead = r.status.commits_ahead.unwrap_or(0);
         let behind = r.status.commits_behind.unwrap_or(0);
         let remote_ahead = r.status.remote_commits_ahead.unwrap_or(0);
@@ -356,7 +384,18 @@ pub(crate) fn diff_repo_bar_action_at(
             pr_open,
         )
     } else {
-        ("(repo)".to_string(), "—".to_string(), 0, 0, 0, 0, 0, 0, 0, None)
+        (
+            "(repo)".to_string(),
+            "—".to_string(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            None,
+        )
     };
 
     let left_base = if repo.is_some() {
@@ -548,11 +587,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let inner_w = area.width.saturating_sub(2) as usize;
             let inner_h = area.height.saturating_sub(2) as usize;
             let prefix_w = crate::text::display_width("  ");
-            let content_w = inner_w
-                .saturating_sub(prefix_w)
-                .saturating_sub(1)
-                .max(1);
-            app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
+            let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
+            app.ui
+                .composer
+                .ensure_cursor_visible(content_w, inner_h.max(1));
             set_toast(
                 app,
                 format!("Conflicts: drafted resolution request ({})", repo.repo_name),
@@ -810,8 +848,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                         let _ = net_tx
                             .send(NetEvent::Notice(format!("Merged {repo_name}.")))
                             .await;
-                        if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await
-                        {
+                        if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                             let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                         }
                         let _ = net_tx
@@ -873,17 +910,12 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let base_url = app.backend_url.clone();
             let net_tx = app.net_tx.clone();
             tokio::spawn(async move {
-                match rebase_task_attempt_http(&base_url, attempt_id, repo_id, None, None)
-                    .await
-                {
+                match rebase_task_attempt_http(&base_url, attempt_id, repo_id, None, None).await {
                     Ok(()) => {
                         let _ = net_tx
-                            .send(NetEvent::Notice(format!(
-                                "Rebase started for {repo_name}."
-                            )))
+                            .send(NetEvent::Notice(format!("Rebase started for {repo_name}.")))
                             .await;
-                        if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await
-                        {
+                        if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                             let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                         }
                         let _ = net_tx.send(NetEvent::DiffReconnect).await;
@@ -984,8 +1016,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                                 "PR created for {repo_name}: {url}"
                             )))
                             .await;
-                        if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await
-                        {
+                        if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                             let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
                         }
                         let _ = net_tx
@@ -1032,8 +1063,18 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
     );
     let branch = selected_attempt_branch(app);
 
-    let (repo_name, target_branch, ahead, behind, remote_ahead, remote_behind, dirty, untracked, conflicts, pr_open) =
-        if let Some(r) = repo {
+    let (
+        repo_name,
+        target_branch,
+        ahead,
+        behind,
+        remote_ahead,
+        remote_behind,
+        dirty,
+        untracked,
+        conflicts,
+        pr_open,
+    ) = if let Some(r) = repo {
         let ahead = r.status.commits_ahead.unwrap_or(0);
         let behind = r.status.commits_behind.unwrap_or(0);
         let remote_ahead = r.status.remote_commits_ahead.unwrap_or(0);
@@ -1058,7 +1099,18 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
             pr_open,
         )
     } else {
-        ("(repo)".to_string(), "—".to_string(), 0, 0, 0, 0, 0, 0, 0, None)
+        (
+            "(repo)".to_string(),
+            "—".to_string(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            None,
+        )
     };
 
     let left_base = if repo.is_some() {
@@ -1159,7 +1211,11 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
             if !first {
                 spans.push(Span::raw(" "));
             }
-            spans.push(badge(format!("?{untracked}"), Color::Black, Color::LightCyan));
+            spans.push(badge(
+                format!("?{untracked}"),
+                Color::Black,
+                Color::LightCyan,
+            ));
             first = false;
         }
         if ahead > 0 {
@@ -1289,7 +1345,9 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
                     let mut spans: Vec<Span<'static>> = vec![];
                     spans.extend(label_spans(
                         "ALL",
-                        Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
                     ));
                     spans.push(Span::styled(
                         "All changes".to_string(),
@@ -1351,7 +1409,9 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
                 };
 
                 let (dir_part, base_part) = match path_display.rsplit_once('/') {
-                    Some((dir, base)) if !dir.is_empty() => (Some(dir.to_string()), base.to_string()),
+                    Some((dir, base)) if !dir.is_empty() => {
+                        (Some(dir.to_string()), base.to_string())
+                    }
                     _ => (None, path_display),
                 };
 

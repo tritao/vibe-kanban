@@ -11,9 +11,9 @@ use syntect::{
 };
 
 use crate::{
+    state::DiffTheme,
     text::{display_width, truncate_spans_to_width, wrap_spans_hard},
 };
-use crate::state::DiffTheme;
 
 fn syntect_syntax_set() -> &'static SyntaxSet {
     static SET: OnceLock<SyntaxSet> = OnceLock::new();

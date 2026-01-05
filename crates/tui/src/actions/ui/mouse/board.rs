@@ -1,13 +1,13 @@
 use crossterm::event::MouseEvent;
 
-use crate::layout::rect_contains;
-use crate::state::AppState;
-use crate::ui::board_hit_at;
+use super::super::{focus, sel};
+use crate::{layout::rect_contains, state::AppState, ui::board_hit_at};
 
-use super::super::focus;
-use super::super::sel;
-
-pub(super) fn handle_board_left_click(app: &mut AppState, mouse: MouseEvent, area: ratatui::layout::Rect) -> bool {
+pub(super) fn handle_board_left_click(
+    app: &mut AppState,
+    mouse: MouseEvent,
+    area: ratatui::layout::Rect,
+) -> bool {
     let col = mouse.column;
     let row = mouse.row;
     if !rect_contains(area, col, row) {

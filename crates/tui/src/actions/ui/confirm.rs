@@ -1,6 +1,5 @@
-use crate::state::{AppState, ConfirmAction, ConfirmState};
-
 use super::modals;
+use crate::state::{AppState, ConfirmAction, ConfirmState};
 
 pub(super) fn handle_confirm_key(app: &mut AppState, key: crossterm::event::KeyEvent) -> bool {
     let Some(confirm) = app.ui.confirm.as_ref() else {
@@ -37,4 +36,3 @@ pub(super) fn open_stop_exec_confirm(app: &mut AppState) -> bool {
     );
     true
 }
-

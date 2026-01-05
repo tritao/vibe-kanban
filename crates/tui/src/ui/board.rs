@@ -6,11 +6,13 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem},
 };
 
-use crate::layout::rect_contains;
-use crate::render::render_task_line;
-use crate::selection::{task_index_in, tasks_by_status, tasks_filtered_base};
-use crate::state::{AppState, FocusPane, TaskRow, TaskStatus};
-use crate::util::{board_statuses, window_for_list};
+use crate::{
+    layout::rect_contains,
+    render::render_task_line,
+    selection::{task_index_in, tasks_by_status, tasks_filtered_base},
+    state::{AppState, FocusPane, TaskRow, TaskStatus},
+    util::{board_statuses, window_for_list},
+};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BoardHit {
@@ -264,7 +266,8 @@ pub(crate) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
             } else {
                 0
             };
-            let (start, end, selected_in_window) = window_for_list(list.len(), selected_idx, height);
+            let (start, end, selected_in_window) =
+                window_for_list(list.len(), selected_idx, height);
             let visible = &list[start..end];
             let items = if visible.is_empty() {
                 vec![ListItem::new(Line::from("—"))]

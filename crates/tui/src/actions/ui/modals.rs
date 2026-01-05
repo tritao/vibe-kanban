@@ -1,7 +1,8 @@
-use crate::layout::{current_terminal_rect};
-use crate::state::{AppState, ConfirmState, InputMode, InputState, TextFieldState};
-
 use super::sel;
+use crate::{
+    layout::current_terminal_rect,
+    state::{AppState, ConfirmState, InputMode, InputState, TextFieldState},
+};
 
 pub(super) fn modal_blocks_mouse(app: &AppState) -> bool {
     app.ui.confirm.is_some() || app.ui.show_help || app.ui.create_task.is_some()
@@ -63,7 +64,9 @@ pub(super) fn open_composer(app: &mut AppState) {
     let inner_h = area.height.saturating_sub(2) as usize;
     let prefix_w = crate::text::display_width("  ");
     let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
-    app.ui.composer.ensure_cursor_visible(content_w, inner_h.max(1));
+    app.ui
+        .composer
+        .ensure_cursor_visible(content_w, inner_h.max(1));
 }
 
 pub(super) fn close_composer(app: &mut AppState) {

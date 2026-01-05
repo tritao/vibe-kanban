@@ -1,12 +1,11 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::prefs::save_prefs;
-use crate::state::{AppState, DiffFocus, FocusPane};
-use crate::ui::{trigger_diff_repo_action, DiffRepoAction};
-
-use super::focus;
-use super::scroll;
-use super::sel;
+use super::{focus, scroll, sel};
+use crate::{
+    prefs::save_prefs,
+    state::{AppState, DiffFocus, FocusPane},
+    ui::{DiffRepoAction, trigger_diff_repo_action},
+};
 
 pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool> {
     if app.ui.focus != FocusPane::Diff {
@@ -74,15 +73,11 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
             trigger_diff_repo_action(app, DiffRepoAction::OpenPr);
             Some(true)
         }
-        KeyCode::Up | KeyCode::Char('k')
-            if app.ui.diff_focus == DiffFocus::Files =>
-        {
+        KeyCode::Up | KeyCode::Char('k') if app.ui.diff_focus == DiffFocus::Files => {
             sel::select_adjacent_diff_file(app, -1);
             Some(true)
         }
-        KeyCode::Down | KeyCode::Char('j')
-            if app.ui.diff_focus == DiffFocus::Files =>
-        {
+        KeyCode::Down | KeyCode::Char('j') if app.ui.diff_focus == DiffFocus::Files => {
             sel::select_adjacent_diff_file(app, 1);
             Some(true)
         }
@@ -97,4 +92,3 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
         _ => None,
     }
 }
-

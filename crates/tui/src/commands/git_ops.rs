@@ -3,12 +3,13 @@ use std::time::{Duration, Instant};
 use ratatui::style::Color;
 use uuid::Uuid;
 
-use crate::events::{GitOpKind, NetEvent};
-use crate::jobs::replace_job;
-use crate::net::ops::branch_status_http;
-use crate::state::{AppState, GitOpState, PendingExecHook, ToastState};
-use crate::state::JobKey;
-use crate::selection::exec_list;
+use crate::{
+    events::{GitOpKind, NetEvent},
+    jobs::replace_job,
+    net::ops::branch_status_http,
+    selection::exec_list,
+    state::{AppState, GitOpState, JobKey, PendingExecHook, ToastState},
+};
 
 pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
     let Some(attempt_id) = app.board.selected_attempt_id else {
