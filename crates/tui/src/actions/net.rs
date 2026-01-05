@@ -10,7 +10,7 @@ use crate::{
     diff_preview::{diff_patch_touches_key, schedule_diff_preview_refresh},
     events::{NetEvent, StreamStatus},
     logs::{enqueue_log_patch, maybe_attach_pending_user_log, reset_logs},
-    state::AppState,
+    state::{AppState, ProjectSetupState},
     ui::sync_selected_repo_from_diff_selection,
 };
 
@@ -31,6 +31,12 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.ui.executor_profiles = profiles_executors;
             true
         }
+        NetEvent::ProjectCreated { project_id } => {
+            app.ui.project_setup = None;
+            app.ui.project_setup_dismissed = true;
+            sel::select_project(app, Some(project_id));
+            true
+        }
         NetEvent::ProjectsStreamStatus(status) => {
             app.board.projects_status = status;
             true
@@ -41,8 +47,22 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 app.board.projects_status = StreamStatus::Error;
                 return true;
             }
+            app.board.projects_loaded_once = true;
 
             sel::reconcile_projects_selection(app);
+            if app.board.projects_loaded_once
+                && crate::selection::lists_filters::projects_list(&app.board.projects_store)
+                    .is_empty()
+                && app.ui.project_setup.is_none()
+                && !app.ui.project_setup_dismissed
+            {
+                app.ui.project_setup = Some(ProjectSetupState {
+                    repo_path: app.ui.launch_repo_path.clone(),
+                    suggested_project_name: app.ui.launch_suggested_project_name.clone(),
+                    busy: false,
+                });
+                return true;
+            }
             true
         }
         NetEvent::TasksStreamStatus(status) => {
@@ -216,6 +236,9 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         }
         NetEvent::Error(msg) => {
             app.ui.last_error = Some(msg);
+            if let Some(state) = app.ui.project_setup.as_mut() {
+                state.busy = false;
+            }
             true
         }
     }

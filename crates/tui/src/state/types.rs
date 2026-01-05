@@ -129,6 +129,13 @@ pub(crate) struct ConfirmState {
     pub(crate) action: ConfirmAction,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ProjectSetupState {
+    pub(crate) repo_path: Option<String>,
+    pub(crate) suggested_project_name: String,
+    pub(crate) busy: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CreateTaskFocus {
     Title,

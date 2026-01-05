@@ -19,6 +19,7 @@ pub(crate) struct BoardState {
 
     pub(crate) projects_status: StreamStatus,
     pub(crate) projects_store: serde_json::Value,
+    pub(crate) projects_loaded_once: bool,
     pub(crate) selected_project_id: Option<Uuid>,
     pub(crate) selected_project_index: usize,
 
@@ -98,6 +99,10 @@ pub(crate) struct UiState {
     pub(crate) input: Option<InputState>,
     pub(crate) confirm: Option<ConfirmState>,
     pub(crate) create_task: Option<CreateTaskState>,
+    pub(crate) project_setup: Option<super::types::ProjectSetupState>,
+    pub(crate) project_setup_dismissed: bool,
+    pub(crate) launch_repo_path: Option<String>,
+    pub(crate) launch_suggested_project_name: String,
 
     pub(crate) composer_active: bool,
     pub(crate) composer: TextFieldState,
@@ -152,6 +157,31 @@ impl AppState {
         reconnect_tx: watch::Sender<u64>,
         prefs: TuiPrefs,
     ) -> Self {
+        let (launch_repo_path, launch_suggested_project_name) = {
+            let cwd = std::env::current_dir().ok();
+            let mut repo: Option<std::path::PathBuf> = None;
+            if let Some(mut cur) = cwd.clone() {
+                loop {
+                    if cur.join(".git").exists() {
+                        repo = Some(cur.clone());
+                        break;
+                    }
+                    if !cur.pop() {
+                        break;
+                    }
+                }
+            }
+            let suggested = repo
+                .as_ref()
+                .or(cwd.as_ref())
+                .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                .unwrap_or_else(|| "project".to_string());
+            (
+                repo.or(cwd).map(|p| p.to_string_lossy().to_string()),
+                suggested,
+            )
+        };
+
         let state = Self {
             backend_url,
             info_summary: "loading /api/info…".to_string(),
@@ -167,6 +197,10 @@ impl AppState {
                 input: None,
                 confirm: None,
                 create_task: None,
+                project_setup: None,
+                project_setup_dismissed: false,
+                launch_repo_path,
+                launch_suggested_project_name,
 
                 composer_active: false,
                 composer: Default::default(),
@@ -188,6 +222,7 @@ impl AppState {
 
                 projects_status: StreamStatus::Disconnected,
                 projects_store: serde_json::json!({ "projects": {} }),
+                projects_loaded_once: false,
                 selected_project_id: prefs.selected_project_id,
                 selected_project_index: 0,
 

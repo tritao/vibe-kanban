@@ -46,6 +46,67 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
         }
     }
 
+    // Project setup modal (shown when no projects exist yet).
+    if let Some(state) = app.ui.project_setup.as_mut() {
+        match key.code {
+            KeyCode::Esc => {
+                app.ui.project_setup = None;
+                app.ui.project_setup_dismissed = true;
+                return (false, true, vec![]);
+            }
+            KeyCode::Enter => {
+                if state.busy {
+                    return (false, false, vec![]);
+                }
+                let Some(repo_path) = state.repo_path.clone() else {
+                    app.ui.last_error = Some(
+                        "current directory is not a git repository (cd into a repo to create a project)"
+                            .to_string(),
+                    );
+                    return (false, true, vec![]);
+                };
+                state.busy = true;
+
+                let base_url = app.backend_url.clone();
+                let net_tx = app.net_tx.clone();
+                let name = state.suggested_project_name.clone();
+                let display_name = name.clone();
+
+                tokio::spawn(async move {
+                    match crate::net::ops::create_project_http(
+                        &base_url,
+                        &name,
+                        &repo_path,
+                        &display_name,
+                    )
+                    .await
+                    {
+                        Ok(project_id) => {
+                            let _ = net_tx
+                                .send(crate::events::NetEvent::ProjectCreated { project_id })
+                                .await;
+                            let _ = net_tx
+                                .send(crate::events::NetEvent::Notice(format!(
+                                    "Created project {name}."
+                                )))
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = net_tx
+                                .send(crate::events::NetEvent::Error(format!(
+                                    "create project failed: {e}"
+                                )))
+                                .await;
+                        }
+                    }
+                });
+
+                return (false, true, vec![]);
+            }
+            _ => return (false, false, vec![]),
+        }
+    }
+
     // Create-task modal.
     if app.ui.create_task.is_some() {
         create_task::handle_create_task_key(app, key);

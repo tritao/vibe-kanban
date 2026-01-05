@@ -14,4 +14,6 @@ pub(crate) use diff::{
     sync_selected_repo_from_diff_selection, trigger_diff_repo_action,
 };
 pub(crate) use execution::{render_composer_autocomplete, render_execution_pane};
-pub(crate) use modals::{render_confirm_modal, render_help_modal, render_input_modal};
+pub(crate) use modals::{
+    render_confirm_modal, render_help_modal, render_input_modal, render_project_setup_modal,
+};

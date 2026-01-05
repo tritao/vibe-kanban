@@ -28,9 +28,7 @@ pub(crate) async fn resolve_backend_url(args: &Args) -> anyhow::Result<String> {
 
     let port = if let Some(p) = args.port {
         p
-    } else if let Ok(port_str) =
-        std::env::var("BACKEND_PORT").or_else(|_| std::env::var("PORT"))
-    {
+    } else if let Ok(port_str) = std::env::var("BACKEND_PORT").or_else(|_| std::env::var("PORT")) {
         port_str.parse::<u16>().context("invalid port value")?
     } else {
         match read_port_file("vibe-kanban").await {

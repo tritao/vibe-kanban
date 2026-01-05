@@ -771,3 +771,40 @@ pub(crate) async fn open_editor_http(
     }
     Ok(api.data.and_then(|d| d.url))
 }
+
+pub(crate) async fn create_project_http(
+    base_url: &str,
+    name: &str,
+    repo_path: &str,
+    display_name: &str,
+) -> anyhow::Result<Uuid> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!("{}/api/projects", base_url.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "name": name,
+        "repositories": [
+            {
+                "display_name": display_name,
+                "git_repo_path": repo_path,
+            }
+        ],
+    });
+
+    let resp = client.post(url).json(&body).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected project create");
+    }
+    let proj = api
+        .into_data()
+        .ok_or_else(|| anyhow::anyhow!("missing project in create response"))?;
+    let id = proj
+        .get("id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| anyhow::anyhow!("missing project id in response"))?;
+    Ok(id)
+}

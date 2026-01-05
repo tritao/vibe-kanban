@@ -7,7 +7,7 @@ use ratatui::{
 
 use super::layout::centered_rect;
 use crate::{
-    state::{ConfirmState, InputMode, InputState},
+    state::{ConfirmState, InputMode, InputState, ProjectSetupState},
     text::{display_width, slice_by_display_cols},
 };
 
@@ -172,4 +172,44 @@ pub(crate) fn render_input_modal(f: &mut Frame, input: &InputState) {
         .min(area.x.saturating_add(area.width).saturating_sub(2));
     let y = area.y.saturating_add(1).saturating_add(2);
     f.set_cursor_position((x, y));
+}
+
+pub(crate) fn render_project_setup_modal(f: &mut Frame, state: &ProjectSetupState) {
+    let area = centered_rect(70, 35, f.area());
+    f.render_widget(Clear, area);
+
+    let repo_line = match state.repo_path.as_deref() {
+        Some(p) => format!("Repo: {p}"),
+        None => "Repo: (not a git repo)".to_string(),
+    };
+
+    let mut lines = vec![
+        Line::from(vec![Span::styled(
+            "No projects found",
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(repo_line),
+        Line::from(""),
+        Line::from(format!("Create project: {}", state.suggested_project_name)),
+        Line::from(""),
+    ];
+
+    if state.busy {
+        lines.push(Line::from("Creating project…"));
+    } else if state.repo_path.is_some() {
+        lines.push(Line::from("Enter = create project, Esc = dismiss"));
+    } else {
+        lines.push(Line::from("Cd into a git repo to create a project."));
+        lines.push(Line::from("Esc = dismiss"));
+    }
+
+    let p = Paragraph::new(lines)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Project Setup"),
+        )
+        .wrap(Wrap { trim: true });
+    f.render_widget(p, area);
 }

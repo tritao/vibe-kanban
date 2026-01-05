@@ -63,6 +63,9 @@ pub(crate) enum NetEvent {
         selected: Option<ExecutorProfileSelection>,
         profiles_executors: serde_json::Value,
     },
+    ProjectCreated {
+        project_id: Uuid,
+    },
     ProjectsStreamStatus(StreamStatus),
     ProjectsPatch(json_patch::Patch),
     TasksStreamStatus(StreamStatus),
