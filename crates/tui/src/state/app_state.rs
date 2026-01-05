@@ -158,7 +158,12 @@ impl AppState {
         prefs: TuiPrefs,
     ) -> Self {
         let (launch_repo_path, launch_suggested_project_name) = {
-            let cwd = std::env::current_dir().ok();
+            let launch_dir = std::env::var("VIBE_TUI_PROJECT_DIR")
+                .ok()
+                .or_else(|| std::env::var("VIBE_PROJECT_DIR").ok())
+                .filter(|s| !s.trim().is_empty())
+                .map(std::path::PathBuf::from);
+            let cwd = launch_dir.or_else(|| std::env::current_dir().ok());
             let mut repo: Option<std::path::PathBuf> = None;
             if let Some(mut cur) = cwd.clone() {
                 loop {
