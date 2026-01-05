@@ -28,10 +28,28 @@ pub(crate) async fn resolve_backend_url(args: &Args) -> anyhow::Result<String> {
 
     let port = if let Some(p) = args.port {
         p
-    } else if let Ok(port_str) = std::env::var("BACKEND_PORT").or_else(|_| std::env::var("PORT")) {
+    } else if let Ok(port_str) =
+        std::env::var("BACKEND_PORT").or_else(|_| std::env::var("PORT"))
+    {
         port_str.parse::<u16>().context("invalid port value")?
     } else {
-        read_port_file("vibe-kanban").await?
+        match read_port_file("vibe-kanban").await {
+            Ok(port) => port,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                let port_path = std::env::temp_dir()
+                    .join("vibe-kanban")
+                    .join("vibe-kanban.port");
+                return Err(anyhow::anyhow!(
+                    "Could not find backend port. Start the backend (e.g. `pnpm run dev`), or pass `--backend-url http://127.0.0.1:PORT`, or set `BACKEND_PORT`.\nMissing port file: {}",
+                    port_path.display()
+                ));
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to read backend port file: {e} (set `BACKEND_PORT` or pass `--backend-url`)"
+                ));
+            }
+        }
     };
 
     Ok(format!("http://{}:{}", host, port))
