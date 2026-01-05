@@ -42,10 +42,55 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             true
         }
         NetEvent::ProjectsPatch(patch) => {
+            fn ensure_projects_root(v: &mut serde_json::Value) {
+                if !v.is_object() {
+                    *v = serde_json::json!({});
+                }
+                let obj = v.as_object_mut().expect("object");
+                if !obj.contains_key("projects")
+                    || !obj.get("projects").is_some_and(|p| p.is_object())
+                {
+                    obj.insert("projects".to_string(), serde_json::json!({}));
+                }
+            }
+
+            fn patch_with_projects_upserts(patch: &json_patch::Patch) -> json_patch::Patch {
+                use json_patch::{AddOperation, PatchOperation, ReplaceOperation};
+                let mut out: Vec<PatchOperation> = Vec::with_capacity(patch.0.len());
+                for op in patch.iter() {
+                    match op {
+                        PatchOperation::Replace(ReplaceOperation { path, value }) => {
+                            let p = path.to_string();
+                            if p.starts_with("/projects/") {
+                                out.push(PatchOperation::Add(AddOperation {
+                                    path: path.clone(),
+                                    value: value.clone(),
+                                }));
+                            } else {
+                                out.push(PatchOperation::Replace(ReplaceOperation {
+                                    path: path.clone(),
+                                    value: value.clone(),
+                                }));
+                            }
+                        }
+                        other => out.push(other.clone()),
+                    }
+                }
+                json_patch::Patch(out)
+            }
+
+            ensure_projects_root(&mut app.board.projects_store);
             if let Err(e) = json_patch::patch(&mut app.board.projects_store, &patch) {
-                app.ui.last_error = Some(format!("failed to apply projects patch: {e}"));
-                app.board.projects_status = StreamStatus::Error;
-                return true;
+                // Fallback: treat project replaces as upserts to handle cases where we missed an
+                // insert patch but still receive a replace for that ID.
+                let patched = patch_with_projects_upserts(&patch);
+                if let Err(e2) = json_patch::patch(&mut app.board.projects_store, &patched) {
+                    app.ui.last_error = Some(format!(
+                        "failed to apply projects patch: {e} (fallback also failed: {e2})"
+                    ));
+                    app.board.projects_status = StreamStatus::Error;
+                    return true;
+                }
             }
             app.board.projects_loaded_once = true;
 
