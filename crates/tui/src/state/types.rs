@@ -12,6 +12,8 @@ pub(crate) enum JobKey {
     BranchStatus,
     BranchStatusAuto,
     StackStatus,
+    CommitList,
+    CommitPreview,
     LogPrewarm,
 }
 
@@ -106,6 +108,12 @@ pub(crate) enum DiffFocus {
     Preview,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DiffListMode {
+    Files,
+    Commits,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct StackPatchEntry {
     pub(crate) name: String,
@@ -120,6 +128,15 @@ pub(crate) struct StackStatusResponse {
     pub(crate) available: bool,
     pub(crate) enabled: bool,
     pub(crate) patches: Vec<StackPatchEntry>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CommitEntry {
+    pub(crate) oid: String,
+    pub(crate) short_oid: String,
+    #[allow(dead_code)]
+    pub(crate) unix_ts: i64,
+    pub(crate) subject: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

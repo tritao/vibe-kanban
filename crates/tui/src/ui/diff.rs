@@ -1522,6 +1522,9 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
 }
 
 fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
+    if app.diff.list_mode == crate::state::DiffListMode::Commits {
+        return render_commit_list(f, app, area);
+    }
     let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
     let file_count = rows.len().saturating_sub(1);
     let border_style = if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Files {
@@ -1743,6 +1746,89 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
     f.render_stateful_widget(widget, area, &mut state);
 }
 
+fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
+    let border_style = if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Files {
+        Style::default().fg(Color::Cyan)
+    } else if app.ui.focus == FocusPane::Diff {
+        Style::default()
+    } else {
+        Style::default()
+    };
+
+    let repo_id = app
+        .diff
+        .repo_statuses
+        .get(app.diff.selected_repo_index)
+        .map(|r| r.repo_id);
+    let commits = repo_id
+        .and_then(|id| app.diff.commits_by_repo.get(&id))
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+
+    let title = format!(
+        "Commits ({}){}",
+        commits.len(),
+        if app.diff.commit_preview_loading {
+            ", loading"
+        } else {
+            ""
+        }
+    );
+
+    let selected = if commits.is_empty() {
+        0
+    } else {
+        app.diff.selected_commit_index.min(commits.len() - 1)
+    };
+
+    let height = area.height.saturating_sub(2) as usize;
+    let (start, end, selected_in_window) = window_for_list(commits.len(), selected, height);
+    let visible = commits.get(start..end).unwrap_or(&[]);
+
+    let items: Vec<ListItem> = if visible.is_empty() {
+        vec![ListItem::new(Line::from("No commits"))]
+    } else {
+        visible
+            .iter()
+            .map(|c| {
+                let mut spans: Vec<Span<'static>> = vec![];
+                spans.push(Span::styled(
+                    c.subject.clone(),
+                    Style::default().add_modifier(Modifier::BOLD),
+                ));
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(
+                    c.short_oid.clone(),
+                    Style::default().add_modifier(Modifier::DIM),
+                ));
+                ListItem::new(Line::from(spans))
+            })
+            .collect()
+    };
+
+    let widget = List::new(items)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(title)
+                .border_style(border_style),
+        )
+        .highlight_style(Style::default().add_modifier(Modifier::BOLD))
+        .highlight_symbol(
+            if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Files {
+                "▶ "
+            } else {
+                "  "
+            },
+        );
+
+    let mut state = ratatui::widgets::ListState::default();
+    if !visible.is_empty() {
+        state.select(Some(selected_in_window));
+    }
+    f.render_stateful_widget(widget, area, &mut state);
+}
+
 fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
     let border_style = if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Preview
     {
@@ -1753,16 +1839,10 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
         Style::default()
     };
 
-    let lines = &app.diff.diff_preview_lines;
-    let start = app.diff.diff_scroll_offset.min(lines.len());
-    let height = area.height.saturating_sub(2) as usize;
-    let end = (start + height).min(lines.len());
-    let visible = lines.get(start..end).unwrap_or(&[]);
-
-    let w = Paragraph::new(visible.to_vec()).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(format!(
+    let (lines, title) = match app.diff.list_mode {
+        crate::state::DiffListMode::Files => (
+            &app.diff.diff_preview_lines,
+            format!(
                 "Diff ({}){}{}",
                 app.diff.diff_theme.label(),
                 if app.diff.diff_wrap { ", wrap" } else { "" },
@@ -1771,7 +1851,29 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
                 } else {
                     ""
                 }
-            ))
+            ),
+        ),
+        crate::state::DiffListMode::Commits => (
+            &app.diff.commit_preview_lines,
+            format!(
+                "Commit{}",
+                if app.diff.commit_preview_loading {
+                    " (loading)"
+                } else {
+                    ""
+                }
+            ),
+        ),
+    };
+    let start = app.diff.diff_scroll_offset.min(lines.len());
+    let height = area.height.saturating_sub(2) as usize;
+    let end = (start + height).min(lines.len());
+    let visible = lines.get(start..end).unwrap_or(&[]);
+
+    let w = Paragraph::new(visible.to_vec()).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title(title)
             .border_style(border_style),
     );
 

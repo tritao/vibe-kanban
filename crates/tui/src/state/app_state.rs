@@ -5,10 +5,10 @@ use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
 use super::types::{
-    AttemptRow, BranchPickerState, ConfirmState, CreateTaskState, DiffFocus, DiffTheme,
-    ExecutorProfileSelection, FocusPane, GitOpState, InputState, JobKey, LogMode, LogRenderMode,
-    LogViewMode, PendingExecHook, RepoBranchStatus, TaskStatus, TextFieldState, ToastState,
-    TuiPrefs,
+    AttemptRow, BranchPickerState, CommitEntry, ConfirmState, CreateTaskState, DiffFocus,
+    DiffListMode, DiffTheme, ExecutorProfileSelection, FocusPane, GitOpState, InputState, JobKey,
+    LogMode, LogRenderMode, LogViewMode, PendingExecHook, RepoBranchStatus, TaskStatus,
+    TextFieldState, ToastState, TuiPrefs,
 };
 use crate::{
     events::{NetEvent, StreamStatus},
@@ -102,6 +102,12 @@ pub(crate) struct DiffState {
     pub(crate) git_op_global: Option<GitOpState>,
 
     pub(crate) stack_status_by_repo: HashMap<Uuid, super::types::StackStatusResponse>,
+
+    pub(crate) list_mode: DiffListMode,
+    pub(crate) commits_by_repo: HashMap<Uuid, Vec<CommitEntry>>,
+    pub(crate) selected_commit_index: usize,
+    pub(crate) commit_preview_lines: Vec<Line<'static>>,
+    pub(crate) commit_preview_loading: bool,
 }
 
 pub(crate) struct UiState {
@@ -336,6 +342,12 @@ impl AppState {
                 git_op_global: None,
 
                 stack_status_by_repo: HashMap::new(),
+
+                list_mode: DiffListMode::Files,
+                commits_by_repo: HashMap::new(),
+                selected_commit_index: 0,
+                commit_preview_lines: vec![Line::from("No commit selected")],
+                commit_preview_loading: false,
             },
 
             jobs: HashMap::new(),

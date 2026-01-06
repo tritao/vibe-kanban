@@ -1,4 +1,5 @@
 pub mod codex_setup;
+pub mod commits;
 pub mod cursor_setup;
 pub mod gh_cli_setup;
 pub mod images;
@@ -1662,6 +1663,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/pr/attach", post(pr::attach_existing_pr))
         .route("/pr/comments", get(pr::get_pr_comments))
         .route("/open-editor", post(open_task_attempt_in_editor))
+        .nest("/commits", commits::router())
         .nest("/stack", stack::router())
         .route("/children", get(get_task_attempt_children))
         .route("/stop", post(stop_task_attempt_execution))

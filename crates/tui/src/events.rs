@@ -126,6 +126,14 @@ pub(crate) enum NetEvent {
         repo_id: Uuid,
         status: crate::state::StackStatusResponse,
     },
+    CommitListLoaded {
+        repo_id: Uuid,
+        commits: Vec<crate::state::CommitEntry>,
+    },
+    CommitPreviewLoaded {
+        repo_id: Uuid,
+        lines: Vec<Line<'static>>,
+    },
     TaskCreated {
         task_id: Uuid,
         status: TaskStatus,

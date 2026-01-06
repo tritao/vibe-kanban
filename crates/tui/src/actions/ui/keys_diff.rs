@@ -21,6 +21,31 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
             focus::focus_diff_preview(app);
             Some(true)
         }
+        KeyCode::Char('f') => {
+            crate::commands::select_files_mode(app);
+            crate::diff_preview::schedule_diff_preview_refresh(
+                app,
+                std::time::Duration::from_millis(0),
+            );
+            Some(true)
+        }
+        KeyCode::Char('c') => {
+            // Only show commits when stack mode is not enabled for this repo.
+            if let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) {
+                if app
+                    .diff
+                    .stack_status_by_repo
+                    .get(&repo.repo_id)
+                    .is_some_and(|s| s.available && s.enabled)
+                {
+                    app.ui.last_error =
+                        Some("Commits view unavailable while stack mode is enabled.".to_string());
+                    return Some(true);
+                }
+            }
+            crate::commands::select_commits_mode(app);
+            Some(true)
+        }
         KeyCode::Char('w') => {
             app.diff.diff_wrap = !app.diff.diff_wrap;
             app.prefs.diff_wrap = app.diff.diff_wrap;
@@ -201,11 +226,17 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
             Some(true)
         }
         KeyCode::Up | KeyCode::Char('k') if app.ui.diff_focus == DiffFocus::Files => {
-            sel::select_adjacent_diff_file(app, -1);
+            match app.diff.list_mode {
+                crate::state::DiffListMode::Files => sel::select_adjacent_diff_file(app, -1),
+                crate::state::DiffListMode::Commits => sel::select_adjacent_commit(app, -1),
+            }
             Some(true)
         }
         KeyCode::Down | KeyCode::Char('j') if app.ui.diff_focus == DiffFocus::Files => {
-            sel::select_adjacent_diff_file(app, 1);
+            match app.diff.list_mode {
+                crate::state::DiffListMode::Files => sel::select_adjacent_diff_file(app, 1),
+                crate::state::DiffListMode::Commits => sel::select_adjacent_commit(app, 1),
+            }
             Some(true)
         }
         KeyCode::PageUp => {

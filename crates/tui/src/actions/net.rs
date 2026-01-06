@@ -379,10 +379,28 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.diff.repo_statuses = statuses;
             sync_selected_repo_from_diff_selection(app);
             crate::commands::request_stack_status_refresh(app);
+            crate::commands::request_commit_list_refresh(app);
             true
         }
         NetEvent::StackStatusLoaded { repo_id, status } => {
             app.diff.stack_status_by_repo.insert(repo_id, status);
+            true
+        }
+        NetEvent::CommitListLoaded { repo_id, commits } => {
+            crate::commands::set_commit_list(app, repo_id, commits);
+            true
+        }
+        NetEvent::CommitPreviewLoaded { repo_id, lines } => {
+            // Only update the preview if we're still looking at this repo.
+            let selected_repo_id = app
+                .diff
+                .repo_statuses
+                .get(app.diff.selected_repo_index)
+                .map(|r| r.repo_id);
+            if selected_repo_id == Some(repo_id) {
+                app.diff.commit_preview_lines = lines;
+                app.diff.commit_preview_loading = false;
+            }
             true
         }
         NetEvent::TaskCreated { task_id, status } => {

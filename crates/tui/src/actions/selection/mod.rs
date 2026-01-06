@@ -9,7 +9,7 @@ pub(in crate::actions) use board::{
     note_task_created, request_move_selected_task, select_adjacent_attempt, select_adjacent_task,
 };
 pub(in crate::actions) use diff::{
-    reset_diff_stream_state, select_adjacent_diff_file, select_diff_file,
+    reset_diff_stream_state, select_adjacent_commit, select_adjacent_diff_file, select_diff_file,
 };
 pub(in crate::actions) use ids::{select_exec, select_project, select_task};
 pub(in crate::actions) use logs::select_log_entry;
