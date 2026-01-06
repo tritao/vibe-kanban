@@ -1289,10 +1289,14 @@ impl ContainerService for LocalContainerService {
     ) -> Result<futures::stream::BoxStream<'static, Result<LogMsg, std::io::Error>>, ContainerError>
     {
         let workspace_repos =
-            WorkspaceRepo::find_by_workspace_id(&self.db.pool, workspace.id).await?;
+            WorkspaceRepo::find_diff_base_for_workspace(&self.db.pool, workspace.id).await?;
         let target_branches: HashMap<_, _> = workspace_repos
             .iter()
             .map(|wr| (wr.repo_id, wr.target_branch.clone()))
+            .collect();
+        let diff_bases: HashMap<_, _> = workspace_repos
+            .iter()
+            .map(|wr| (wr.repo_id, wr.diff_base_oid.clone()))
             .collect();
 
         let repositories =
@@ -1315,19 +1319,34 @@ impl ContainerService for LocalContainerService {
                 continue;
             };
 
-            let base_commit = match self
-                .git()
-                .get_base_commit(&repo.path, branch, target_branch)
+            let base_commit = match diff_bases
+                .get(&repo.id)
+                .and_then(|o| o.as_deref())
+                .and_then(Commit::parse)
             {
-                Ok(c) => c,
-                Err(e) => {
-                    tracing::warn!(
-                        "Skipping diff stream for repo {}: failed to get base commit: {}",
-                        repo.name,
-                        e
-                    );
-                    continue;
-                }
+                Some(c) => c,
+                None => match self.git().get_base_commit(&repo.path, branch, target_branch) {
+                    Ok(c) => {
+                        // Persist the baseline so diffs stay stable even after merges and
+                        // merge-base advances.
+                        let _ = WorkspaceRepo::update_diff_base_oid(
+                            &self.db.pool,
+                            workspace.id,
+                            repo.id,
+                            &c.to_string(),
+                        )
+                        .await;
+                        c
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "Skipping diff stream for repo {}: failed to get base commit: {}",
+                            repo.name,
+                            e
+                        );
+                        continue;
+                    }
+                },
             };
 
             let stream = self

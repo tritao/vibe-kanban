@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE workspace_repos SET target_branch = $1, diff_base_oid = NULL, updated_at = datetime('now') WHERE workspace_id = $2 AND repo_id = $3",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "40007d4175c3daebbcfb579a4797b6d629eda49fb0e19163ec55f4921e9679c7"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE workspace_repos\n               SET target_branch = $1, diff_base_oid = NULL, updated_at = datetime('now')\n               WHERE target_branch = $2\n                 AND workspace_id IN (\n                     SELECT w.id FROM workspaces w\n                     JOIN tasks t ON w.task_id = t.id\n                     WHERE t.parent_workspace_id = $3\n                 )",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "04a4867d5336d8d4bb87930c18e6d8d49c5e1162bd3002f33d8cc77b3ad1a2bc"
+}

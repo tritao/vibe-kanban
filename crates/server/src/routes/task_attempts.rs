@@ -351,6 +351,20 @@ pub async fn merge_task_attempt(
         commit_message.push_str(description);
     }
 
+    // Ensure we have a stable diff baseline captured before merge-base advances.
+    if WorkspaceRepo::get_diff_base_oid(pool, workspace.id, repo.id)
+        .await?
+        .is_none()
+    {
+        if let Ok(base) = deployment
+            .git()
+            .get_base_commit(&repo.path, &workspace.branch, &workspace_repo.target_branch)
+        {
+            let _ = WorkspaceRepo::update_diff_base_oid(pool, workspace.id, repo.id, &base.to_string())
+                .await;
+        }
+    }
+
     let merge_commit_id = deployment.git().merge_changes(
         &repo.path,
         &worktree_path,

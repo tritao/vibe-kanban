@@ -79,6 +79,9 @@ impl Commit {
     pub fn new(id: git2::Oid) -> Self {
         Self(id)
     }
+    pub fn parse(s: &str) -> Option<Self> {
+        git2::Oid::from_str(s).ok().map(Self::new)
+    }
     pub fn as_oid(&self) -> git2::Oid {
         self.0
     }

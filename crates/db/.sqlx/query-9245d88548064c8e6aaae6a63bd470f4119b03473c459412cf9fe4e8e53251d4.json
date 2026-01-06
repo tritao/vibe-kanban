@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT diff_base_oid\n               FROM workspace_repos\n               WHERE workspace_id = $1 AND repo_id = $2",
+  "describe": {
+    "columns": [
+      {
+        "name": "diff_base_oid",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "9245d88548064c8e6aaae6a63bd470f4119b03473c459412cf9fe4e8e53251d4"
+}

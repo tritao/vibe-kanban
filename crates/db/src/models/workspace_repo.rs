@@ -43,6 +43,14 @@ pub struct RepoWithCopyFiles {
     pub copy_files: Option<String>,
 }
 
+/// Target branch plus an optional stored diff baseline (merge-base) OID.
+#[derive(Debug, Clone)]
+pub struct WorkspaceRepoDiffBase {
+    pub repo_id: Uuid,
+    pub target_branch: String,
+    pub diff_base_oid: Option<String>,
+}
+
 impl WorkspaceRepo {
     pub async fn create_many(
         pool: &SqlitePool,
@@ -184,7 +192,7 @@ impl WorkspaceRepo {
         new_target_branch: &str,
     ) -> Result<(), sqlx::Error> {
         sqlx::query!(
-            "UPDATE workspace_repos SET target_branch = $1, updated_at = datetime('now') WHERE workspace_id = $2 AND repo_id = $3",
+            "UPDATE workspace_repos SET target_branch = $1, diff_base_oid = NULL, updated_at = datetime('now') WHERE workspace_id = $2 AND repo_id = $3",
             new_target_branch,
             workspace_id,
             repo_id
@@ -202,7 +210,7 @@ impl WorkspaceRepo {
     ) -> Result<u64, sqlx::Error> {
         let result = sqlx::query!(
             r#"UPDATE workspace_repos
-               SET target_branch = $1, updated_at = datetime('now')
+               SET target_branch = $1, diff_base_oid = NULL, updated_at = datetime('now')
                WHERE target_branch = $2
                  AND workspace_id IN (
                      SELECT w.id FROM workspaces w
@@ -216,6 +224,66 @@ impl WorkspaceRepo {
         .execute(pool)
         .await?;
         Ok(result.rows_affected())
+    }
+
+    pub async fn find_diff_base_for_workspace(
+        pool: &SqlitePool,
+        workspace_id: Uuid,
+    ) -> Result<Vec<WorkspaceRepoDiffBase>, sqlx::Error> {
+        let rows = sqlx::query!(
+            r#"SELECT repo_id as "repo_id!: Uuid",
+                      target_branch,
+                      diff_base_oid
+               FROM workspace_repos
+               WHERE workspace_id = $1"#,
+            workspace_id
+        )
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| WorkspaceRepoDiffBase {
+                repo_id: r.repo_id,
+                target_branch: r.target_branch,
+                diff_base_oid: r.diff_base_oid,
+            })
+            .collect())
+    }
+
+    pub async fn update_diff_base_oid(
+        pool: &SqlitePool,
+        workspace_id: Uuid,
+        repo_id: Uuid,
+        diff_base_oid: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query!(
+            "UPDATE workspace_repos SET diff_base_oid = $1, updated_at = datetime('now') WHERE workspace_id = $2 AND repo_id = $3",
+            diff_base_oid,
+            workspace_id,
+            repo_id
+        )
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn get_diff_base_oid(
+        pool: &SqlitePool,
+        workspace_id: Uuid,
+        repo_id: Uuid,
+    ) -> Result<Option<String>, sqlx::Error> {
+        let row = sqlx::query!(
+            r#"SELECT diff_base_oid
+               FROM workspace_repos
+               WHERE workspace_id = $1 AND repo_id = $2"#,
+            workspace_id,
+            repo_id
+        )
+        .fetch_optional(pool)
+        .await?;
+
+        Ok(row.and_then(|r| r.diff_base_oid))
     }
 
     pub async fn find_unique_repos_for_task(
