@@ -47,7 +47,25 @@ fn apply_log_patch_resilient(
 ) -> anyhow::Result<()> {
     ensure_log_store_entries_array(store);
 
-    if json_patch::patch(store, patch).is_ok() {
+    // Fast-path: json_patch is much faster, but it will "insert" again on reconnect when we
+    // replay history (Add at an index that already exists). Detect that and use the resilient
+    // idempotent path instead.
+    let existing_len = store
+        .get("entries")
+        .and_then(|v| v.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0);
+    let has_replay_add = patch.iter().any(|op| {
+        if let json_patch::PatchOperation::Add(add) = op {
+            let p = add.path.to_string();
+            if let Some((idx, suffix)) = parse_entries_index_and_suffix(&p) {
+                return suffix.is_empty() && idx < existing_len;
+            }
+        }
+        false
+    });
+
+    if !has_replay_add && json_patch::patch(store, patch).is_ok() {
         return Ok(());
     }
 
@@ -65,8 +83,12 @@ fn apply_log_patch_resilient(
                         .expect("entries array");
                     if suffix.is_empty() {
                         let v = value.clone();
-                        if idx <= entries.len() {
-                            entries.insert(idx, v);
+                        // Idempotent semantics: if the index already exists (replay/reconnect),
+                        // treat Add as Replace; otherwise append/insert.
+                        if idx < entries.len() {
+                            entries[idx] = v;
+                        } else if idx == entries.len() {
+                            entries.push(v);
                         } else {
                             entries.push(v);
                         }
@@ -557,6 +579,7 @@ pub(crate) fn mark_all_log_buffers_dirty(app: &mut AppState, entry_idx: usize) {
 pub(crate) fn reset_logs(app: &mut AppState, exec_id: Option<Uuid>) {
     match exec_id {
         None => {
+            // Full reset: drop cached buffers and view state.
             app.exec.log_buffers.clear();
             app.exec.log_exec_order.clear();
             app.exec.log_lines.clear();
@@ -577,6 +600,37 @@ pub(crate) fn reset_logs(app: &mut AppState, exec_id: Option<Uuid>) {
     }
 }
 
+pub(crate) fn reset_log_view(app: &mut AppState, exec_id: Option<Uuid>) {
+    // View-only reset: keep cached buffers so switching tasks/attempts doesn't "lose" logs.
+    if let Some(exec_id) = exec_id {
+        if app.exec.log_selected.is_some_and(|s| s.exec_id == exec_id) {
+            app.exec.log_selected = None;
+        }
+    } else {
+        app.exec.log_selected = None;
+    }
+    app.exec.log_lines.clear();
+    app.exec.log_line_targets.clear();
+    app.exec.log_autoscroll = true;
+    app.exec.log_scroll_offset = 0;
+    app.exec.log_view_dirty = true;
+}
+
+pub(crate) fn prune_log_buffers(app: &mut AppState) {
+    // Prevent unbounded growth when switching between many tasks/attempts.
+    const MAX_LOG_BUFFERS: usize = 48;
+    if app.exec.log_buffers.len() <= MAX_LOG_BUFFERS {
+        return;
+    }
+    // Keep the most recently seen exec_ids (from log_exec_order).
+    let mut keep: Vec<Uuid> = app.exec.log_exec_order.iter().copied().rev().collect();
+    keep.dedup();
+    keep.truncate(MAX_LOG_BUFFERS);
+
+    app.exec.log_buffers.retain(|id, _| keep.contains(id));
+    app.exec.log_exec_order.retain(|id| app.exec.log_buffers.contains_key(id));
+}
+
 pub(crate) fn enqueue_log_patch(app: &mut AppState, exec_id: Uuid, patch: json_patch::Patch) {
     if !app.exec.log_exec_order.contains(&exec_id) {
         app.exec.log_exec_order.push(exec_id);
@@ -585,6 +639,8 @@ pub(crate) fn enqueue_log_patch(app: &mut AppState, exec_id: Uuid, patch: json_p
     let buf = app.exec.log_buffers.entry(exec_id).or_default();
     buf.enqueue_patch(patch);
     app.exec.log_view_dirty = true;
+
+    prune_log_buffers(app);
 }
 
 fn rebuild_log_view_cache(app: &mut AppState) {

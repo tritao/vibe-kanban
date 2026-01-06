@@ -757,12 +757,10 @@ pub(crate) async fn logs_stream_task(
 ) {
     let max_backoff = Duration::from_secs(8);
     let mut backoff = Duration::from_millis(250);
-    let mut last_reset: Option<(Uuid, LogMode)> = None;
 
     loop {
         let exec_id = *exec_rx.borrow();
         let Some(exec_id) = exec_id else {
-            last_reset = None;
             let _ = net_tx.send(NetEvent::LogReset(None)).await;
             let _ = net_tx
                 .send(NetEvent::LogStreamStatus(StreamStatus::Disconnected))
@@ -800,10 +798,6 @@ pub(crate) async fn logs_stream_task(
         let _ = net_tx
             .send(NetEvent::LogStreamStatus(StreamStatus::Connecting))
             .await;
-        if last_reset != Some((exec_id, log_mode)) {
-            let _ = net_tx.send(NetEvent::LogReset(Some(exec_id))).await;
-            last_reset = Some((exec_id, log_mode));
-        }
 
         match connect_ws_detailed(&endpoint).await {
             Ok(mut stream) => {

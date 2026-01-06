@@ -54,7 +54,7 @@ pub(in crate::actions) fn select_attempt(app: &mut AppState, attempt_id: Option<
 
     app.exec.exec_store = serde_json::json!({ "execution_processes": {} });
     select_exec(app, None);
-    crate::logs::reset_logs(app, None);
+    crate::logs::reset_log_view(app, None);
 
     reset_diff_stream_state(app);
 

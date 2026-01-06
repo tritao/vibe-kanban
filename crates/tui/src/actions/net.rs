@@ -363,7 +363,11 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             true
         }
         NetEvent::LogReset(exec_id) => {
-            reset_logs(app, exec_id);
+            // Keep cached buffers unless we're explicitly resetting a specific exec buffer.
+            match exec_id {
+                Some(id) => reset_logs(app, Some(id)),
+                None => crate::logs::reset_log_view(app, None),
+            }
             true
         }
         NetEvent::LogPatch { exec_id, patch } => {
