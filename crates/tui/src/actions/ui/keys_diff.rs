@@ -56,6 +56,50 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
             };
 
             app.ui.branch_picker = Some(crate::state::BranchPickerState {
+                mode: crate::state::BranchPickerMode::Checkout,
+                repo_id: repo.repo_id,
+                repo_name: repo.repo_name.clone(),
+                filter: Default::default(),
+                selected_index: 0,
+                branches: vec![],
+                busy: true,
+                error: None,
+            });
+            let base_url = app.backend_url.clone();
+            let net_tx = app.net_tx.clone();
+            let repo_id = repo.repo_id;
+            tokio::spawn(async move {
+                match crate::net::ops::repo_branches_http(&base_url, repo_id).await {
+                    Ok(branches) => {
+                        let _ = net_tx
+                            .send(crate::events::NetEvent::RepoBranchesLoaded { repo_id, branches })
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = net_tx
+                            .send(crate::events::NetEvent::RepoBranchesFailed {
+                                repo_id,
+                                message: format!("failed to load branches: {e}"),
+                            })
+                            .await;
+                    }
+                }
+            });
+
+            Some(true)
+        }
+        KeyCode::Char('T') => {
+            if app.diff.repo_statuses.is_empty() {
+                trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
+                app.ui.last_error = Some("Target branch: load repo status first (press S)".to_string());
+                return Some(true);
+            }
+            let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+                return Some(false);
+            };
+
+            app.ui.branch_picker = Some(crate::state::BranchPickerState {
+                mode: crate::state::BranchPickerMode::ChangeTarget,
                 repo_id: repo.repo_id,
                 repo_name: repo.repo_name.clone(),
                 filter: Default::default(),

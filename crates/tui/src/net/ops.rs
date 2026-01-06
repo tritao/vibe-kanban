@@ -938,3 +938,28 @@ pub(crate) async fn change_target_branch_http(
     }
     Ok(())
 }
+
+pub(crate) async fn checkout_attempt_branch_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    branch: &str,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/checkout-branch",
+        base_url.trim_end_matches('/')
+    );
+    let body = serde_json::json!({
+        "branch": branch,
+        "force": false,
+    });
+    let resp = client.post(url).json(&body).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected checkout-branch");
+    }
+    Ok(())
+}

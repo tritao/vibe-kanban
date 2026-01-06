@@ -137,8 +137,15 @@ pub(crate) struct ProjectSetupState {
     pub(crate) busy: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BranchPickerMode {
+    Checkout,
+    ChangeTarget,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct BranchPickerState {
+    pub(crate) mode: BranchPickerMode,
     pub(crate) repo_id: Uuid,
     pub(crate) repo_name: String,
     pub(crate) filter: TextFieldState,

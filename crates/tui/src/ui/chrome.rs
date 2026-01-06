@@ -111,7 +111,7 @@ pub(crate) fn render_bottom_bar(app: &AppState) -> Paragraph<'static> {
             "Tab next | i compose (/cmd) | Enter send | e expand | PgUp/PgDn scroll | End bottom | m md view | x stop | o log mode | q quit"
         }
         FocusPane::Diff => {
-            "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | w wrap | M merge | P PR | R rebase | S status | q quit"
+            "Tab next | j/k file | h/l files/preview | PgUp/PgDn scroll | d stats-only | t theme | w wrap | B checkout | T target | M merge | P PR | R rebase | S status | q quit"
         }
     };
     if let Some(toast) = app.ui.toast.as_ref() {

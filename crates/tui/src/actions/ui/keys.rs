@@ -93,22 +93,41 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
                 }
                 let idx = state.selected_index.min(visible.len().saturating_sub(1));
                 let branch = visible[idx].name.clone();
-                let repo_id = state.repo_id;
                 let repo_name = state.repo_name.clone();
+                let repo_id = state.repo_id;
+                let mode = state.mode;
                 state.busy = true;
 
                 let base_url = app.backend_url.clone();
                 let net_tx = app.net_tx.clone();
                 tokio::spawn(async move {
-                    let result = crate::net::ops::change_target_branch_http(
-                        &base_url, attempt_id, repo_id, &branch,
-                    )
-                    .await;
+                    let result = match mode {
+                        crate::state::BranchPickerMode::Checkout => {
+                            crate::net::ops::checkout_attempt_branch_http(
+                                &base_url, attempt_id, &branch,
+                            )
+                            .await
+                        }
+                        crate::state::BranchPickerMode::ChangeTarget => {
+                            crate::net::ops::change_target_branch_http(
+                                &base_url, attempt_id, repo_id, &branch,
+                            )
+                            .await
+                        }
+                    };
                     match result {
                         Ok(()) => {
                             let _ = net_tx
                                 .send(crate::events::NetEvent::Notice(format!(
-                                    "Target branch for {repo_name} set to {branch}."
+                                    "{} for {repo_name}: {branch}.",
+                                    match mode {
+                                        crate::state::BranchPickerMode::Checkout => {
+                                            "Checked out branch"
+                                        }
+                                        crate::state::BranchPickerMode::ChangeTarget => {
+                                            "Target branch set"
+                                        }
+                                    }
                                 )))
                                 .await;
                             if let Ok(statuses) =
@@ -121,9 +140,13 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
                             let _ = net_tx.send(crate::events::NetEvent::DiffReconnect).await;
                         }
                         Err(e) => {
+                            let label = match mode {
+                                crate::state::BranchPickerMode::Checkout => "checkout branch",
+                                crate::state::BranchPickerMode::ChangeTarget => "change target branch",
+                            };
                             let _ = net_tx
                                 .send(crate::events::NetEvent::Error(format!(
-                                    "change target branch failed: {e}"
+                                    "{label} failed: {e}"
                                 )))
                                 .await;
                         }

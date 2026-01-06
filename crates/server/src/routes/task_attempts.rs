@@ -761,6 +761,17 @@ pub struct RenameBranchResponse {
     pub branch: String,
 }
 
+#[derive(serde::Deserialize, Debug, TS)]
+pub struct CheckoutBranchRequest {
+    pub branch: String,
+    pub force: Option<bool>,
+}
+
+#[derive(serde::Serialize, Debug, TS)]
+pub struct CheckoutBranchResponse {
+    pub branch: String,
+}
+
 #[derive(Debug, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
 #[ts(tag = "type", rename_all = "snake_case")]
@@ -963,6 +974,96 @@ pub async fn rename_branch(
 
     Ok(ResponseJson(ApiResponse::success(RenameBranchResponse {
         branch: new_branch_name.to_string(),
+    })))
+}
+
+#[axum::debug_handler]
+pub async fn checkout_branch(
+    Extension(workspace): Extension<Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    Json(payload): Json<CheckoutBranchRequest>,
+) -> Result<ResponseJson<ApiResponse<CheckoutBranchResponse>>, ApiError> {
+    let branch = payload.branch.trim();
+    let force = payload.force.unwrap_or(false);
+    if branch.is_empty() {
+        return Ok(ResponseJson(ApiResponse::error("Branch is required")));
+    }
+
+    let pool = &deployment.db().pool;
+
+    // Refuse to switch branches if there's an open PR attached to this workspace.
+    let merges = Merge::find_by_workspace_id(pool, workspace.id).await?;
+    let has_open_pr = merges.into_iter().any(|merge| {
+        matches!(merge, Merge::Pr(pr_merge) if matches!(pr_merge.pr_info.status, MergeStatus::Open))
+    });
+    if has_open_pr {
+        return Ok(ResponseJson(ApiResponse::error(
+            "Cannot checkout branch while a PR is open for this attempt",
+        )));
+    }
+
+    let repos = WorkspaceRepo::find_repos_for_workspace(pool, workspace.id).await?;
+    let container_ref = deployment
+        .container()
+        .ensure_container_exists(&workspace)
+        .await?;
+    let workspace_dir = PathBuf::from(&container_ref);
+
+    // Validate branch exists and worktrees are in a safe state.
+    for repo in &repos {
+        if !deployment.git().check_branch_exists(&repo.path, branch)? {
+            return Ok(ResponseJson(ApiResponse::error(
+                format!("Branch '{branch}' does not exist in repository '{}'", repo.name).as_str(),
+            )));
+        }
+
+        let worktree_path = workspace_dir.join(&repo.name);
+        if deployment.git().detect_conflict_op(&worktree_path)?.is_some() {
+            return Ok(ResponseJson(ApiResponse::error(
+                format!(
+                    "Cannot checkout branch in '{}': resolve conflicts/rebase first",
+                    repo.name
+                )
+                .as_str(),
+            )));
+        }
+        if !force && !deployment.git().is_worktree_clean(&worktree_path)? {
+            return Ok(ResponseJson(ApiResponse::error(
+                format!(
+                    "Cannot checkout branch in '{}': worktree has uncommitted changes (use force)",
+                    repo.name
+                )
+                .as_str(),
+            )));
+        }
+    }
+
+    // Perform checkout for all repos in the attempt.
+    let git = services::services::git::GitCli::new();
+    for repo in &repos {
+        let worktree_path = workspace_dir.join(&repo.name);
+        let args: Vec<&str> = match deployment.git().find_branch_type(&repo.path, branch)? {
+            git2::BranchType::Remote => vec!["checkout", "--track", branch],
+            git2::BranchType::Local => vec!["checkout", branch],
+        };
+        git.git(&worktree_path, args)
+            .map_err(|e| ApiError::BadRequest(format!("git checkout failed: {e}")))?;
+    }
+
+    let old_branch = workspace.branch.clone();
+    Workspace::update_branch_name(pool, workspace.id, branch).await?;
+
+    // Keep child attempts targeting the parent attempt branch in sync.
+    let _ = WorkspaceRepo::update_target_branch_for_children_of_workspace(
+        pool,
+        workspace.id,
+        &old_branch,
+        branch,
+    )
+    .await?;
+
+    Ok(ResponseJson(ApiResponse::success(CheckoutBranchResponse {
+        branch: branch.to_string(),
     })))
 }
 
@@ -1538,6 +1639,7 @@ pub fn router(deployment: &DeploymentImpl) -> Router<DeploymentImpl> {
         .route("/stop", post(stop_task_attempt_execution))
         .route("/change-target-branch", post(change_target_branch))
         .route("/rename-branch", post(rename_branch))
+        .route("/checkout-branch", post(checkout_branch))
         .route("/repos", get(get_task_attempt_repos))
         .layer(from_fn_with_state(
             deployment.clone(),

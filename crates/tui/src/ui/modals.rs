@@ -244,7 +244,14 @@ pub(crate) fn render_branch_picker_modal(f: &mut Frame, state: &BranchPickerStat
 
     let mut lines: Vec<Line<'static>> = vec![
         Line::from(vec![Span::styled(
-            format!("Switch target branch — {}", state.repo_name),
+            format!(
+                "{} — {}",
+                match state.mode {
+                    crate::state::BranchPickerMode::Checkout => "Checkout branch",
+                    crate::state::BranchPickerMode::ChangeTarget => "Switch target branch",
+                },
+                state.repo_name
+            ),
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from(""),
@@ -305,7 +312,10 @@ pub(crate) fn render_branch_picker_modal(f: &mut Frame, state: &BranchPickerStat
         }
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
-            "Enter = apply, Esc = cancel",
+            match state.mode {
+                crate::state::BranchPickerMode::Checkout => "Enter = checkout, Esc = cancel",
+                crate::state::BranchPickerMode::ChangeTarget => "Enter = set target, Esc = cancel",
+            },
             Style::default().add_modifier(Modifier::DIM),
         )));
     }
