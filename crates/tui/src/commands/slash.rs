@@ -408,42 +408,157 @@ fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
     let sub = tokens.get(1).map(|s| s.as_str()).unwrap_or("status");
     match sub {
         "status" => {
+            // Accept optional --repo for consistency with other git-ish commands.
+            let parsed = parse_stack_kv_flags(tokens, &["--repo"])?;
+            let _ = resolve_repo_for_command(app, parsed.values.get("--repo").map(|s| s.as_str()))?;
             crate::commands::request_stack_status_refresh(app);
             app.ui.last_notice = Some("Stack: refreshing…".to_string());
             Ok(())
         }
         "enable" => {
-            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            let (repo_id, repo_name) =
+                resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_enable(app, attempt_id, repo_id);
             app.ui.last_notice = Some(format!("Stack: enabling for {repo_name}…"));
             Ok(())
         }
+        "new" => {
+            let parsed = parse_stack_kv_flags(tokens, &["--repo", "--name"])?;
+            let message = parsed.rest.join(" ").trim().to_string();
+            if message.is_empty() {
+                return Err("usage: /stack new <MESSAGE> [--name N] [--repo R]".to_string());
+            }
+            let (repo_id, repo_name) =
+                resolve_repo_for_command(app, parsed.values.get("--repo").map(|s| s.as_str()))?;
+            let name = parsed.values.get("--name").cloned();
+            crate::commands::trigger_stack_new(app, attempt_id, repo_id, name, message);
+            app.ui.last_notice = Some(format!("Stack: new ({repo_name})…"));
+            Ok(())
+        }
+        "refresh" => {
+            let parsed = parse_stack_kv_flags(tokens, &["--repo", "--paths", "--index"])?;
+            let (repo_id, repo_name) =
+                resolve_repo_for_command(app, parsed.values.get("--repo").map(|s| s.as_str()))?;
+            let paths = parsed
+                .values
+                .get("--paths")
+                .map(|s| {
+                    s.split(',')
+                        .map(|p| p.trim().to_string())
+                        .filter(|p| !p.is_empty())
+                        .collect::<Vec<_>>()
+                })
+                .filter(|v: &Vec<String>| !v.is_empty());
+            let allow_dirty_index = parsed.bools.contains("--index");
+            crate::commands::trigger_stack_refresh(
+                app,
+                attempt_id,
+                repo_id,
+                paths,
+                allow_dirty_index,
+            );
+            app.ui.last_notice = Some(format!("Stack: refresh ({repo_name})…"));
+            Ok(())
+        }
         "push" => {
-            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            let (repo_id, repo_name) =
+                resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_push(app, attempt_id, repo_id);
             app.ui.last_notice = Some(format!("Stack: push ({repo_name})…"));
             Ok(())
         }
         "pop" => {
-            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            let (repo_id, repo_name) =
+                resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_pop(app, attempt_id, repo_id);
             app.ui.last_notice = Some(format!("Stack: pop ({repo_name})…"));
             Ok(())
         }
         "undo" => {
-            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            let (repo_id, repo_name) =
+                resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_undo(app, attempt_id, repo_id);
             app.ui.last_notice = Some(format!("Stack: undo ({repo_name})…"));
             Ok(())
         }
         "redo" => {
-            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            let (repo_id, repo_name) =
+                resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_redo(app, attempt_id, repo_id);
             app.ui.last_notice = Some(format!("Stack: redo ({repo_name})…"));
             Ok(())
         }
         other => Err(format!("unknown stack subcommand: {other}")),
     }
+}
+
+struct StackParsedArgs {
+    values: std::collections::HashMap<String, String>,
+    bools: std::collections::HashSet<&'static str>,
+    rest: Vec<String>,
+}
+
+fn parse_stack_flag_value(tokens: &[String], flag: &'static str) -> Option<String> {
+    let mut i = 0;
+    while i < tokens.len() {
+        if tokens[i] == flag {
+            return tokens.get(i + 1).cloned();
+        }
+        i += 1;
+    }
+    None
+}
+
+fn parse_stack_kv_flags(
+    tokens: &[String],
+    allowed: &[&'static str],
+) -> Result<StackParsedArgs, String> {
+    let mut values = std::collections::HashMap::<String, String>::new();
+    let mut bools = std::collections::HashSet::<&'static str>::new();
+    let mut rest: Vec<String> = vec![];
+
+    // tokens[0]=stack, tokens[1]=subcommand, remaining is mixed flags/args.
+    let mut i = 2usize;
+    while i < tokens.len() {
+        let t = tokens[i].as_str();
+        if t.starts_with("--") {
+            if !allowed.contains(&t) {
+                return Err(format!("unknown flag: {t} (try /help)"));
+            }
+            match t {
+                "--index" => {
+                    if bools.contains("--index") {
+                        return Err("duplicate flag: --index".to_string());
+                    }
+                    bools.insert("--index");
+                    i += 1;
+                }
+                "--repo" | "--name" | "--paths" => {
+                    let v = tokens
+                        .get(i + 1)
+                        .ok_or_else(|| format!("missing value for {t}"))?;
+                    if v.starts_with("--") {
+                        return Err(format!("missing value for {t}"));
+                    }
+                    if values.contains_key(t) {
+                        return Err(format!("duplicate flag: {t}"));
+                    }
+                    values.insert(t.to_string(), v.clone());
+                    i += 2;
+                }
+                _ => return Err(format!("unknown flag: {t} (try /help)")),
+            }
+            continue;
+        }
+        rest.push(tokens[i].clone());
+        i += 1;
+    }
+
+    Ok(StackParsedArgs {
+        values,
+        bools,
+        rest,
+    })
 }
 
 fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {

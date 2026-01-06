@@ -760,6 +760,20 @@ pub(crate) async fn stack_enable_http(
     );
 }
 
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct StackNewPatchRequest {
+    pub(crate) repo_id: Uuid,
+    pub(crate) name: Option<String>,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub(crate) struct StackRefreshRequest {
+    pub(crate) repo_id: Uuid,
+    pub(crate) paths: Option<Vec<String>>,
+    pub(crate) allow_dirty_index: Option<bool>,
+}
+
 async fn stack_post_repo_id(
     base_url: &str,
     attempt_id: Uuid,
@@ -778,6 +792,57 @@ async fn stack_post_repo_id(
         .json(&RepoIdRequest { repo_id })
         .send()
         .await?;
+    let api = resp
+        .json::<ApiResponseWire<StackStatusWire, StackErrorWire>>()
+        .await?;
+    if api.success {
+        return Ok(map_stack_status_wire(
+            api.data
+                .ok_or_else(|| anyhow::anyhow!("missing stack status payload"))?,
+        ));
+    }
+    if let Some(err) = api.error_data {
+        match err {
+            StackErrorWire::StgNotInstalled => {
+                anyhow::bail!("stg is not installed on the backend host")
+            }
+            StackErrorWire::NotEnabled => anyhow::bail!("stack not enabled (run /stack enable)"),
+            StackErrorWire::ConflictsInProgress { message, op, files } => {
+                let mut msg = message;
+                if let Some(op) = op {
+                    msg.push_str(&format!(" (op: {op})"));
+                }
+                if !files.is_empty() {
+                    msg.push_str(&format!("; files: {}", files.join(", ")));
+                }
+                anyhow::bail!("{msg}");
+            }
+            StackErrorWire::DirtyWorktree { message } => anyhow::bail!("{message}"),
+            StackErrorWire::Failed { message } => anyhow::bail!("{message}"),
+        }
+    }
+    anyhow::bail!(
+        "{}",
+        api.message
+            .as_deref()
+            .unwrap_or("backend rejected stack request")
+    );
+}
+
+async fn stack_post_json<T: serde::Serialize>(
+    base_url: &str,
+    attempt_id: Uuid,
+    path: &str,
+    body: &T,
+) -> anyhow::Result<StackStatusResponse> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/stack/{path}",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client.post(url).json(body).send().await?;
     let api = resp
         .json::<ApiResponseWire<StackStatusWire, StackErrorWire>>()
         .await?;
@@ -845,6 +910,36 @@ pub(crate) async fn stack_redo_http(
     repo_id: Uuid,
 ) -> anyhow::Result<StackStatusResponse> {
     stack_post_repo_id(base_url, attempt_id, "redo", repo_id).await
+}
+
+pub(crate) async fn stack_new_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+    name: Option<String>,
+    message: String,
+) -> anyhow::Result<StackStatusResponse> {
+    let body = StackNewPatchRequest {
+        repo_id,
+        name,
+        message,
+    };
+    stack_post_json(base_url, attempt_id, "new", &body).await
+}
+
+pub(crate) async fn stack_refresh_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+    paths: Option<Vec<String>>,
+    allow_dirty_index: bool,
+) -> anyhow::Result<StackStatusResponse> {
+    let body = StackRefreshRequest {
+        repo_id,
+        paths,
+        allow_dirty_index: Some(allow_dirty_index),
+    };
+    stack_post_json(base_url, attempt_id, "refresh", &body).await
 }
 
 pub(crate) async fn rebase_task_attempt_http(

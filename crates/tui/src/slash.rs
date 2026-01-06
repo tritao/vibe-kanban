@@ -139,6 +139,41 @@ const PR_OPEN_FLAGS: &[FlagSpec] = &[FlagSpec {
     takes_value: true,
 }];
 
+const STACK_REPO_FLAGS: &[FlagSpec] = &[FlagSpec {
+    name: "--repo",
+    desc: "repo name or index",
+    takes_value: true,
+}];
+const STACK_NEW_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        name: "--name",
+        desc: "patch name",
+        takes_value: true,
+    },
+    FlagSpec {
+        name: "--repo",
+        desc: "repo name or index",
+        takes_value: true,
+    },
+];
+const STACK_REFRESH_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        name: "--paths",
+        desc: "comma-separated paths to refresh",
+        takes_value: true,
+    },
+    FlagSpec {
+        name: "--index",
+        desc: "allow dirty index (stg refresh --index)",
+        takes_value: false,
+    },
+    FlagSpec {
+        name: "--repo",
+        desc: "repo name or index",
+        takes_value: true,
+    },
+];
+
 const PR_SUBCOMMANDS: &[SubcommandSpec] = &[
     SubcommandSpec {
         name: "create",
@@ -203,42 +238,54 @@ const COMMAND_SPECS: &[CommandSpec] = &[
             SubcommandSpec {
                 name: "status",
                 desc: "refresh stack status",
-                flags: EMPTY_FLAGS,
+                flags: STACK_REPO_FLAGS,
                 help_syntax: "/stack status",
             },
             SubcommandSpec {
                 name: "enable",
                 desc: "enable stack mode (stg init)",
-                flags: EMPTY_FLAGS,
+                flags: STACK_REPO_FLAGS,
                 help_syntax: "/stack enable",
             },
             SubcommandSpec {
                 name: "push",
                 desc: "push next patch",
-                flags: EMPTY_FLAGS,
+                flags: STACK_REPO_FLAGS,
                 help_syntax: "/stack push",
             },
             SubcommandSpec {
                 name: "pop",
                 desc: "pop top patch",
-                flags: EMPTY_FLAGS,
+                flags: STACK_REPO_FLAGS,
                 help_syntax: "/stack pop",
+            },
+            SubcommandSpec {
+                name: "new",
+                desc: "create new patch",
+                flags: STACK_NEW_FLAGS,
+                help_syntax: "/stack new \"MSG\"",
+            },
+            SubcommandSpec {
+                name: "refresh",
+                desc: "refresh current patch",
+                flags: STACK_REFRESH_FLAGS,
+                help_syntax: "/stack refresh",
             },
             SubcommandSpec {
                 name: "undo",
                 desc: "undo last stack operation",
-                flags: EMPTY_FLAGS,
+                flags: STACK_REPO_FLAGS,
                 help_syntax: "/stack undo",
             },
             SubcommandSpec {
                 name: "redo",
                 desc: "redo last stack operation",
-                flags: EMPTY_FLAGS,
+                flags: STACK_REPO_FLAGS,
                 help_syntax: "/stack redo",
             },
         ],
-        help_syntax: "/stack <status|enable|push|pop|undo|redo>",
-        usage: Some("usage: /stack status|enable|push|pop|undo|redo"),
+        help_syntax: "/stack <...>",
+        usage: Some("usage: /stack status|enable|new|refresh|push|pop|undo|redo [--repo R] ..."),
     },
     CommandSpec {
         name: "repo",

@@ -4,8 +4,8 @@ use crate::{
     events::NetEvent,
     jobs::replace_job,
     net::ops::{
-        stack_enable_http, stack_pop_http, stack_push_http, stack_redo_http, stack_status_http,
-        stack_undo_http,
+        stack_enable_http, stack_new_http, stack_pop_http, stack_push_http, stack_redo_http,
+        stack_refresh_http, stack_status_http, stack_undo_http,
     },
     state::{AppState, JobKey},
 };
@@ -164,6 +164,71 @@ pub(crate) fn trigger_stack_redo(app: &mut AppState, attempt_id: Uuid, repo_id: 
                 Err(e) => {
                     let _ = net_tx
                         .send(NetEvent::Error(format!("stack redo failed: {e}")))
+                        .await;
+                }
+            }
+        }),
+    );
+}
+
+pub(crate) fn trigger_stack_new(
+    app: &mut AppState,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+    name: Option<String>,
+    message: String,
+) {
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    replace_job(
+        app,
+        JobKey::StackStatus,
+        tokio::spawn(async move {
+            match stack_new_http(&base_url, attempt_id, repo_id, name, message).await {
+                Ok(status) => {
+                    let _ = net_tx
+                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .await;
+                    let _ = net_tx
+                        .send(NetEvent::Notice("Stack: new ok.".to_string()))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::Error(format!("stack new failed: {e}")))
+                        .await;
+                }
+            }
+        }),
+    );
+}
+
+pub(crate) fn trigger_stack_refresh(
+    app: &mut AppState,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+    paths: Option<Vec<String>>,
+    allow_dirty_index: bool,
+) {
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    replace_job(
+        app,
+        JobKey::StackStatus,
+        tokio::spawn(async move {
+            match stack_refresh_http(&base_url, attempt_id, repo_id, paths, allow_dirty_index).await
+            {
+                Ok(status) => {
+                    let _ = net_tx
+                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .await;
+                    let _ = net_tx
+                        .send(NetEvent::Notice("Stack: refresh ok.".to_string()))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::Error(format!("stack refresh failed: {e}")))
                         .await;
                 }
             }
