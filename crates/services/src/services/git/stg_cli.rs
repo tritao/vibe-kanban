@@ -13,6 +13,12 @@ use utils::shell::resolve_executable_path_blocking;
 pub enum StgCliError {
     #[error("stg executable not found or not runnable")]
     NotAvailable,
+    #[error("stg stack is not initialized for this branch")]
+    NotInitialized,
+    #[error("conflicts are in progress: {message}")]
+    ConflictsInProgress { message: String },
+    #[error("working tree has uncommitted changes: {message}")]
+    DirtyWorktree { message: String },
     #[error("stg command failed: {0}")]
     CommandFailed(String),
 }
@@ -88,9 +94,13 @@ impl StgCli {
                 if msg.trim().is_empty() {
                     msg = String::from_utf8_lossy(&output.stdout).to_string();
                 }
-                Err(StgCliError::CommandFailed(msg.trim().to_string()))
+                Err(classify_stg_error(msg.trim()))
             }
         })
+    }
+
+    pub fn is_available(&self) -> bool {
+        resolve_executable_path_blocking("stg").is_some()
     }
 
     pub fn is_enabled(&self, worktree_path: &Path) -> Result<bool, StgCliError> {
@@ -104,6 +114,7 @@ impl StgCli {
             ],
         ) {
             Ok(_) => Ok(true),
+            Err(StgCliError::NotInitialized) => Ok(false),
             Err(StgCliError::CommandFailed(_)) => Ok(false),
             Err(e) => Err(e),
         }
@@ -210,6 +221,29 @@ impl StgCli {
     }
 }
 
+fn classify_stg_error(msg: &str) -> StgCliError {
+    let m = msg.trim();
+    let lower = m.to_ascii_lowercase();
+    if lower.contains("not an stgit branch")
+        || lower.contains("not an stgit stack")
+        || lower.contains("not initialized")
+        || lower.contains("stg init")
+    {
+        return StgCliError::NotInitialized;
+    }
+    if lower.contains("conflict") || lower.contains("needs merge") || lower.contains("unmerged") {
+        return StgCliError::ConflictsInProgress {
+            message: m.to_string(),
+        };
+    }
+    if lower.contains("dirty") || lower.contains("local changes") || lower.contains("unstaged") {
+        return StgCliError::DirtyWorktree {
+            message: m.to_string(),
+        };
+    }
+    StgCliError::CommandFailed(m.to_string())
+}
+
 fn parse_series_description(out: &str) -> Vec<PatchEntry> {
     let mut patches = Vec::new();
 
@@ -276,4 +310,32 @@ fn parse_series_description(out: &str) -> Vec<PatchEntry> {
     }
 
     patches
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_series_description_basic() {
+        let out = r#"
++ patch-a  First patch
+> patch-b  Second patch
+- patch-c  Third patch
+"#;
+        let parsed = parse_series_description(out);
+        assert_eq!(parsed.len(), 3);
+        assert_eq!(parsed[0].name, "patch-a");
+        assert_eq!(parsed[0].state, PatchState::Applied);
+        assert!(!parsed[0].is_current);
+        assert_eq!(parsed[1].name, "patch-b");
+        assert!(parsed[1].is_current);
+        assert_eq!(parsed[2].state, PatchState::Unapplied);
+    }
+
+    #[test]
+    fn classifies_not_initialized() {
+        let e = classify_stg_error("Not an StGit branch (run stg init)");
+        assert!(matches!(e, StgCliError::NotInitialized));
+    }
 }

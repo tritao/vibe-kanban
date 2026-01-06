@@ -9,7 +9,10 @@ use axum::{
 use db::models::{repo::Repo, workspace_repo::WorkspaceRepo};
 use deployment::Deployment;
 use serde::{Deserialize, Serialize};
-use services::services::{container::ContainerService, git::StgPatchState};
+use services::services::{
+    container::ContainerService,
+    git::{GitServiceError, StgCliError, StgPatchState},
+};
 use utils::response::ApiResponse;
 use uuid::Uuid;
 
@@ -60,6 +63,7 @@ pub struct StackRebaseRequest {
 
 #[derive(Debug, Serialize)]
 pub struct StackStatusResponse {
+    pub available: bool,
     pub enabled: bool,
     pub patches: Vec<PatchEntry>,
 }
@@ -72,6 +76,35 @@ pub struct PatchEntry {
     pub is_current: bool,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum StackError {
+    StgNotInstalled,
+    NotEnabled,
+    ConflictsInProgress { message: String },
+    DirtyWorktree { message: String },
+    Failed { message: String },
+}
+
+fn map_stack_error(err: GitServiceError) -> StackError {
+    match err {
+        GitServiceError::StgCLI(StgCliError::NotAvailable) => StackError::StgNotInstalled,
+        GitServiceError::StgCLI(StgCliError::NotInitialized) => StackError::NotEnabled,
+        GitServiceError::StgCLI(StgCliError::ConflictsInProgress { message }) => {
+            StackError::ConflictsInProgress { message }
+        }
+        GitServiceError::StgCLI(StgCliError::DirtyWorktree { message }) => {
+            StackError::DirtyWorktree { message }
+        }
+        GitServiceError::StgCLI(other) => StackError::Failed {
+            message: other.to_string(),
+        },
+        other => StackError::Failed {
+            message: other.to_string(),
+        },
+    }
+}
+
 async fn worktree_path_for_repo(
     deployment: &DeploymentImpl,
     workspace: &db::models::workspace::Workspace,
@@ -82,6 +115,61 @@ async fn worktree_path_for_repo(
         .ensure_container_exists(workspace)
         .await?;
     Ok(Path::new(&container_ref).join(&repo.name))
+}
+
+async fn stack_status_for(
+    deployment: &DeploymentImpl,
+    workspace: &db::models::workspace::Workspace,
+    repo: &Repo,
+) -> Result<StackStatusResponse, ApiError> {
+    let worktree_path = worktree_path_for_repo(deployment, workspace, repo).await?;
+    let available = deployment.git().stg_is_available();
+    let enabled = if available {
+        deployment
+            .git()
+            .stg_is_enabled(&worktree_path)
+            .unwrap_or(false)
+    } else {
+        false
+    };
+
+    let patches = if enabled {
+        deployment
+            .git()
+            .stg_series(&worktree_path)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|p| PatchEntry {
+                name: p.name,
+                description: p.description,
+                state: match p.state {
+                    StgPatchState::Applied => "applied".to_string(),
+                    StgPatchState::Unapplied => "unapplied".to_string(),
+                },
+                is_current: p.is_current,
+            })
+            .collect()
+    } else {
+        vec![]
+    };
+
+    Ok(StackStatusResponse {
+        available,
+        enabled,
+        patches,
+    })
+}
+
+fn conflicts_guard(deployment: &DeploymentImpl, worktree_path: &Path) -> Result<(), StackError> {
+    match deployment.git().detect_conflict_op(worktree_path) {
+        Ok(Some(op)) => Err(StackError::ConflictsInProgress {
+            message: format!("conflicts in progress ({op:?})"),
+        }),
+        Ok(None) => Ok(()),
+        Err(e) => Err(StackError::Failed {
+            message: e.to_string(),
+        }),
+    }
 }
 
 async fn load_repo(
@@ -103,180 +191,279 @@ pub async fn status(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     axum::extract::Query(req): axum::extract::Query<StackRepoRequest>,
-) -> Result<ResponseJson<ApiResponse<StackStatusResponse>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, req.repo_id).await?;
-    let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-
-    let enabled = deployment
-        .git()
-        .stg_is_enabled(&worktree_path)
-        .unwrap_or(false);
-    let patches = if enabled {
-        deployment
-            .git()
-            .stg_series(&worktree_path)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| PatchEntry {
-                name: p.name,
-                description: p.description,
-                state: match p.state {
-                    StgPatchState::Applied => "applied".to_string(),
-                    StgPatchState::Unapplied => "unapplied".to_string(),
-                },
-                is_current: p.is_current,
-            })
-            .collect()
-    } else {
-        vec![]
-    };
-
-    Ok(ResponseJson(ApiResponse::success(StackStatusResponse {
-        enabled,
-        patches,
-    })))
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn enable(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackRepoRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-    deployment
-        .git()
-        .stg_enable(&worktree_path)
-        .map_err(|e| ApiError::BadRequest(format!("stg init failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) = deployment.git().stg_enable(&worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn new_patch(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackNewPatchRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-    deployment
-        .git()
-        .stg_new_patch(&worktree_path, payload.name.as_deref(), &payload.message)
-        .map_err(|e| ApiError::BadRequest(format!("stg new failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) =
+        deployment
+            .git()
+            .stg_new_patch(&worktree_path, payload.name.as_deref(), &payload.message)
+    {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn refresh(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackRefreshRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
     let paths = payload.paths.unwrap_or_default();
     let allow_dirty_index = payload.allow_dirty_index.unwrap_or(false);
-    deployment
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) = deployment
         .git()
         .stg_refresh(&worktree_path, &paths, allow_dirty_index)
-        .map_err(|e| ApiError::BadRequest(format!("stg refresh failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn push(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackRangeRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-    deployment
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) = deployment
         .git()
         .stg_push(&worktree_path, payload.range.as_deref())
-        .map_err(|e| ApiError::BadRequest(format!("stg push failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn pop(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackRangeRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-    deployment
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) = deployment
         .git()
         .stg_pop(&worktree_path, payload.range.as_deref())
-        .map_err(|e| ApiError::BadRequest(format!("stg pop failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn goto(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackGotoRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-    deployment
-        .git()
-        .stg_goto(&worktree_path, &payload.patch)
-        .map_err(|e| ApiError::BadRequest(format!("stg goto failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) = deployment.git().stg_goto(&worktree_path, &payload.patch) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn float(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackFloatRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-    deployment
-        .git()
-        .stg_float(&worktree_path, &payload.patches)
-        .map_err(|e| ApiError::BadRequest(format!("stg float failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) = deployment.git().stg_float(&worktree_path, &payload.patches) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn rebase(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackRebaseRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-    deployment
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) = deployment
         .git()
         .stg_rebase(&worktree_path, &payload.new_base)
-        .map_err(|e| ApiError::BadRequest(format!("stg rebase failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn undo(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackRepoRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-    deployment
-        .git()
-        .stg_undo(&worktree_path)
-        .map_err(|e| ApiError::BadRequest(format!("stg undo failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) = deployment.git().stg_undo(&worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub async fn redo(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
     ResponseJson(payload): ResponseJson<StackRepoRequest>,
-) -> Result<ResponseJson<ApiResponse<()>>, ApiError> {
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
     let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
-    deployment
-        .git()
-        .stg_redo(&worktree_path)
-        .map_err(|e| ApiError::BadRequest(format!("stg redo failed: {e}")))?;
-    Ok(ResponseJson(ApiResponse::success(())))
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+    }
+    if let Err(e) = deployment.git().stg_redo(&worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
 }
 
 pub fn router() -> Router<DeploymentImpl> {

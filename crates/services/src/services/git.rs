@@ -159,6 +159,10 @@ impl GitService {
         Self {}
     }
 
+    pub fn stg_is_available(&self) -> bool {
+        StgCli::new().is_available()
+    }
+
     pub fn stg_is_enabled(&self, worktree_path: &Path) -> Result<bool, GitServiceError> {
         Ok(StgCli::new().is_enabled(worktree_path)?)
     }
