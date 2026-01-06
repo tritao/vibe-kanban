@@ -358,6 +358,11 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         NetEvent::TaskCreated { task_id, status } => {
             // Place the new task in the expected column immediately, then select it when it appears.
             sel::note_task_created(app, task_id, status);
+            // The tasks stream patch can arrive before the create-task HTTP call returns.
+            // If the task is already present in the store, reconcile now so the new task is
+            // selected immediately; otherwise `pending_select_task_id` will be picked up on the
+            // next tasks patch.
+            sel::reconcile_tasks_selection(app);
             true
         }
         NetEvent::Notice(msg) => {
