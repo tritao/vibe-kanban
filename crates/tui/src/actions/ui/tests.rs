@@ -136,3 +136,38 @@ fn composer_enter_applies_slash_autocomplete_instead_of_submit() {
     assert_eq!(app.ui.composer.buffer, "/help ");
     assert!(app.ui.composer_active);
 }
+
+#[test]
+fn composer_enter_with_no_attempt_keeps_composer_open() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+    let mut app = mk_app();
+    app.ui.focus = FocusPane::Execution;
+    app.ui.composer_active = true;
+    app.ui.composer.buffer = "hello".to_string();
+    app.ui.composer.set_end();
+    app.board.selected_attempt_id = None;
+    app.exec.exec_store = serde_json::json!({ "execution_processes": {} });
+
+    let (quit, dirty, _effects) = super::reduce_ui(
+        &mut app,
+        UiEvent::Crossterm(Event::Key(KeyEvent::new_with_kind(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+            KeyEventKind::Press,
+        ))),
+    )
+    .unwrap();
+
+    assert!(!quit);
+    assert!(dirty);
+    assert!(app.ui.composer_active);
+    assert_eq!(app.ui.composer.buffer, "hello");
+    assert!(
+        app.ui
+            .last_error
+            .as_deref()
+            .unwrap_or("")
+            .contains("No task/attempt selected")
+    );
+}

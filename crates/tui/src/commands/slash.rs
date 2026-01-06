@@ -59,16 +59,17 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
         .selected_exec_id
         .or_else(|| execs_for_log.last().map(|e| e.id));
 
-    app.ui.composer_active = false;
-    app.ui.composer.clear();
-
     if crate::slash::composer_is_slash_mode(&msg) {
         if is_quit_slash(&msg) {
+            app.ui.composer_active = false;
+            app.ui.composer.clear();
             return true;
         }
         if let Some(exec_id) = current_exec_id {
             append_local_user_message(app, exec_id, &msg);
         }
+        app.ui.composer_active = false;
+        app.ui.composer.clear();
         return submit_slash_command(app, &msg);
     }
 
@@ -83,6 +84,17 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
         .and_then(|id| execs.iter().find(|e| e.id == id));
     let session_id = active.and_then(|e| e.session_id);
     let is_running = active.and_then(|e| e.status.as_deref()) == Some("running");
+
+    if session_id.is_none() && attempt_id.is_none() {
+        app.ui.last_error = Some(
+            "No task/attempt selected. Create/select a task first (press `n` to create a task)."
+                .to_string(),
+        );
+        return false;
+    }
+
+    app.ui.composer_active = false;
+    app.ui.composer.clear();
 
     if let Some(exec_id) = current_exec_id {
         if is_running {
