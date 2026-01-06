@@ -251,9 +251,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
                         Ok(None) => tokio::time::sleep(Duration::from_millis(250)).await,
                         Err(e) => {
                             let _ = net_tx
-                                .send(NetEvent::Error(format!(
-                                    "failed to load sessions: {e}"
-                                )))
+                                .send(NetEvent::Error(format!("failed to load sessions: {e}")))
                                 .await;
                             return;
                         }

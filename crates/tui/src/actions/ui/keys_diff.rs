@@ -112,7 +112,8 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
         KeyCode::Char('T') => {
             if app.diff.repo_statuses.is_empty() {
                 trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
-                app.ui.last_error = Some("Target branch: load repo status first (press S)".to_string());
+                app.ui.last_error =
+                    Some("Target branch: load repo status first (press S)".to_string());
                 return Some(true);
             }
             let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {

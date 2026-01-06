@@ -32,6 +32,7 @@ pub(crate) async fn create_task_http(
     title: &str,
     description: Option<&str>,
     status: TaskStatus,
+    parent_task_id: Option<Uuid>,
 ) -> anyhow::Result<Uuid> {
     let client = reqwest::Client::builder()
         .build()
@@ -43,6 +44,7 @@ pub(crate) async fn create_task_http(
         "title": title,
         "description": description,
         "status": status.as_api_str(),
+        "parent_task_id": parent_task_id,
         "parent_workspace_id": null,
         "image_ids": null,
         "shared_task_id": null,

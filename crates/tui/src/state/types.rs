@@ -431,6 +431,7 @@ pub(crate) struct CreateTaskState {
     pub(crate) title: TextFieldState,
     pub(crate) description: TextFieldState,
     pub(crate) status: TaskStatus,
+    pub(crate) parent_task_id: Option<Uuid>,
     pub(crate) focus: CreateTaskFocus,
     pub(crate) selected_button: usize, // 0 = create, 1 = cancel
     pub(crate) error: Option<String>,
@@ -604,6 +605,7 @@ pub(crate) struct TaskRow {
     pub(crate) id: Uuid,
     pub(crate) title: String,
     pub(crate) status: TaskStatus,
+    pub(crate) parent_task_id: Option<Uuid>,
     pub(crate) updated_at: Option<String>,
     pub(crate) has_in_progress_attempt: bool,
     pub(crate) last_attempt_failed: bool,

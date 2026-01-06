@@ -778,7 +778,8 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                         let Some(task_id) = task_id else {
                             let _ = net_tx
                                 .send(NetEvent::Error(
-                                    "Git: no task selected (select/create a task first)".to_string(),
+                                    "Git: no task selected (select/create a task first)"
+                                        .to_string(),
                                 ))
                                 .await;
                             let _ = net_tx
@@ -858,26 +859,26 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                                 return;
                             };
 
-                            let repos =
-                                match project_repositories_http(&base_url, project_id).await {
-                                    Ok(r) => r,
-                                    Err(e) => {
-                                        let _ = net_tx
-                                            .send(NetEvent::Error(format!(
-                                                "Git: failed to load project repositories: {e}"
-                                            )))
-                                            .await;
-                                        let _ = net_tx
-                                            .send(NetEvent::GitOpFinished {
-                                                repo_id,
-                                                kind: GitOpKind::Status,
-                                                ok: false,
-                                                message: "Git: status failed".to_string(),
-                                            })
-                                            .await;
-                                        return;
-                                    }
-                                };
+                            let repos = match project_repositories_http(&base_url, project_id).await
+                            {
+                                Ok(r) => r,
+                                Err(e) => {
+                                    let _ = net_tx
+                                        .send(NetEvent::Error(format!(
+                                            "Git: failed to load project repositories: {e}"
+                                        )))
+                                        .await;
+                                    let _ = net_tx
+                                        .send(NetEvent::GitOpFinished {
+                                            repo_id,
+                                            kind: GitOpKind::Status,
+                                            ok: false,
+                                            message: "Git: status failed".to_string(),
+                                        })
+                                        .await;
+                                    return;
+                                }
+                            };
                             if repos.is_empty() {
                                 let _ = net_tx
                                     .send(NetEvent::Error(
@@ -1489,7 +1490,11 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
             StreamStatus::Disconnected => "offline",
             StreamStatus::Error => "error",
         },
-        if app.diff.diff_show_untracked { "on" } else { "off" }
+        if app.diff.diff_show_untracked {
+            "on"
+        } else {
+            "off"
+        }
     );
 
     let selected = if rows.is_empty() {
@@ -1708,9 +1713,12 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
             .title(format!(
                 "Diff ({}){}{}",
                 app.diff.diff_theme.label(),
-                if app.diff.diff_wrap { ", wrap" } else { "" }
-                ,
-                if app.diff.diff_preview_loading { ", loading" } else { "" }
+                if app.diff.diff_wrap { ", wrap" } else { "" },
+                if app.diff.diff_preview_loading {
+                    ", loading"
+                } else {
+                    ""
+                }
             ))
             .border_style(border_style),
     );

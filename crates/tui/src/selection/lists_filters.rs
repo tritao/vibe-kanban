@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use uuid::Uuid;
 
 use crate::state::{AppState, ExecRow, TaskRow, TaskStatus};
@@ -172,6 +174,116 @@ pub(crate) fn tasks_by_status(tasks: &[TaskRow]) -> TasksByStatus {
     out
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct BoardTaskItem {
+    pub(crate) task: TaskRow,
+    pub(crate) indent: u8,
+    pub(crate) root_status: TaskStatus,
+}
+
+pub(crate) struct BoardTasksByStatus {
+    pub(crate) todo: Vec<BoardTaskItem>,
+    pub(crate) inprogress: Vec<BoardTaskItem>,
+    pub(crate) inreview: Vec<BoardTaskItem>,
+    pub(crate) done: Vec<BoardTaskItem>,
+    pub(crate) cancelled: Vec<BoardTaskItem>,
+}
+
+fn sort_task_ids(tasks_by_id: &HashMap<Uuid, TaskRow>, ids: &mut [Uuid]) {
+    ids.sort_by(|a, b| {
+        let Some(ta) = tasks_by_id.get(a) else {
+            return std::cmp::Ordering::Equal;
+        };
+        let Some(tb) = tasks_by_id.get(b) else {
+            return std::cmp::Ordering::Equal;
+        };
+        tb.updated_at
+            .cmp(&ta.updated_at)
+            .then_with(|| ta.title.cmp(&tb.title))
+    });
+}
+
+fn push_subtree(
+    out: &mut Vec<BoardTaskItem>,
+    tasks_by_id: &HashMap<Uuid, TaskRow>,
+    children: &HashMap<Option<Uuid>, Vec<Uuid>>,
+    root_status: TaskStatus,
+    parent: Uuid,
+    indent: u8,
+) {
+    let Some(child_ids) = children.get(&Some(parent)) else {
+        return;
+    };
+    let mut child_ids = child_ids.clone();
+    sort_task_ids(tasks_by_id, &mut child_ids);
+    for id in child_ids {
+        let Some(t) = tasks_by_id.get(&id) else {
+            continue;
+        };
+        out.push(BoardTaskItem {
+            task: t.clone(),
+            indent,
+            root_status,
+        });
+        push_subtree(
+            out,
+            tasks_by_id,
+            children,
+            root_status,
+            id,
+            indent.saturating_add(1),
+        );
+    }
+}
+
+pub(crate) fn board_tasks_by_status(app: &AppState) -> BoardTasksByStatus {
+    let tasks = tasks_filtered_base(app);
+    let mut tasks_by_id: HashMap<Uuid, TaskRow> = HashMap::with_capacity(tasks.len());
+    for t in tasks {
+        tasks_by_id.insert(t.id, t);
+    }
+
+    // Treat tasks with missing parents as top-level so they remain visible (e.g. during filtering).
+    let mut children_by_parent: HashMap<Option<Uuid>, Vec<Uuid>> = HashMap::new();
+    for t in tasks_by_id.values() {
+        let parent = t.parent_task_id.filter(|pid| tasks_by_id.contains_key(pid));
+        children_by_parent.entry(parent).or_default().push(t.id);
+    }
+
+    let mut out = BoardTasksByStatus {
+        todo: vec![],
+        inprogress: vec![],
+        inreview: vec![],
+        done: vec![],
+        cancelled: vec![],
+    };
+
+    let mut roots: Vec<Uuid> = children_by_parent.get(&None).cloned().unwrap_or_default();
+    sort_task_ids(&tasks_by_id, &mut roots);
+
+    for id in roots {
+        let Some(t) = tasks_by_id.get(&id) else {
+            continue;
+        };
+        let root_status = t.status;
+        let slot = match root_status {
+            TaskStatus::Todo => &mut out.todo,
+            TaskStatus::InProgress => &mut out.inprogress,
+            TaskStatus::InReview => &mut out.inreview,
+            TaskStatus::Done => &mut out.done,
+            TaskStatus::Cancelled => &mut out.cancelled,
+        };
+        slot.push(BoardTaskItem {
+            task: t.clone(),
+            indent: 0,
+            root_status,
+        });
+        push_subtree(slot, &tasks_by_id, &children_by_parent, root_status, id, 1);
+    }
+
+    out
+}
+
 fn tasks_list(store: &serde_json::Value) -> Vec<TaskRow> {
     let tasks_obj = store.get("tasks").and_then(|v| v.as_object());
     let Some(tasks_obj) = tasks_obj else {
@@ -196,6 +308,10 @@ fn tasks_list(store: &serde_json::Value) -> Vec<TaskRow> {
             .get("updated_at")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        let parent_task_id = task_val
+            .get("parent_task_id")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok());
 
         let has_in_progress_attempt = task_val
             .get("has_in_progress_attempt")
@@ -218,6 +334,7 @@ fn tasks_list(store: &serde_json::Value) -> Vec<TaskRow> {
             id,
             title,
             status,
+            parent_task_id,
             updated_at,
             has_in_progress_attempt,
             last_attempt_failed,
@@ -235,17 +352,6 @@ pub(crate) fn tasks_filtered_base(app: &AppState) -> Vec<TaskRow> {
     if !q.is_empty() {
         tasks.retain(|t| contains_ci(&t.title, q));
     }
-    tasks
-}
-
-pub(crate) fn tasks_filtered_by_status(app: &AppState, status: TaskStatus) -> Vec<TaskRow> {
-    let mut tasks = tasks_filtered_base(app);
-    tasks.retain(|t| t.status == status);
-    tasks.sort_by(|a, b| {
-        b.updated_at
-            .cmp(&a.updated_at)
-            .then_with(|| a.title.cmp(&b.title))
-    });
     tasks
 }
 
@@ -267,6 +373,10 @@ pub(crate) fn find_task(store: &serde_json::Value, task_id: Uuid) -> Option<Task
         .get("updated_at")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
+    let parent_task_id = task_val
+        .get("parent_task_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
     let has_in_progress_attempt = task_val
         .get("has_in_progress_attempt")
         .and_then(|v| v.as_bool())
@@ -288,6 +398,7 @@ pub(crate) fn find_task(store: &serde_json::Value, task_id: Uuid) -> Option<Task
         id: task_id,
         title,
         status,
+        parent_task_id,
         updated_at,
         has_in_progress_attempt,
         last_attempt_failed,

@@ -1025,8 +1025,7 @@ fn append_normalized_entry(
                         // same list multiple times (often separated by thinking/progress).
                         let mut fingerprint = String::new();
                         for t in &todos {
-                            let content =
-                                t.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                            let content = t.get("content").and_then(|v| v.as_str()).unwrap_or("");
                             let status = t.get("status").and_then(|v| v.as_str()).unwrap_or("");
                             fingerprint.push_str(status);
                             fingerprint.push('\t');

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE tasks SET parent_task_id = $2, updated_at = CURRENT_TIMESTAMP WHERE parent_task_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "37df7fc081b6b0b50805d74acaea6e1a148df2f0996a4623e33369be0deaa43e"
+}

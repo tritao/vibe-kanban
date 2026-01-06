@@ -3,32 +3,27 @@ use uuid::Uuid;
 use super::ids::{select_attempt, select_task};
 use crate::{
     events::NetEvent,
-    selection::{find_task, tasks_by_status, tasks_filtered_base},
-    state::{AppState, TaskRow, TaskStatus},
+    selection::{board_tasks_by_status, find_task},
+    state::{AppState, TaskStatus},
     ui::board::BoardHit,
 };
 pub(in crate::actions) fn ensure_selected_task_in_active_column(app: &mut AppState) {
-    let tasks = tasks_filtered_base(app);
-    if tasks.is_empty() {
-        select_task(app, None);
-        return;
-    }
-
-    let by_status = tasks_by_status(&tasks);
-    let list: &[TaskRow] = match app.board.tasks_active_column {
+    let by_status = board_tasks_by_status(app);
+    let list = match app.board.tasks_active_column {
         TaskStatus::Todo => &by_status.todo,
         TaskStatus::InProgress => &by_status.inprogress,
         TaskStatus::InReview => &by_status.inreview,
         TaskStatus::Done => &by_status.done,
         TaskStatus::Cancelled => &by_status.cancelled,
     };
+
     if list.is_empty() {
         select_task(app, None);
         return;
     }
 
     if let Some(selected_id) = app.board.selected_task_id
-        && let Some(idx) = list.iter().position(|t| t.id == selected_id)
+        && let Some(idx) = list.iter().position(|t| t.task.id == selected_id)
     {
         app.board.board_index_by_status[app.board.tasks_active_column.idx()] = idx;
         return;
@@ -36,7 +31,7 @@ pub(in crate::actions) fn ensure_selected_task_in_active_column(app: &mut AppSta
 
     let idx =
         app.board.board_index_by_status[app.board.tasks_active_column.idx()].min(list.len() - 1);
-    select_task(app, Some(list[idx].id));
+    select_task(app, Some(list[idx].task.id));
 }
 
 pub(in crate::actions) fn select_adjacent_attempt(app: &mut AppState, delta: i32) {
@@ -80,20 +75,24 @@ pub(in crate::actions) fn move_active_status(app: &mut AppState, delta: i32) {
 }
 
 pub(in crate::actions) fn select_adjacent_task(app: &mut AppState, delta: i32) {
-    let tasks = tasks_filtered_base(app);
-    if tasks.is_empty() {
+    let by_status = board_tasks_by_status(app);
+    if by_status.todo.is_empty()
+        && by_status.inprogress.is_empty()
+        && by_status.inreview.is_empty()
+        && by_status.done.is_empty()
+        && by_status.cancelled.is_empty()
+    {
         select_task(app, None);
         return;
     }
 
-    let by_status = tasks_by_status(&tasks);
     let statuses = crate::util::board_statuses(app);
     if statuses.is_empty() {
         select_task(app, None);
         return;
     }
 
-    let list_for = |status: TaskStatus| -> &[TaskRow] {
+    let list_for = |status: TaskStatus| -> &[crate::selection::BoardTaskItem] {
         match status {
             TaskStatus::Todo => &by_status.todo,
             TaskStatus::InProgress => &by_status.inprogress,
@@ -111,7 +110,7 @@ pub(in crate::actions) fn select_adjacent_task(app: &mut AppState, delta: i32) {
     if let Some(id) = app.board.selected_task_id {
         for status in &statuses {
             let list = list_for(*status);
-            if let Some(pos) = list.iter().position(|t| t.id == id) {
+            if let Some(pos) = list.iter().position(|t| t.task.id == id) {
                 cur_status = *status;
                 cur_idx = pos;
                 break;
@@ -183,7 +182,7 @@ pub(in crate::actions) fn select_adjacent_task(app: &mut AppState, delta: i32) {
     let next_idx = next_idx.min(next_list.len() - 1);
     app.board.tasks_active_column = next_status;
     app.board.board_index_by_status[next_status.idx()] = next_idx;
-    select_task(app, Some(next_list[next_idx].id));
+    select_task(app, Some(next_list[next_idx].task.id));
 }
 
 pub(in crate::actions) fn focus_board_section(app: &mut AppState, status: TaskStatus) {

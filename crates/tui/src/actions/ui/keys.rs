@@ -12,7 +12,10 @@ use crate::{
 
 pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<Effect>) {
     // Alt+S toggles mouse capture (enables terminal text selection).
-    if matches!((key.code, key.modifiers), (KeyCode::Char('s'), KeyModifiers::ALT)) {
+    if matches!(
+        (key.code, key.modifiers),
+        (KeyCode::Char('s'), KeyModifiers::ALT)
+    ) {
         return (
             false,
             true,
@@ -151,7 +154,9 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
                         Err(e) => {
                             let label = match mode {
                                 crate::state::BranchPickerMode::Checkout => "checkout branch",
-                                crate::state::BranchPickerMode::ChangeTarget => "change target branch",
+                                crate::state::BranchPickerMode::ChangeTarget => {
+                                    "change target branch"
+                                }
                             };
                             let _ = net_tx
                                 .send(crate::events::NetEvent::Error(format!(
@@ -350,7 +355,11 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
 
     // Shift+W copies the selected attempt's checkout path (for the selected repo).
     if key.code == KeyCode::Char('W') {
-        return (false, false, reduce_copy(app, CopyTarget::AttemptCheckoutPath));
+        return (
+            false,
+            false,
+            reduce_copy(app, CopyTarget::AttemptCheckoutPath),
+        );
     }
 
     if key.code == KeyCode::Char('y') {

@@ -187,6 +187,7 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
         .to_string();
     let description = (!description.is_empty()).then_some(description);
     let status = state.status;
+    let parent_task_id = state.parent_task_id;
 
     crate::commands::set_toast(
         app,
@@ -204,6 +205,7 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
             &title,
             description.as_deref(),
             status,
+            parent_task_id,
         )
         .await
         {

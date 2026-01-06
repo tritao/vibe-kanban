@@ -83,4 +83,3 @@ pub(crate) fn extract_model_params_from_store(store: &serde_json::Value) -> Opti
 pub(crate) fn is_model_params_system_message(text: &str) -> bool {
     parse_system_message_for_model_params(text).is_some()
 }
-

@@ -3,8 +3,8 @@ use uuid::Uuid;
 use super::ids::{select_attempt, select_exec, select_project, select_task};
 use crate::{
     selection::{
-        active_exec_id, exec_list, filtered_projects, find_task,
-        lists_filters::tasks_filtered_by_status, tasks_by_status, tasks_filtered_base,
+        active_exec_id, board_tasks_by_status, exec_list, filtered_projects, find_task,
+        tasks_filtered_base,
     },
     state::{AppState, AttemptRow, TaskStatus},
 };
@@ -55,13 +55,13 @@ pub(in crate::actions) fn reconcile_tasks_selection(app: &mut AppState) {
         }
     }
 
-    let by_status = tasks_by_status(&tasks);
+    let by_status = board_tasks_by_status(app);
     let chosen = match app.board.tasks_active_column {
-        TaskStatus::Todo => by_status.todo.first(),
-        TaskStatus::InProgress => by_status.inprogress.first(),
-        TaskStatus::InReview => by_status.inreview.first(),
-        TaskStatus::Done => by_status.done.first(),
-        TaskStatus::Cancelled => by_status.cancelled.first(),
+        TaskStatus::Todo => by_status.todo.first().map(|i| &i.task),
+        TaskStatus::InProgress => by_status.inprogress.first().map(|i| &i.task),
+        TaskStatus::InReview => by_status.inreview.first().map(|i| &i.task),
+        TaskStatus::Done => by_status.done.first().map(|i| &i.task),
+        TaskStatus::Cancelled => by_status.cancelled.first().map(|i| &i.task),
     }
     .or_else(|| tasks.first());
 
@@ -130,14 +130,21 @@ fn ensure_task_selection(app: &mut AppState) {
         return;
     }
 
-    let list = tasks_filtered_by_status(app, app.board.tasks_active_column);
+    let by_status = board_tasks_by_status(app);
+    let list = match app.board.tasks_active_column {
+        TaskStatus::Todo => &by_status.todo,
+        TaskStatus::InProgress => &by_status.inprogress,
+        TaskStatus::InReview => &by_status.inreview,
+        TaskStatus::Done => &by_status.done,
+        TaskStatus::Cancelled => &by_status.cancelled,
+    };
     if list.is_empty() {
         select_task(app, None);
         return;
     }
 
     if let Some(id) = app.board.selected_task_id
-        && let Some(idx) = list.iter().position(|t| t.id == id)
+        && let Some(idx) = list.iter().position(|t| t.task.id == id)
     {
         app.board.board_index_by_status[app.board.tasks_active_column.idx()] = idx;
         return;
@@ -145,7 +152,7 @@ fn ensure_task_selection(app: &mut AppState) {
 
     let idx =
         app.board.board_index_by_status[app.board.tasks_active_column.idx()].min(list.len() - 1);
-    select_task(app, Some(list[idx].id));
+    select_task(app, Some(list[idx].task.id));
 }
 
 fn ensure_attempt_selection(app: &mut AppState) {
@@ -181,11 +188,26 @@ pub(in crate::actions) fn sync_tasks_active_column(app: &mut AppState) {
     let Some(task_id) = app.board.selected_task_id else {
         return;
     };
-    let Some(task) = find_task(&app.board.tasks_store, task_id) else {
-        return;
-    };
-    app.board.tasks_active_column = match task.status {
-        TaskStatus::Cancelled if !app.board.show_cancelled => TaskStatus::Done,
-        other => other,
-    };
+    let by_status = board_tasks_by_status(app);
+    for status in crate::util::board_statuses(app) {
+        let list = match status {
+            TaskStatus::Todo => &by_status.todo,
+            TaskStatus::InProgress => &by_status.inprogress,
+            TaskStatus::InReview => &by_status.inreview,
+            TaskStatus::Done => &by_status.done,
+            TaskStatus::Cancelled => &by_status.cancelled,
+        };
+        if list.iter().any(|i| i.task.id == task_id) {
+            app.board.tasks_active_column = status;
+            return;
+        }
+    }
+
+    // Fallback: if the task isn't visible in the current board view, keep prior behavior.
+    if let Some(task) = find_task(&app.board.tasks_store, task_id) {
+        app.board.tasks_active_column = match task.status {
+            TaskStatus::Cancelled if !app.board.show_cancelled => TaskStatus::Done,
+            other => other,
+        };
+    }
 }

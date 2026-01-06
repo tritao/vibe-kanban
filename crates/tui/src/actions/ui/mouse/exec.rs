@@ -123,7 +123,11 @@ pub(super) fn handle_exec_left_drag(
     let Some(cur) = log_line_index_hit_at(app, area, row) else {
         return false;
     };
-    let (a, b) = if anchor <= cur { (anchor, cur) } else { (cur, anchor) };
+    let (a, b) = if anchor <= cur {
+        (anchor, cur)
+    } else {
+        (cur, anchor)
+    };
     app.exec.log_mouse_select_range = Some((a, b));
     true
 }

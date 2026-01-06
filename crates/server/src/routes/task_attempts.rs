@@ -356,12 +356,14 @@ pub async fn merge_task_attempt(
         .await?
         .is_none()
     {
-        if let Ok(base) = deployment
-            .git()
-            .get_base_commit(&repo.path, &workspace.branch, &workspace_repo.target_branch)
-        {
-            let _ = WorkspaceRepo::update_diff_base_oid(pool, workspace.id, repo.id, &base.to_string())
-                .await;
+        if let Ok(base) = deployment.git().get_base_commit(
+            &repo.path,
+            &workspace.branch,
+            &workspace_repo.target_branch,
+        ) {
+            let _ =
+                WorkspaceRepo::update_diff_base_oid(pool, workspace.id, repo.id, &base.to_string())
+                    .await;
         }
     }
 
@@ -1029,12 +1031,20 @@ pub async fn checkout_branch(
     for repo in &repos {
         if !deployment.git().check_branch_exists(&repo.path, branch)? {
             return Ok(ResponseJson(ApiResponse::error(
-                format!("Branch '{branch}' does not exist in repository '{}'", repo.name).as_str(),
+                format!(
+                    "Branch '{branch}' does not exist in repository '{}'",
+                    repo.name
+                )
+                .as_str(),
             )));
         }
 
         let worktree_path = workspace_dir.join(&repo.name);
-        if deployment.git().detect_conflict_op(&worktree_path)?.is_some() {
+        if deployment
+            .git()
+            .detect_conflict_op(&worktree_path)?
+            .is_some()
+        {
             return Ok(ResponseJson(ApiResponse::error(
                 format!(
                     "Cannot checkout branch in '{}': resolve conflicts/rebase first",

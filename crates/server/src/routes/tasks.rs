@@ -113,6 +113,14 @@ pub async fn create_task(
 ) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
     let id = Uuid::new_v4();
 
+    validate_parent_task_id(
+        &deployment.db().pool,
+        payload.project_id,
+        id,
+        payload.parent_task_id,
+    )
+    .await?;
+
     tracing::debug!(
         "Creating task '{}' in project {}",
         payload.title,
@@ -160,6 +168,15 @@ pub async fn create_task_and_start(
     let pool = &deployment.db().pool;
 
     let task_id = Uuid::new_v4();
+
+    validate_parent_task_id(
+        pool,
+        payload.task.project_id,
+        task_id,
+        payload.task.parent_task_id,
+    )
+    .await?;
+
     let task = Task::create(pool, &payload.task, task_id).await?;
 
     if let Some(image_ids) = &payload.task.image_ids {
@@ -262,9 +279,18 @@ pub async fn update_task(
         None => existing_task.description,      // Field omitted = keep existing
     };
     let status = payload.status.unwrap_or(existing_task.status);
+    let parent_task_id = payload.parent_task_id.or(existing_task.parent_task_id);
     let parent_workspace_id = payload
         .parent_workspace_id
         .or(existing_task.parent_workspace_id);
+
+    validate_parent_task_id(
+        &deployment.db().pool,
+        existing_task.project_id,
+        existing_task.id,
+        parent_task_id,
+    )
+    .await?;
 
     let task = Task::update(
         &deployment.db().pool,
@@ -273,6 +299,7 @@ pub async fn update_task(
         title,
         description,
         status,
+        parent_task_id,
         parent_workspace_id,
     )
     .await?;
@@ -311,35 +338,54 @@ async fn ensure_shared_task_auth(
 pub async fn delete_task(
     Extension(task): Extension<Task>,
     State(deployment): State<DeploymentImpl>,
+    Query(query): Query<DeleteTaskQuery>,
 ) -> Result<(StatusCode, ResponseJson<ApiResponse<()>>), ApiError> {
     ensure_shared_task_auth(&task, &deployment).await?;
 
-    // Validate no running execution processes
-    if deployment
-        .container()
-        .has_running_processes(task.id)
-        .await?
-    {
-        return Err(ApiError::Conflict("Task has running execution processes. Please wait for them to complete or stop them first.".to_string()));
-    }
-
+    let delete_mode = query.delete_mode.unwrap_or_default();
     let pool = &deployment.db().pool;
 
+    let task_ids = if delete_mode == DeleteTaskMode::Subtree {
+        Task::subtree_task_ids_postorder(pool, task.id).await?
+    } else {
+        vec![task.id]
+    };
+
+    // Validate no running execution processes (for the whole subtree).
+    for tid in &task_ids {
+        if deployment.container().has_running_processes(*tid).await? {
+            return Err(ApiError::Conflict(
+                "Task has running execution processes. Please wait for them to complete or stop them first.".to_string(),
+            ));
+        }
+    }
+
     // Gather task attempts data needed for background cleanup
-    let attempts = Workspace::fetch_all(pool, Some(task.id))
-        .await
-        .map_err(|e| {
-            tracing::error!("Failed to fetch task attempts for task {}: {}", task.id, e);
+    let mut attempts_all = Vec::new();
+    for tid in &task_ids {
+        let mut attempts = Workspace::fetch_all(pool, Some(*tid)).await.map_err(|e| {
+            tracing::error!("Failed to fetch task attempts for task {}: {}", tid, e);
             ApiError::Workspace(e)
         })?;
+        attempts_all.append(&mut attempts);
+    }
 
-    let repositories = WorkspaceRepo::find_unique_repos_for_task(pool, task.id).await?;
+    let mut repos_by_id: std::collections::HashMap<Uuid, Repo> = std::collections::HashMap::new();
+    for tid in &task_ids {
+        for repo in WorkspaceRepo::find_unique_repos_for_task(pool, *tid).await? {
+            repos_by_id.entry(repo.id).or_insert(repo);
+        }
+    }
+    let repositories: Vec<Repo> = repos_by_id.into_values().collect();
 
     // Collect workspace directories that need cleanup
-    let workspace_dirs: Vec<PathBuf> = attempts
-        .iter()
-        .filter_map(|attempt| attempt.container_ref.as_ref().map(PathBuf::from))
-        .collect();
+    let mut dirs = std::collections::HashSet::<PathBuf>::new();
+    for attempt in &attempts_all {
+        if let Some(p) = attempt.container_ref.as_ref() {
+            dirs.insert(PathBuf::from(p));
+        }
+    }
+    let workspace_dirs: Vec<PathBuf> = dirs.into_iter().collect();
 
     if let Some(shared_task_id) = task.shared_task_id {
         let Ok(publisher) = deployment.share_publisher() else {
@@ -351,20 +397,44 @@ pub async fn delete_task(
     // Use a transaction to ensure atomicity: either all operations succeed or all are rolled back
     let mut tx = pool.begin().await?;
 
+    // Handle subtasks: promote or delete subtree.
+    // We intentionally keep existing parent_workspace_id behavior (lineage) separate from subtasks.
+    if delete_mode == DeleteTaskMode::Promote {
+        // Children inherit this task's parent_task_id (grandparent), keeping the tree connected.
+        let _children_promoted =
+            Task::promote_children_to_parent_task_id(&mut *tx, task.id, task.parent_task_id)
+                .await?;
+    } else if delete_mode == DeleteTaskMode::Subtree {
+        // Delete descendants first to satisfy the FK on parent_task_id.
+        // Break lineage references for any workspace we are about to delete (existing behavior).
+        for ws in &attempts_all {
+            let _ = Task::nullify_children_by_workspace_id(&mut *tx, ws.id).await?;
+        }
+
+        // Delete subtree tasks from leaves upward.
+        for tid in &task_ids {
+            let rows = Task::delete(&mut *tx, *tid).await?;
+            if rows == 0 {
+                return Err(ApiError::Database(SqlxError::RowNotFound));
+            }
+        }
+    }
+
     // Nullify parent_workspace_id for all child tasks before deletion
     // This breaks parent-child relationships to avoid foreign key constraint violations
     let mut total_children_affected = 0u64;
-    for attempt in &attempts {
+    for attempt in &attempts_all {
         let children_affected =
             Task::nullify_children_by_workspace_id(&mut *tx, attempt.id).await?;
         total_children_affected += children_affected;
     }
 
-    // Delete task from database (FK CASCADE will handle task_attempts)
-    let rows_affected = Task::delete(&mut *tx, task.id).await?;
-
-    if rows_affected == 0 {
-        return Err(ApiError::Database(SqlxError::RowNotFound));
+    // In promote mode we still need to delete the root task here (subtree mode already deleted it).
+    if delete_mode == DeleteTaskMode::Promote {
+        let rows_affected = Task::delete(&mut *tx, task.id).await?;
+        if rows_affected == 0 {
+            return Err(ApiError::Database(SqlxError::RowNotFound));
+        }
     }
 
     // Commit the transaction - if this fails, all changes are rolled back
@@ -384,7 +454,7 @@ pub async fn delete_task(
             serde_json::json!({
                 "task_id": task.id.to_string(),
                 "project_id": task.project_id.to_string(),
-                "attempt_count": attempts.len(),
+                "attempt_count": attempts_all.len(),
             }),
         )
         .await;
@@ -426,6 +496,59 @@ pub async fn delete_task(
 
     // Return 202 Accepted to indicate deletion was scheduled
     Ok((StatusCode::ACCEPTED, ResponseJson(ApiResponse::success(()))))
+}
+
+async fn validate_parent_task_id(
+    pool: &sqlx::SqlitePool,
+    project_id: Uuid,
+    task_id: Uuid,
+    parent_task_id: Option<Uuid>,
+) -> Result<(), ApiError> {
+    let Some(mut cur) = parent_task_id else {
+        return Ok(());
+    };
+
+    if cur == task_id {
+        return Err(ApiError::BadRequest(
+            "Task cannot be its own parent".to_string(),
+        ));
+    }
+
+    // Validate parent exists and belongs to the same project, then walk upward to prevent cycles.
+    loop {
+        let Some(t) = Task::find_by_id(pool, cur).await? else {
+            return Err(ApiError::BadRequest("Parent task not found".to_string()));
+        };
+        if t.project_id != project_id {
+            return Err(ApiError::BadRequest(
+                "Parent task must be in the same project".to_string(),
+            ));
+        }
+        if let Some(next) = t.parent_task_id {
+            if next == task_id {
+                return Err(ApiError::BadRequest(
+                    "Invalid parent_task_id (cycle detected)".to_string(),
+                ));
+            }
+            cur = next;
+            continue;
+        }
+        break;
+    }
+    Ok(())
+}
+
+#[derive(Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DeleteTaskMode {
+    #[default]
+    Promote,
+    Subtree,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DeleteTaskQuery {
+    delete_mode: Option<DeleteTaskMode>,
 }
 
 #[derive(Debug, Serialize, Deserialize, TS)]

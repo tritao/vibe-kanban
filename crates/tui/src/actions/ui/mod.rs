@@ -1,8 +1,9 @@
 use std::time::Instant;
 
-use crossterm::event::{Event, KeyEventKind};
-use crossterm::execute;
-use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
+use crossterm::{
+    event::{DisableMouseCapture, EnableMouseCapture, Event, KeyEventKind},
+    execute,
+};
 use ratatui::style::Color;
 
 pub(super) use super::selection as sel;

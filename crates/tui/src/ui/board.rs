@@ -8,9 +8,9 @@ use ratatui::{
 
 use crate::{
     layout::rect_contains,
-    render::render_task_line,
-    selection::{task_index_in, tasks_by_status, tasks_filtered_base},
-    state::{AppState, FocusPane, TaskRow, TaskStatus},
+    render::render_board_task_line,
+    selection::{BoardTaskItem, board_tasks_by_status},
+    state::{AppState, FocusPane, TaskStatus},
     util::{board_statuses, window_for_list},
 };
 
@@ -81,13 +81,17 @@ fn allocate_board_section_heights(needs: &[u16], available: u16) -> Vec<u16> {
     heights
 }
 
+fn task_index_in(list: &[BoardTaskItem], task_id: Option<uuid::Uuid>) -> Option<usize> {
+    let id = task_id?;
+    list.iter().position(|t| t.task.id == id)
+}
+
 pub(crate) fn board_hit_at(app: &AppState, area: Rect, col: u16, row: u16) -> Option<BoardHit> {
     if !rect_contains(area, col, row) {
         return None;
     }
 
-    let tasks = tasks_filtered_base(app);
-    let by_status = tasks_by_status(&tasks);
+    let by_status = board_tasks_by_status(app);
     let statuses = board_statuses(app);
     let needs: Vec<u16> = statuses
         .iter()
@@ -124,7 +128,7 @@ pub(crate) fn board_hit_at(app: &AppState, area: Rect, col: u16, row: u16) -> Op
             continue;
         }
 
-        let list: &[TaskRow] = match status {
+        let list: &[BoardTaskItem] = match status {
             TaskStatus::Todo => &by_status.todo,
             TaskStatus::InProgress => &by_status.inprogress,
             TaskStatus::InReview => &by_status.inreview,
@@ -185,7 +189,7 @@ pub(crate) fn board_hit_at(app: &AppState, area: Rect, col: u16, row: u16) -> Op
         }
 
         let clicked_index = start + inner_row;
-        let clicked_task_id = list.get(clicked_index).map(|t| t.id);
+        let clicked_task_id = list.get(clicked_index).map(|t| t.task.id);
         return Some(BoardHit {
             status,
             clicked_index: Some(clicked_index),
@@ -197,8 +201,7 @@ pub(crate) fn board_hit_at(app: &AppState, area: Rect, col: u16, row: u16) -> Op
 }
 
 pub(crate) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
-    let tasks = tasks_filtered_base(app);
-    let by_status = tasks_by_status(&tasks);
+    let by_status = board_tasks_by_status(app);
     let statuses = board_statuses(app);
     let needs: Vec<u16> = statuses
         .iter()
@@ -231,7 +234,7 @@ pub(crate) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
             break;
         }
 
-        let list: &[TaskRow] = match status {
+        let list: &[BoardTaskItem] = match status {
             TaskStatus::Todo => &by_status.todo,
             TaskStatus::InProgress => &by_status.inprogress,
             TaskStatus::InReview => &by_status.inreview,
@@ -274,7 +277,7 @@ pub(crate) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
             } else {
                 visible
                     .iter()
-                    .map(|t| ListItem::new(render_task_line(t)))
+                    .map(|t| ListItem::new(render_board_task_line(t)))
                     .collect()
             };
             (items, is_active.then_some(selected_in_window))

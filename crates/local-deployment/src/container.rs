@@ -1325,7 +1325,10 @@ impl ContainerService for LocalContainerService {
                 .and_then(Commit::parse)
             {
                 Some(c) => c,
-                None => match self.git().get_base_commit(&repo.path, branch, target_branch) {
+                None => match self
+                    .git()
+                    .get_base_commit(&repo.path, branch, target_branch)
+                {
                     Ok(c) => {
                         // Persist the baseline so diffs stay stable even after merges and
                         // merge-base advances.

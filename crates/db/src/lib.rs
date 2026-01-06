@@ -1,9 +1,4 @@
-use std::{
-    future::Future,
-    pin::Pin,
-    str::FromStr,
-    sync::Arc,
-};
+use std::{future::Future, pin::Pin, str::FromStr, sync::Arc};
 
 use sqlx::{
     Error, Pool, Sqlite,
@@ -67,8 +62,9 @@ impl DBService {
         Ok(())
     }
 
-    async fn create_pool(after_connect: Option<Arc<AfterConnectHook>>) -> Result<Pool<Sqlite>, Error>
-    {
+    async fn create_pool(
+        after_connect: Option<Arc<AfterConnectHook>>,
+    ) -> Result<Pool<Sqlite>, Error> {
         let database_url = format!(
             "sqlite://{}",
             asset_dir().join("db.sqlite").to_string_lossy()

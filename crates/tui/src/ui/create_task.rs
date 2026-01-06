@@ -8,15 +8,16 @@ use ratatui::{
 
 use super::layout::centered_rect;
 use crate::{
-    selection::projects_list,
+    selection::{find_task, projects_list},
     state::{AppState, CreateTaskFocus, CreateTaskState, TaskStatus},
 };
 
-pub(crate) fn open_create_task_modal(app: &mut AppState) {
+pub(crate) fn open_create_task_modal(app: &mut AppState, parent_task_id: Option<uuid::Uuid>) {
     app.ui.create_task = Some(CreateTaskState {
         title: Default::default(),
         description: Default::default(),
         status: TaskStatus::Todo,
+        parent_task_id,
         focus: CreateTaskFocus::Title,
         selected_button: 0,
         error: None,
@@ -44,9 +45,17 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
     });
     let project_label = project_name.unwrap_or_else(|| "none".to_string());
 
+    let parent_label = state
+        .parent_task_id
+        .and_then(|id| find_task(&app.board.tasks_store, id))
+        .map(|t| t.title)
+        .unwrap_or_else(|| "none".to_string());
+
     let inner = Block::default()
         .borders(Borders::ALL)
-        .title(format!("Create Task  (project: {project_label})"))
+        .title(format!(
+            "Create Task  (project: {project_label}, parent: {parent_label})"
+        ))
         .border_style(Style::default().fg(Color::Cyan));
 
     let inner_area = inner.inner(area);

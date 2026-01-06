@@ -21,7 +21,11 @@ pub(super) fn handle_board_key(app: &mut AppState, key: KeyEvent) -> Option<bool
             Some(true)
         }
         KeyCode::Char('n') => {
-            open_create_task_modal(app);
+            open_create_task_modal(app, None);
+            Some(true)
+        }
+        KeyCode::Char('N') => {
+            open_create_task_modal(app, app.board.selected_task_id);
             Some(true)
         }
         KeyCode::Char('K') => {

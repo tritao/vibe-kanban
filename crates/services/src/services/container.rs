@@ -1245,7 +1245,8 @@ pub trait ContainerService {
             // collide.
             if let Some(prompt) = match executor_action.typ() {
                 ExecutorActionType::CodingAgentInitialRequest(CodingAgentInitialRequest {
-                    prompt, ..
+                    prompt,
+                    ..
                 }) => Some(prompt.as_str()),
                 ExecutorActionType::CodingAgentFollowUpRequest(req) => Some(req.prompt.as_str()),
                 _ => None,

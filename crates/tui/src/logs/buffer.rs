@@ -628,7 +628,9 @@ pub(crate) fn prune_log_buffers(app: &mut AppState) {
     keep.truncate(MAX_LOG_BUFFERS);
 
     app.exec.log_buffers.retain(|id, _| keep.contains(id));
-    app.exec.log_exec_order.retain(|id| app.exec.log_buffers.contains_key(id));
+    app.exec
+        .log_exec_order
+        .retain(|id| app.exec.log_buffers.contains_key(id));
 }
 
 pub(crate) fn enqueue_log_patch(app: &mut AppState, exec_id: Uuid, patch: json_patch::Patch) {

@@ -8,7 +8,8 @@ use crate::{
     },
     diff::{DIFF_ALL_KEY, diff_rows_with_all_filtered},
     diff_preview::{
-        diff_patch_touches_key, schedule_diff_preview_refresh, schedule_diff_preview_refresh_debounced,
+        diff_patch_touches_key, schedule_diff_preview_refresh,
+        schedule_diff_preview_refresh_debounced,
     },
     events::{NetEvent, StreamStatus},
     logs::{enqueue_log_patch, maybe_attach_pending_user_log, reset_logs},

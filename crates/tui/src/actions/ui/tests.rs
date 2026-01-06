@@ -181,6 +181,7 @@ fn text_field_allows_shift_char_insertion() {
         title: Default::default(),
         description: Default::default(),
         status: crate::state::TaskStatus::Todo,
+        parent_task_id: None,
         focus: crate::state::CreateTaskFocus::Description,
         selected_button: 0,
         error: None,
