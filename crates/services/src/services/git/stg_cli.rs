@@ -144,6 +144,18 @@ impl StgCli {
         Ok(())
     }
 
+    pub fn disable(&self, worktree_path: &Path, force: bool) -> Result<(), StgCliError> {
+        let mut args = vec![OsString::from("branch"), OsString::from("--cleanup")];
+        if force {
+            args.push(OsString::from("--force"));
+        }
+        match self.stg_impl(worktree_path, args) {
+            Ok(_) => Ok(()),
+            Err(StgCliError::NotInitialized) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
+
     pub fn series(&self, worktree_path: &Path) -> Result<Vec<PatchEntry>, StgCliError> {
         let out = self.stg_impl(
             worktree_path,

@@ -434,6 +434,18 @@ fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
             app.ui.last_notice = Some(format!("Stack: enabling for {repo_name}…"));
             Ok(())
         }
+        "disable" => {
+            let parsed = parse_stack_kv_flags(tokens, &["--repo", "--force"])?;
+            let (repo_id, repo_name) =
+                resolve_repo_for_command(app, parsed.values.get("--repo").map(|s| s.as_str()))?;
+            let force = parsed.bools.contains("--force");
+            crate::commands::trigger_stack_disable(app, attempt_id, repo_id, force);
+            app.ui.last_notice = Some(format!(
+                "Stack: disabling for {repo_name}{}…",
+                if force { " (force)" } else { "" }
+            ));
+            Ok(())
+        }
         "new" => {
             let parsed = parse_stack_kv_flags(tokens, &["--repo", "--name"])?;
             let message = parsed.rest.join(" ").trim().to_string();
@@ -543,6 +555,13 @@ fn parse_stack_kv_flags(
                         return Err("duplicate flag: --index".to_string());
                     }
                     bools.insert("--index");
+                    i += 1;
+                }
+                "--force" => {
+                    if bools.contains("--force") {
+                        return Err("duplicate flag: --force".to_string());
+                    }
+                    bools.insert("--force");
                     i += 1;
                 }
                 "--repo" | "--name" | "--paths" => {

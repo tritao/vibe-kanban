@@ -156,6 +156,18 @@ const STACK_NEW_FLAGS: &[FlagSpec] = &[
         takes_value: true,
     },
 ];
+const STACK_DISABLE_FLAGS: &[FlagSpec] = &[
+    FlagSpec {
+        name: "--force",
+        desc: "skip conflict guard (passes --force to stg cleanup)",
+        takes_value: false,
+    },
+    FlagSpec {
+        name: "--repo",
+        desc: "repo name or index",
+        takes_value: true,
+    },
+];
 const STACK_REFRESH_FLAGS: &[FlagSpec] = &[
     FlagSpec {
         name: "--paths",
@@ -266,6 +278,12 @@ const COMMAND_SPECS: &[CommandSpec] = &[
                 help_syntax: "/stack enable",
             },
             SubcommandSpec {
+                name: "disable",
+                desc: "disable stack mode (stg branch --cleanup)",
+                flags: STACK_DISABLE_FLAGS,
+                help_syntax: "/stack disable",
+            },
+            SubcommandSpec {
                 name: "push",
                 desc: "push next patch",
                 flags: STACK_REPO_FLAGS,
@@ -303,7 +321,9 @@ const COMMAND_SPECS: &[CommandSpec] = &[
             },
         ],
         help_syntax: "/stack <...>",
-        usage: Some("usage: /stack status|enable|new|refresh|push|pop|undo|redo [--repo R] ..."),
+        usage: Some(
+            "usage: /stack status|enable|disable|new|refresh|push|pop|undo|redo [--repo R] ...",
+        ),
     },
     CommandSpec {
         name: "repo",

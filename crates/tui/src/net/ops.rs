@@ -848,6 +848,12 @@ pub(crate) async fn stack_enable_http(
 }
 
 #[derive(Debug, serde::Serialize)]
+pub(crate) struct StackDisableRequest {
+    pub(crate) repo_id: Uuid,
+    pub(crate) force: Option<bool>,
+}
+
+#[derive(Debug, serde::Serialize)]
 pub(crate) struct StackNewPatchRequest {
     pub(crate) repo_id: Uuid,
     pub(crate) name: Option<String>,
@@ -973,6 +979,19 @@ pub(crate) async fn stack_push_http(
     repo_id: Uuid,
 ) -> anyhow::Result<StackStatusResponse> {
     stack_post_repo_id(base_url, attempt_id, "push", repo_id).await
+}
+
+pub(crate) async fn stack_disable_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+    force: bool,
+) -> anyhow::Result<StackStatusResponse> {
+    let body = StackDisableRequest {
+        repo_id,
+        force: Some(force),
+    };
+    stack_post_json(base_url, attempt_id, "disable", &body).await
 }
 
 pub(crate) async fn stack_pop_http(

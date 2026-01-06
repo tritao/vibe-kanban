@@ -4,8 +4,8 @@ use crate::{
     events::NetEvent,
     jobs::replace_job,
     net::ops::{
-        stack_enable_http, stack_new_http, stack_pop_http, stack_push_http, stack_redo_http,
-        stack_refresh_http, stack_status_http, stack_undo_http,
+        stack_disable_http, stack_enable_http, stack_new_http, stack_pop_http, stack_push_http,
+        stack_redo_http, stack_refresh_http, stack_status_http, stack_undo_http,
     },
     state::{AppState, JobKey},
 };
@@ -60,6 +60,37 @@ pub(crate) fn trigger_stack_enable(app: &mut AppState, attempt_id: Uuid, repo_id
                 Err(e) => {
                     let _ = net_tx
                         .send(NetEvent::Error(format!("stack enable failed: {e}")))
+                        .await;
+                }
+            }
+        }),
+    );
+}
+
+pub(crate) fn trigger_stack_disable(
+    app: &mut AppState,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+    force: bool,
+) {
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    replace_job(
+        app,
+        JobKey::StackStatus,
+        tokio::spawn(async move {
+            match stack_disable_http(&base_url, attempt_id, repo_id, force).await {
+                Ok(status) => {
+                    let _ = net_tx
+                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .await;
+                    let _ = net_tx
+                        .send(NetEvent::Notice("Stack disabled.".to_string()))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::Error(format!("stack disable failed: {e}")))
                         .await;
                 }
             }

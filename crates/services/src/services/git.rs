@@ -171,6 +171,10 @@ impl GitService {
         Ok(StgCli::new().enable(worktree_path)?)
     }
 
+    pub fn stg_disable(&self, worktree_path: &Path, force: bool) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().disable(worktree_path, force)?)
+    }
+
     pub fn stg_series(&self, worktree_path: &Path) -> Result<Vec<StgPatchEntry>, GitServiceError> {
         Ok(StgCli::new().series(worktree_path)?)
     }

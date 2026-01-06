@@ -24,6 +24,12 @@ pub struct StackRepoRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct StackDisableRequest {
+    pub repo_id: Uuid,
+    pub force: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct StackNewPatchRequest {
     pub repo_id: Uuid,
     pub name: Option<String>,
@@ -234,6 +240,34 @@ pub async fn enable(
         return Ok(ResponseJson(ApiResponse::error_with_data(e)));
     }
     if let Err(e) = deployment.git().stg_enable(&worktree_path) {
+        return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
+            e,
+        ))));
+    }
+    Ok(ResponseJson(ApiResponse::success(
+        stack_status_for(&deployment, &workspace, &repo).await?,
+    )))
+}
+
+pub async fn disable(
+    axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
+    State(deployment): State<DeploymentImpl>,
+    ResponseJson(payload): ResponseJson<StackDisableRequest>,
+) -> Result<ResponseJson<ApiResponse<StackStatusResponse, StackError>>, ApiError> {
+    let repo = load_repo(&deployment, &workspace, payload.repo_id).await?;
+    let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
+    let force = payload.force.unwrap_or(false);
+    if !deployment.git().stg_is_available() {
+        return Ok(ResponseJson(ApiResponse::error_with_data(
+            StackError::StgNotInstalled,
+        )));
+    }
+    if !force {
+        if let Err(e) = conflicts_guard(&deployment, &worktree_path) {
+            return Ok(ResponseJson(ApiResponse::error_with_data(e)));
+        }
+    }
+    if let Err(e) = deployment.git().stg_disable(&worktree_path, force) {
         return Ok(ResponseJson(ApiResponse::error_with_data(map_stack_error(
             e,
         ))));
@@ -490,6 +524,7 @@ pub fn router() -> Router<DeploymentImpl> {
     Router::new()
         .route("/status", get(status))
         .route("/enable", post(enable))
+        .route("/disable", post(disable))
         .route("/new", post(new_patch))
         .route("/refresh", post(refresh))
         .route("/push", post(push))
