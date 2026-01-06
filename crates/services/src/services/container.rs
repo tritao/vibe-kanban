@@ -34,7 +34,10 @@ use executors::{
         script::{ScriptContext, ScriptRequest, ScriptRequestLanguage},
     },
     executors::{ExecutorError, StandardCodingAgentExecutor},
-    logs::{NormalizedEntry, NormalizedEntryError, NormalizedEntryType, utils::ConversationPatch},
+    logs::{
+        NormalizedEntry, NormalizedEntryError, NormalizedEntryType,
+        utils::{ConversationPatch, EntryIndexProvider},
+    },
     profile::{ExecutorConfigs, ExecutorProfileId},
 };
 use futures::{StreamExt, future};
@@ -1236,6 +1239,43 @@ pub trait ContainerService {
                 _ => None,
             }
         {
+            // Ensure the user's prompt always appears in the normalized log stream.
+            // We push a NormalizedEntry::UserMessage patch before starting the normalizer, so
+            // EntryIndexProvider::start_from(...) in executors picks the next index and doesn't
+            // collide.
+            if let Some(prompt) = match executor_action.typ() {
+                ExecutorActionType::CodingAgentInitialRequest(CodingAgentInitialRequest {
+                    prompt, ..
+                }) => Some(prompt.as_str()),
+                ExecutorActionType::CodingAgentFollowUpRequest(req) => Some(req.prompt.as_str()),
+                _ => None,
+            } {
+                let prompt = prompt.trim();
+                if !prompt.is_empty() {
+                    let entry = NormalizedEntry {
+                        timestamp: None,
+                        entry_type: NormalizedEntryType::UserMessage,
+                        content: prompt.to_string(),
+                        metadata: None,
+                    };
+                    let idx = EntryIndexProvider::start_from(&msg_store).next();
+                    let patch = ConversationPatch::add_normalized_entry(idx, entry);
+                    msg_store.push_patch(patch.clone());
+
+                    // Best-effort persistence for replay (normalized-log fallback uses DB logs).
+                    if let Ok(json_line) =
+                        serde_json::to_string::<LogMsg>(&LogMsg::JsonPatch(patch))
+                    {
+                        let _ = ExecutionProcessLogs::append_log_line(
+                            &self.db().pool,
+                            execution_process.id,
+                            &format!("{json_line}\n"),
+                        )
+                        .await;
+                    }
+                }
+            }
+
             if let Some(executor) =
                 ExecutorConfigs::get_cached().get_coding_agent(executor_profile_id)
             {
