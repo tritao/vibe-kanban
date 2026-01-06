@@ -185,7 +185,11 @@ pub(crate) fn render_project_setup_modal(f: &mut Frame, state: &ProjectSetupStat
 
     let mut lines = vec![
         Line::from(vec![Span::styled(
-            "No projects found",
+            if state.has_projects {
+                "No matching project for this folder"
+            } else {
+                "No projects found"
+            },
             Style::default().add_modifier(Modifier::BOLD),
         )]),
         Line::from(""),
@@ -198,7 +202,13 @@ pub(crate) fn render_project_setup_modal(f: &mut Frame, state: &ProjectSetupStat
     if state.busy {
         lines.push(Line::from("Creating project…"));
     } else if state.repo_path.is_some() {
-        lines.push(Line::from("Enter = create project, Esc = dismiss"));
+        if state.has_projects {
+            lines.push(Line::from(
+                "Enter = create project, A = add repo to selected project, Esc = dismiss",
+            ));
+        } else {
+            lines.push(Line::from("Enter = create project, Esc = dismiss"));
+        }
     } else {
         lines.push(Line::from("Cd into a git repo to create a project."));
         lines.push(Line::from("Esc = dismiss"));

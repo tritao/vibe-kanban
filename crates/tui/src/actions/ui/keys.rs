@@ -103,6 +103,59 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
 
                 return (false, true, vec![]);
             }
+            KeyCode::Char('a') | KeyCode::Char('A') => {
+                if state.busy {
+                    return (false, false, vec![]);
+                }
+                if !state.has_projects {
+                    return (false, false, vec![]);
+                }
+                let Some(project_id) = app.board.selected_project_id else {
+                    app.ui.last_error = Some("no project selected".to_string());
+                    return (false, true, vec![]);
+                };
+                let Some(repo_path) = state.repo_path.clone() else {
+                    app.ui.last_error = Some(
+                        "current directory is not a git repository (cd into a repo to add it)"
+                            .to_string(),
+                    );
+                    return (false, true, vec![]);
+                };
+
+                state.busy = true;
+                let base_url = app.backend_url.clone();
+                let net_tx = app.net_tx.clone();
+                let display_name = state.suggested_project_name.clone();
+                tokio::spawn(async move {
+                    match crate::net::ops::add_project_repository_http(
+                        &base_url,
+                        project_id,
+                        &repo_path,
+                        &display_name,
+                    )
+                    .await
+                    {
+                        Ok(()) => {
+                            let _ = net_tx
+                                .send(crate::events::NetEvent::ProjectRepoAdded { project_id })
+                                .await;
+                            let _ = net_tx
+                                .send(crate::events::NetEvent::Notice(
+                                    "Added repository to project.".to_string(),
+                                ))
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = net_tx
+                                .send(crate::events::NetEvent::Error(format!(
+                                    "add repository failed: {e}"
+                                )))
+                                .await;
+                        }
+                    }
+                });
+                return (false, true, vec![]);
+            }
             _ => return (false, false, vec![]),
         }
     }

@@ -66,6 +66,12 @@ pub(crate) enum NetEvent {
     ProjectCreated {
         project_id: Uuid,
     },
+    ProjectRepoAdded {
+        project_id: Uuid,
+    },
+    ProjectMatchResult {
+        project_id: Option<Uuid>,
+    },
     ProjectsStreamStatus(StreamStatus),
     ProjectsPatch(json_patch::Patch),
     TasksStreamStatus(StreamStatus),

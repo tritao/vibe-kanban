@@ -10,6 +10,7 @@ use crate::{
     diff_preview::{diff_patch_touches_key, schedule_diff_preview_refresh},
     events::{NetEvent, StreamStatus},
     logs::{enqueue_log_patch, maybe_attach_pending_user_log, reset_logs},
+    net::ops::find_project_for_repo_path_http,
     state::{AppState, ProjectSetupState},
     ui::sync_selected_repo_from_diff_selection,
 };
@@ -36,6 +37,33 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.ui.project_setup_dismissed = true;
             sel::select_project(app, Some(project_id));
             true
+        }
+        NetEvent::ProjectRepoAdded { project_id } => {
+            app.ui.project_setup = None;
+            app.ui.project_setup_dismissed = true;
+            sel::select_project(app, Some(project_id));
+            true
+        }
+        NetEvent::ProjectMatchResult { project_id } => {
+            if app.ui.project_setup_dismissed {
+                return false;
+            }
+            if let Some(project_id) = project_id {
+                app.ui.project_setup = None;
+                sel::select_project(app, Some(project_id));
+                return true;
+            }
+
+            if app.ui.project_setup.is_none() {
+                app.ui.project_setup = Some(ProjectSetupState {
+                    repo_path: app.ui.launch_repo_path.clone(),
+                    suggested_project_name: app.ui.launch_suggested_project_name.clone(),
+                    has_projects: true,
+                    busy: false,
+                });
+                return true;
+            }
+            false
         }
         NetEvent::ProjectsStreamStatus(status) => {
             app.board.projects_status = status;
@@ -95,15 +123,48 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.board.projects_loaded_once = true;
 
             sel::reconcile_projects_selection(app);
+            let projects_empty =
+                crate::selection::lists_filters::projects_list(&app.board.projects_store)
+                    .is_empty();
+
+            if app.ui.launch_dir_explicit
+                && !app.ui.launch_match_done
+                && app.ui.launch_repo_path.is_some()
+                && !app.ui.project_setup_dismissed
+            {
+                app.ui.launch_match_done = true;
+                let base_url = app.backend_url.clone();
+                let net_tx = app.net_tx.clone();
+                let repo_path = app.ui.launch_repo_path.clone().unwrap_or_default();
+                tokio::spawn(async move {
+                    let matched = find_project_for_repo_path_http(&base_url, &repo_path).await;
+                    match matched {
+                        Ok(project_id) => {
+                            let _ = net_tx
+                                .send(NetEvent::ProjectMatchResult { project_id })
+                                .await;
+                        }
+                        Err(e) => {
+                            let _ = net_tx
+                                .send(NetEvent::Error(format!("project match failed: {e}")))
+                                .await;
+                            let _ = net_tx
+                                .send(NetEvent::ProjectMatchResult { project_id: None })
+                                .await;
+                        }
+                    }
+                });
+            }
+
             if app.board.projects_loaded_once
-                && crate::selection::lists_filters::projects_list(&app.board.projects_store)
-                    .is_empty()
+                && projects_empty
                 && app.ui.project_setup.is_none()
                 && !app.ui.project_setup_dismissed
             {
                 app.ui.project_setup = Some(ProjectSetupState {
                     repo_path: app.ui.launch_repo_path.clone(),
                     suggested_project_name: app.ui.launch_suggested_project_name.clone(),
+                    has_projects: false,
                     busy: false,
                 });
                 return true;

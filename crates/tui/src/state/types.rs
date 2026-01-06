@@ -133,6 +133,7 @@ pub(crate) struct ConfirmState {
 pub(crate) struct ProjectSetupState {
     pub(crate) repo_path: Option<String>,
     pub(crate) suggested_project_name: String,
+    pub(crate) has_projects: bool,
     pub(crate) busy: bool,
 }
 

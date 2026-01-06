@@ -103,6 +103,8 @@ pub(crate) struct UiState {
     pub(crate) project_setup_dismissed: bool,
     pub(crate) launch_repo_path: Option<String>,
     pub(crate) launch_suggested_project_name: String,
+    pub(crate) launch_dir_explicit: bool,
+    pub(crate) launch_match_done: bool,
 
     pub(crate) composer_active: bool,
     pub(crate) composer: TextFieldState,
@@ -186,6 +188,10 @@ impl AppState {
                 suggested,
             )
         };
+        let launch_dir_explicit = std::env::var("VIBE_TUI_PROJECT_DIR")
+            .ok()
+            .or_else(|| std::env::var("VIBE_PROJECT_DIR").ok())
+            .is_some();
 
         let state = Self {
             backend_url,
@@ -206,6 +212,8 @@ impl AppState {
                 project_setup_dismissed: false,
                 launch_repo_path,
                 launch_suggested_project_name,
+                launch_dir_explicit,
+                launch_match_done: false,
 
                 composer_active: false,
                 composer: Default::default(),
