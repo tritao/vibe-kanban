@@ -9,9 +9,10 @@ use crate::{
     layout::compute_main_layout,
     state::{AppState, TaskRow},
     ui::{
-        render_board_pane, render_bottom_bar, render_composer_autocomplete, render_confirm_modal,
-        render_create_task_modal, render_diff_pane, render_execution_pane, render_help_modal,
-        render_input_modal, render_project_setup_modal, render_top_bar,
+        render_board_pane, render_bottom_bar, render_branch_picker_modal,
+        render_composer_autocomplete, render_confirm_modal, render_create_task_modal,
+        render_diff_pane, render_execution_pane, render_help_modal, render_input_modal,
+        render_project_setup_modal, render_top_bar,
     },
 };
 
@@ -58,6 +59,10 @@ pub(crate) fn render(f: &mut Frame, app: &AppState) {
 
     if let Some(state) = app.ui.project_setup.as_ref() {
         render_project_setup_modal(f, state);
+    }
+
+    if let Some(state) = app.ui.branch_picker.as_ref() {
+        render_branch_picker_modal(f, state);
     }
 }
 

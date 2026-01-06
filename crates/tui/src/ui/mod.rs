@@ -15,5 +15,6 @@ pub(crate) use diff::{
 };
 pub(crate) use execution::{render_composer_autocomplete, render_execution_pane};
 pub(crate) use modals::{
-    render_confirm_modal, render_help_modal, render_input_modal, render_project_setup_modal,
+    render_branch_picker_modal, render_confirm_modal, render_help_modal, render_input_modal,
+    render_project_setup_modal,
 };

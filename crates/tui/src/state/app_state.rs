@@ -5,9 +5,10 @@ use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
 use super::types::{
-    AttemptRow, ConfirmState, CreateTaskState, DiffFocus, DiffTheme, ExecutorProfileSelection,
-    FocusPane, GitOpState, InputState, JobKey, LogMode, LogRenderMode, LogViewMode,
-    PendingExecHook, RepoBranchStatus, TaskStatus, TextFieldState, ToastState, TuiPrefs,
+    AttemptRow, BranchPickerState, ConfirmState, CreateTaskState, DiffFocus, DiffTheme,
+    ExecutorProfileSelection, FocusPane, GitOpState, InputState, JobKey, LogMode, LogRenderMode,
+    LogViewMode, PendingExecHook, RepoBranchStatus, TaskStatus, TextFieldState, ToastState,
+    TuiPrefs,
 };
 use crate::{
     events::{NetEvent, StreamStatus},
@@ -101,6 +102,7 @@ pub(crate) struct UiState {
     pub(crate) create_task: Option<CreateTaskState>,
     pub(crate) project_setup: Option<super::types::ProjectSetupState>,
     pub(crate) project_setup_dismissed: bool,
+    pub(crate) branch_picker: Option<BranchPickerState>,
     pub(crate) launch_repo_path: Option<String>,
     pub(crate) launch_suggested_project_name: String,
     pub(crate) launch_dir_explicit: bool,
@@ -210,6 +212,7 @@ impl AppState {
                 create_task: None,
                 project_setup: None,
                 project_setup_dismissed: false,
+                branch_picker: None,
                 launch_repo_path,
                 launch_suggested_project_name,
                 launch_dir_explicit,

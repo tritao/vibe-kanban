@@ -46,6 +46,106 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
         }
     }
 
+    // Branch picker modal.
+    if let Some(state) = app.ui.branch_picker.as_mut() {
+        match key.code {
+            KeyCode::Esc => {
+                app.ui.branch_picker = None;
+                return (false, true, vec![]);
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                state.selected_index = state.selected_index.saturating_sub(1);
+                return (false, true, vec![]);
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                state.selected_index = state.selected_index.saturating_add(1);
+                return (false, true, vec![]);
+            }
+            KeyCode::Enter => {
+                if state.busy {
+                    return (false, false, vec![]);
+                }
+                let attempt_id = match app.board.selected_attempt_id {
+                    Some(id) => id,
+                    None => {
+                        app.ui.last_error =
+                            Some("No attempt selected (select a task/attempt first).".to_string());
+                        return (false, true, vec![]);
+                    }
+                };
+
+                let filter = state.filter.buffer.trim().to_ascii_lowercase();
+                let visible: Vec<&crate::state::GitBranchItem> = state
+                    .branches
+                    .iter()
+                    .filter(|b| {
+                        if filter.is_empty() {
+                            true
+                        } else {
+                            b.name.to_ascii_lowercase().contains(&filter)
+                        }
+                    })
+                    .collect();
+
+                if visible.is_empty() {
+                    app.ui.last_error = Some("No matching branches.".to_string());
+                    return (false, true, vec![]);
+                }
+                let idx = state.selected_index.min(visible.len().saturating_sub(1));
+                let branch = visible[idx].name.clone();
+                let repo_id = state.repo_id;
+                let repo_name = state.repo_name.clone();
+                state.busy = true;
+
+                let base_url = app.backend_url.clone();
+                let net_tx = app.net_tx.clone();
+                tokio::spawn(async move {
+                    let result = crate::net::ops::change_target_branch_http(
+                        &base_url, attempt_id, repo_id, &branch,
+                    )
+                    .await;
+                    match result {
+                        Ok(()) => {
+                            let _ = net_tx
+                                .send(crate::events::NetEvent::Notice(format!(
+                                    "Target branch for {repo_name} set to {branch}."
+                                )))
+                                .await;
+                            if let Ok(statuses) =
+                                crate::net::ops::branch_status_http(&base_url, attempt_id).await
+                            {
+                                let _ = net_tx
+                                    .send(crate::events::NetEvent::BranchStatusLoaded(statuses))
+                                    .await;
+                            }
+                            let _ = net_tx.send(crate::events::NetEvent::DiffReconnect).await;
+                        }
+                        Err(e) => {
+                            let _ = net_tx
+                                .send(crate::events::NetEvent::Error(format!(
+                                    "change target branch failed: {e}"
+                                )))
+                                .await;
+                        }
+                    }
+                });
+
+                // Close immediately; user will see notice/errors in main UI.
+                app.ui.branch_picker = None;
+                return (false, true, vec![]);
+            }
+            _ => {
+                if !state.busy {
+                    if super::text_edit::apply_text_field_key(&mut state.filter, key, false) {
+                        state.selected_index = 0;
+                        return (false, true, vec![]);
+                    }
+                }
+            }
+        }
+        return (false, false, vec![]);
+    }
+
     // Project setup modal (shown when no projects exist yet).
     if let Some(state) = app.ui.project_setup.as_mut() {
         match key.code {

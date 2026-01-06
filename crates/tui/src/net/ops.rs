@@ -890,3 +890,51 @@ pub(crate) async fn find_project_for_repo_path_http(
 
     Ok(None)
 }
+
+pub(crate) async fn repo_branches_http(
+    base_url: &str,
+    repo_id: Uuid,
+) -> anyhow::Result<Vec<crate::state::GitBranchItem>> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/repos/{repo_id}/branches",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client.get(url).send().await?;
+    let api = resp
+        .json::<ApiResponse<Vec<crate::state::GitBranchItem>>>()
+        .await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected branches request");
+    }
+    Ok(api.into_data().unwrap_or_default())
+}
+
+pub(crate) async fn change_target_branch_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+    new_target_branch: &str,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/change-target-branch",
+        base_url.trim_end_matches('/')
+    );
+    let body = serde_json::json!({
+        "repo_id": repo_id,
+        "new_target_branch": new_target_branch,
+    });
+    let resp = client.post(url).json(&body).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected change-target-branch");
+    }
+    Ok(())
+}

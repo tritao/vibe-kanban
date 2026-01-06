@@ -137,6 +137,26 @@ pub(crate) struct ProjectSetupState {
     pub(crate) busy: bool,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct BranchPickerState {
+    pub(crate) repo_id: Uuid,
+    pub(crate) repo_name: String,
+    pub(crate) filter: TextFieldState,
+    pub(crate) selected_index: usize,
+    pub(crate) branches: Vec<GitBranchItem>,
+    pub(crate) busy: bool,
+    pub(crate) error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+pub(crate) struct GitBranchItem {
+    pub(crate) name: String,
+    pub(crate) is_current: bool,
+    pub(crate) is_remote: bool,
+    #[allow(dead_code)]
+    pub(crate) last_commit_date: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CreateTaskFocus {
     Title,

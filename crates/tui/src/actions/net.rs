@@ -65,6 +65,30 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             }
             false
         }
+        NetEvent::RepoBranchesLoaded { repo_id, branches } => {
+            if let Some(state) = app.ui.branch_picker.as_mut() {
+                if state.repo_id == repo_id {
+                    state.branches = branches;
+                    state.busy = false;
+                    state.error = None;
+                    state.selected_index = state
+                        .selected_index
+                        .min(state.branches.len().saturating_sub(1));
+                    return true;
+                }
+            }
+            false
+        }
+        NetEvent::RepoBranchesFailed { repo_id, message } => {
+            if let Some(state) = app.ui.branch_picker.as_mut() {
+                if state.repo_id == repo_id {
+                    state.busy = false;
+                    state.error = Some(message);
+                    return true;
+                }
+            }
+            false
+        }
         NetEvent::ProjectsStreamStatus(status) => {
             app.board.projects_status = status;
             true

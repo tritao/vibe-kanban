@@ -7,7 +7,7 @@ use ratatui::{
 
 use super::layout::centered_rect;
 use crate::{
-    state::{ConfirmState, InputMode, InputState, ProjectSetupState},
+    state::{BranchPickerState, ConfirmState, InputMode, InputState, ProjectSetupState},
     text::{display_width, slice_by_display_cols},
 };
 
@@ -220,6 +220,98 @@ pub(crate) fn render_project_setup_modal(f: &mut Frame, state: &ProjectSetupStat
                 .borders(Borders::ALL)
                 .title("Project Setup"),
         )
+        .wrap(Wrap { trim: true });
+    f.render_widget(p, area);
+}
+
+pub(crate) fn render_branch_picker_modal(f: &mut Frame, state: &BranchPickerState) {
+    let area = centered_rect(80, 70, f.area());
+    f.render_widget(Clear, area);
+
+    let filter = state.filter.buffer.trim();
+    let filter_line = if filter.is_empty() {
+        "Filter: (type to search)".to_string()
+    } else {
+        format!("Filter: {filter}")
+    };
+
+    let needle = filter.to_ascii_lowercase();
+    let visible: Vec<&crate::state::GitBranchItem> = state
+        .branches
+        .iter()
+        .filter(|b| needle.is_empty() || b.name.to_ascii_lowercase().contains(&needle))
+        .collect();
+
+    let mut lines: Vec<Line<'static>> = vec![
+        Line::from(vec![Span::styled(
+            format!("Switch target branch — {}", state.repo_name),
+            Style::default().add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(filter_line),
+        Line::from(""),
+    ];
+
+    if state.busy {
+        lines.push(Line::from(Span::styled(
+            "Loading…",
+            Style::default().add_modifier(Modifier::DIM),
+        )));
+    } else if let Some(err) = state.error.as_deref() {
+        lines.push(Line::from(Span::styled(
+            err.to_string(),
+            Style::default().fg(ratatui::style::Color::Red),
+        )));
+    } else if visible.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "No matching branches.",
+            Style::default().add_modifier(Modifier::DIM),
+        )));
+    } else {
+        let max = (area.height as usize).saturating_sub(8).max(6);
+        let sel = state.selected_index.min(visible.len().saturating_sub(1));
+        let start = sel
+            .saturating_sub(max / 2)
+            .min(visible.len().saturating_sub(1));
+        let end = (start + max).min(visible.len());
+
+        for (i, b) in visible[start..end].iter().enumerate() {
+            let absolute = start + i;
+            let mut prefix = String::new();
+            if b.is_current {
+                prefix.push('*');
+            } else {
+                prefix.push(' ');
+            }
+            prefix.push(' ');
+            if b.is_remote {
+                prefix.push('r');
+            } else {
+                prefix.push(' ');
+            }
+            prefix.push(' ');
+
+            let style = if absolute == sel {
+                Style::default()
+                    .add_modifier(Modifier::REVERSED)
+                    .add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            lines.push(Line::from(Span::styled(
+                format!("{prefix}{}", b.name),
+                style,
+            )));
+        }
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "Enter = apply, Esc = cancel",
+            Style::default().add_modifier(Modifier::DIM),
+        )));
+    }
+
+    let p = Paragraph::new(lines)
+        .block(Block::default().borders(Borders::ALL).title("Branches"))
         .wrap(Wrap { trim: true });
     f.render_widget(p, area);
 }

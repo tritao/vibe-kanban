@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     logs::PreparedLogCache,
-    state::{AttemptRow, ExecutorProfileSelection, RepoBranchStatus, TaskStatus},
+    state::{AttemptRow, ExecutorProfileSelection, GitBranchItem, RepoBranchStatus, TaskStatus},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +71,14 @@ pub(crate) enum NetEvent {
     },
     ProjectMatchResult {
         project_id: Option<Uuid>,
+    },
+    RepoBranchesLoaded {
+        repo_id: Uuid,
+        branches: Vec<GitBranchItem>,
+    },
+    RepoBranchesFailed {
+        repo_id: Uuid,
+        message: String,
     },
     ProjectsStreamStatus(StreamStatus),
     ProjectsPatch(json_patch::Patch),
