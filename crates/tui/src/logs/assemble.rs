@@ -758,7 +758,7 @@ fn append_normalized_entry(
                                 width,
                             );
                         } else {
-                            const MAX_OUTPUT_LINES: usize = 400;
+                            const MAX_OUTPUT_LINES: usize = 5000;
                             for (i, l) in output.lines().take(MAX_OUTPUT_LINES).enumerate() {
                                 let line = sanitize_tui_text(l.strip_suffix('\r').unwrap_or(l));
                                 push_line(
@@ -777,7 +777,7 @@ fn append_normalized_entry(
                                         map,
                                         entry_idx,
                                         Line::from(Span::styled(
-                                            "  … (truncated)".to_string(),
+                                            "  … (truncated; press o for Raw logs)".to_string(),
                                             Style::default().add_modifier(Modifier::DIM),
                                         )),
                                         width,
