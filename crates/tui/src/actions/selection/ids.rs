@@ -38,7 +38,7 @@ pub(in crate::actions) fn select_task(app: &mut AppState, task_id: Option<Uuid>)
 }
 
 pub(in crate::actions) fn select_attempt(app: &mut AppState, attempt_id: Option<Uuid>) {
-    if app.board.selected_attempt_id == attempt_id {
+    if app.board.selected_attempt_id == attempt_id && attempt_id.is_some() {
         return;
     }
 
