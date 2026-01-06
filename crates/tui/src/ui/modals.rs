@@ -49,6 +49,7 @@ pub(crate) fn render_help_modal(f: &mut Frame) {
         Line::from("  y           copy selected logs/visible"),
         Line::from("  Y           copy worktree path"),
         Line::from("  W           copy attempt checkout path"),
+        Line::from("  Alt-s       toggle mouse capture (text selection)"),
         Line::from("  e / Enter   expand/collapse entry"),
         Line::from("  Esc         cancel compose"),
         Line::from("  o           toggle raw/normalized"),

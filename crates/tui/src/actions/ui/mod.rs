@@ -1,6 +1,8 @@
 use std::time::Instant;
 
 use crossterm::event::{Event, KeyEventKind};
+use crossterm::execute;
+use crossterm::event::{DisableMouseCapture, EnableMouseCapture};
 use ratatui::style::Color;
 
 pub(super) use super::selection as sel;
@@ -28,6 +30,7 @@ mod text_edit;
 
 pub(super) enum Effect {
     CopyOsc52(String),
+    SetMouseCapture(bool),
     Toast {
         message: String,
         color: Color,
@@ -57,6 +60,9 @@ pub(super) fn reduce_ui(
             Ok(keys::reduce_key(app, key))
         }
         UiEvent::Crossterm(Event::Mouse(mouse)) => {
+            if !app.ui.mouse_capture_enabled {
+                return Ok((false, false, vec![]));
+            }
             Ok((false, mouse::reduce_mouse(app, mouse), vec![]))
         }
         _ => Ok((false, false, vec![])),
@@ -76,6 +82,39 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
                         Some(Instant::now() + std::time::Duration::from_secs(2)),
                     );
                     dirty = true;
+                }
+            }
+            Effect::SetMouseCapture(enabled) => {
+                let res = if enabled {
+                    execute!(std::io::stdout(), EnableMouseCapture)
+                } else {
+                    execute!(std::io::stdout(), DisableMouseCapture)
+                };
+                match res {
+                    Ok(()) => {
+                        app.ui.mouse_capture_enabled = enabled;
+                        set_toast(
+                            app,
+                            if enabled {
+                                "Mouse capture enabled".to_string()
+                            } else {
+                                "Mouse capture disabled (terminal text selection enabled)"
+                                    .to_string()
+                            },
+                            Color::Green,
+                            Some(Instant::now() + std::time::Duration::from_secs(2)),
+                        );
+                        dirty = true;
+                    }
+                    Err(e) => {
+                        set_toast(
+                            app,
+                            format!("Mouse capture toggle failed: {e}"),
+                            Color::Red,
+                            Some(Instant::now() + std::time::Duration::from_secs(2)),
+                        );
+                        dirty = true;
+                    }
                 }
             }
             Effect::Toast {

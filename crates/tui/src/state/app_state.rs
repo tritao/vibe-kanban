@@ -122,6 +122,10 @@ pub(crate) struct UiState {
 
     pub(crate) toast: Option<ToastState>,
 
+    // When enabled, we request mouse events from the terminal (click/scroll handling).
+    // When disabled, the terminal can perform normal mouse selection.
+    pub(crate) mouse_capture_enabled: bool,
+
     pub(crate) available_executors: Vec<String>,
     pub(crate) selected_executor_profile: Option<ExecutorProfileSelection>,
     pub(crate) executor_profiles: serde_json::Value,
@@ -231,6 +235,7 @@ impl AppState {
                 last_notice: None,
 
                 toast: None,
+                mouse_capture_enabled: true,
 
                 available_executors: vec![],
                 selected_executor_profile: None,

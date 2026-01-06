@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::{
     CopyTarget, Effect, composer, confirm, copy::reduce_copy, create_task, keys_board, keys_diff,
@@ -11,6 +11,15 @@ use crate::{
 };
 
 pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<Effect>) {
+    // Alt+S toggles mouse capture (enables terminal text selection).
+    if matches!((key.code, key.modifiers), (KeyCode::Char('s'), KeyModifiers::ALT)) {
+        return (
+            false,
+            true,
+            vec![Effect::SetMouseCapture(!app.ui.mouse_capture_enabled)],
+        );
+    }
+
     // Confirm modal has highest priority.
     if confirm::handle_confirm_key(app, key) {
         return (false, true, vec![]);
