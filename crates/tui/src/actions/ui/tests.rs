@@ -171,3 +171,34 @@ fn composer_enter_with_no_attempt_keeps_composer_open() {
             .contains("No task/attempt selected")
     );
 }
+
+#[test]
+fn text_field_allows_shift_char_insertion() {
+    use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+
+    let mut app = mk_app();
+    app.ui.create_task = Some(crate::state::CreateTaskState {
+        title: Default::default(),
+        description: Default::default(),
+        status: crate::state::TaskStatus::Todo,
+        focus: crate::state::CreateTaskFocus::Description,
+        selected_button: 0,
+        error: None,
+    });
+    let state = app.ui.create_task.as_mut().unwrap();
+    state.focus = crate::state::CreateTaskFocus::Description;
+
+    let (_quit, dirty, _effects) = super::reduce_ui(
+        &mut app,
+        UiEvent::Crossterm(Event::Key(KeyEvent::new_with_kind(
+            KeyCode::Char('N'),
+            KeyModifiers::SHIFT,
+            KeyEventKind::Press,
+        ))),
+    )
+    .unwrap();
+
+    assert!(dirty);
+    let state = app.ui.create_task.as_ref().unwrap();
+    assert_eq!(state.description.buffer, "N");
+}

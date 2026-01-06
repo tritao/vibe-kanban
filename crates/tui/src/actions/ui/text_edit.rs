@@ -57,7 +57,9 @@ pub(super) fn apply_text_field_key(
         (KeyCode::Enter, _) if multiline => {
             field.insert_char('\n');
         }
-        (KeyCode::Char(c), KeyModifiers::NONE) => {
+        (KeyCode::Char(c), m)
+            if !m.contains(KeyModifiers::CONTROL) && !m.contains(KeyModifiers::ALT) =>
+        {
             field.insert_char(c);
         }
         _ => return false,
