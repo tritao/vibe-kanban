@@ -800,6 +800,8 @@ pub(crate) struct BranchStatus {
 pub(crate) struct RepoBranchStatus {
     pub(crate) repo_id: Uuid,
     pub(crate) repo_name: String,
+    #[serde(default)]
+    pub(crate) worktree_path: Option<String>,
     #[serde(flatten)]
     pub(crate) status: BranchStatus,
 }

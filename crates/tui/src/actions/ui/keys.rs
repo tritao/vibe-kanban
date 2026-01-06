@@ -339,6 +339,11 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
         return (false, false, reduce_copy(app, CopyTarget::WorktreePath));
     }
 
+    // Shift+W copies the selected attempt's checkout path (for the selected repo).
+    if key.code == KeyCode::Char('W') {
+        return (false, false, reduce_copy(app, CopyTarget::AttemptCheckoutPath));
+    }
+
     if key.code == KeyCode::Char('y') {
         let target = match app.ui.focus {
             FocusPane::Execution => Some(CopyTarget::Execution),

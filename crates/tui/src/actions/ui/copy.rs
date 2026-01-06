@@ -45,6 +45,12 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
         }
         CopyTarget::DiffPreview => crate::util::lines_plain_text(&app.diff.diff_preview_lines),
         CopyTarget::WorktreePath => app.ui.launch_repo_path.clone().unwrap_or_default(),
+        CopyTarget::AttemptCheckoutPath => app
+            .diff
+            .repo_statuses
+            .get(app.diff.selected_repo_index)
+            .and_then(|r| r.worktree_path.clone())
+            .unwrap_or_default(),
     };
 
     if text.trim().is_empty() {
@@ -60,6 +66,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
         CopyTarget::DiffFiles => "Copied path",
         CopyTarget::DiffPreview => "Copied diff",
         CopyTarget::WorktreePath => "Copied worktree path",
+        CopyTarget::AttemptCheckoutPath => "Copied attempt checkout path",
     };
 
     vec![

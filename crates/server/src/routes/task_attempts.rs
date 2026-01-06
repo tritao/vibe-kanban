@@ -617,6 +617,7 @@ pub struct BranchStatus {
 pub struct RepoBranchStatus {
     pub repo_id: Uuid,
     pub repo_name: String,
+    pub worktree_path: String,
     #[serde(flatten)]
     pub status: BranchStatus,
 }
@@ -731,6 +732,7 @@ pub async fn get_task_attempt_branch_status(
         results.push(RepoBranchStatus {
             repo_id: repo.id,
             repo_name: repo.name,
+            worktree_path: worktree_path.to_string_lossy().to_string(),
             status: BranchStatus {
                 commits_ahead,
                 commits_behind,
