@@ -235,9 +235,15 @@ pub(crate) async fn queue_follow_up_http(
     let body = serde_json::json!({ "message": message, "variant": null });
 
     let resp = client.post(url).json(&body).send().await?;
-    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
-    if !api.is_success() {
-        anyhow::bail!("backend rejected queue request");
+    let status = resp.status();
+    let body_text = resp.text().await.unwrap_or_default();
+    let api: ApiResponseWire<serde_json::Value> = serde_json::from_str(&body_text)
+        .with_context(|| format!("parse backend response (status {status})"))?;
+    if !api.success {
+        let msg = api
+            .message
+            .unwrap_or_else(|| "backend rejected queue request".to_string());
+        anyhow::bail!("{msg} (HTTP {status})");
     }
     Ok(())
 }
@@ -264,9 +270,15 @@ pub(crate) async fn follow_up_http(
     });
 
     let resp = client.post(url).json(&body).send().await?;
-    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
-    if !api.is_success() {
-        anyhow::bail!("backend rejected follow-up request");
+    let status = resp.status();
+    let body_text = resp.text().await.unwrap_or_default();
+    let api: ApiResponseWire<serde_json::Value> = serde_json::from_str(&body_text)
+        .with_context(|| format!("parse backend response (status {status})"))?;
+    if !api.success {
+        let msg = api
+            .message
+            .unwrap_or_else(|| "backend rejected follow-up request".to_string());
+        anyhow::bail!("{msg} (HTTP {status})");
     }
     Ok(())
 }

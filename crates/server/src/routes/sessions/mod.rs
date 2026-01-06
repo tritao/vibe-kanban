@@ -23,7 +23,6 @@ use executors::{
 };
 use serde::Deserialize;
 use services::services::container::ContainerService;
-use sqlx::Error as SqlxError;
 use ts_rs::TS;
 use utils::response::ApiResponse;
 use uuid::Uuid;
@@ -128,13 +127,17 @@ pub async fn follow_up(
     let task = workspace
         .parent_task(pool)
         .await?
-        .ok_or(SqlxError::RowNotFound)?;
+        .ok_or(ApiError::BadRequest(
+            "No task is associated with this session/workspace. Select a task attempt (or create one) before sending a follow-up.".to_string(),
+        ))?;
 
     // Get parent project
     let project = task
         .parent_project(pool)
         .await?
-        .ok_or(SqlxError::RowNotFound)?;
+        .ok_or(ApiError::BadRequest(
+            "No project is associated with the selected task. Please select a valid task attempt and retry.".to_string(),
+        ))?;
 
     // If retry settings provided, perform replace-logic before proceeding
     if let Some(proc_id) = payload.retry_process_id {
