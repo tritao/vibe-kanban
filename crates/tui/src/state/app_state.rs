@@ -59,6 +59,7 @@ pub(crate) struct ExecState {
     pub(crate) log_scroll_offset: usize,
 
     pub(crate) log_buffers: HashMap<Uuid, ExecLogBuffer>,
+    pub(crate) log_exec_order_by_attempt: HashMap<Uuid, Vec<Uuid>>,
     pub(crate) log_exec_order: Vec<Uuid>,
     pub(crate) log_view_dirty: bool,
 
@@ -291,6 +292,7 @@ impl AppState {
                 log_selected: None,
 
                 log_buffers: HashMap::new(),
+                log_exec_order_by_attempt: HashMap::new(),
                 log_exec_order: vec![],
                 log_view_dirty: true,
 

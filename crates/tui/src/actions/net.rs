@@ -372,7 +372,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             true
         }
         NetEvent::LogPatch { exec_id, patch } => {
-            enqueue_log_patch(app, exec_id, patch);
+            enqueue_log_patch(app, app.board.selected_attempt_id, exec_id, patch);
             true
         }
         NetEvent::BranchStatusLoaded(statuses) => {

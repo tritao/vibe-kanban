@@ -502,9 +502,7 @@ pub(crate) fn append_local_user_message(app: &mut AppState, exec_id: Uuid, messa
         return;
     }
 
-    if !app.exec.log_exec_order.contains(&exec_id) {
-        app.exec.log_exec_order.push(exec_id);
-    }
+    push_exec_order(app, app.board.selected_attempt_id, exec_id);
 
     let buf = app.exec.log_buffers.entry(exec_id).or_default();
     buf.ensure_init();
@@ -576,11 +574,25 @@ pub(crate) fn mark_all_log_buffers_dirty(app: &mut AppState, entry_idx: usize) {
     app.exec.log_view_dirty = true;
 }
 
+fn push_exec_order(app: &mut AppState, attempt_id: Option<Uuid>, exec_id: Uuid) {
+    if !app.exec.log_exec_order.contains(&exec_id) {
+        app.exec.log_exec_order.push(exec_id);
+    }
+    let Some(attempt_id) = attempt_id else {
+        return;
+    };
+    let list = app.exec.log_exec_order_by_attempt.entry(attempt_id).or_default();
+    if !list.contains(&exec_id) {
+        list.push(exec_id);
+    }
+}
+
 pub(crate) fn reset_logs(app: &mut AppState, exec_id: Option<Uuid>) {
     match exec_id {
         None => {
             // Full reset: drop cached buffers and view state.
             app.exec.log_buffers.clear();
+            app.exec.log_exec_order_by_attempt.clear();
             app.exec.log_exec_order.clear();
             app.exec.log_lines.clear();
             app.exec.log_line_targets.clear();
@@ -633,10 +645,23 @@ pub(crate) fn prune_log_buffers(app: &mut AppState) {
         .retain(|id| app.exec.log_buffers.contains_key(id));
 }
 
-pub(crate) fn enqueue_log_patch(app: &mut AppState, exec_id: Uuid, patch: json_patch::Patch) {
-    if !app.exec.log_exec_order.contains(&exec_id) {
-        app.exec.log_exec_order.push(exec_id);
+pub(crate) fn enqueue_log_patch(
+    app: &mut AppState,
+    attempt_id: Option<Uuid>,
+    exec_id: Uuid,
+    patch: json_patch::Patch,
+) {
+    let mut attempt_for_order = attempt_id;
+    if attempt_for_order.is_some() {
+        let is_selected = app.exec.selected_exec_id == Some(exec_id);
+        let in_store = exec_list(&app.exec.exec_store)
+            .iter()
+            .any(|e| e.id == exec_id);
+        if !is_selected && !in_store {
+            attempt_for_order = None;
+        }
     }
+    push_exec_order(app, attempt_for_order, exec_id);
 
     let buf = app.exec.log_buffers.entry(exec_id).or_default();
     buf.enqueue_patch(patch);
@@ -650,9 +675,13 @@ fn rebuild_log_view_cache(app: &mut AppState) {
     execs.sort_by_key(|e| e.created_at.clone().unwrap_or_default());
 
     let mut ordered: Vec<Uuid> = execs.iter().map(|e| e.id).collect();
-    for id in app.exec.log_exec_order.iter().copied() {
-        if !ordered.contains(&id) {
-            ordered.push(id);
+    if let Some(attempt_id) = app.board.selected_attempt_id {
+        if let Some(ids) = app.exec.log_exec_order_by_attempt.get(&attempt_id) {
+            for id in ids.iter().copied() {
+                if !ordered.contains(&id) {
+                    ordered.push(id);
+                }
+            }
         }
     }
 
