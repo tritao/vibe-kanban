@@ -9,6 +9,7 @@ use super::{
 };
 use crate::{
     diff::highlight_unified_diff,
+    logs::model_params::is_model_params_system_message,
     state::{DiffTheme, LogMode, LogRenderMode},
     text::{line_display_width, sanitize_tui_text, truncate_to_width, wrap_line_wordwise},
 };
@@ -468,6 +469,10 @@ fn append_normalized_entry(
         "system_message" => {
             let trimmed = content_text.trim();
             if trimmed.is_empty() {
+                return;
+            }
+            // Move model/effort system messages into the run header metadata line.
+            if is_model_params_system_message(trimmed) {
                 return;
             }
             let (h, len) = fnv1a64(trimmed);

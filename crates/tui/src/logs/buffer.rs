@@ -10,8 +10,10 @@ use uuid::Uuid;
 use crate::{
     events::StreamStatus,
     fmt::short_time,
+    logs::model_params::{ModelParams, extract_model_params_from_store},
     selection::exec_list,
     state::{AppState, DiffTheme, ExecRow, LogMode, LogRenderMode, LogViewMode},
+    text::truncate_to_width,
 };
 
 fn ensure_log_store_entries_array(store: &mut serde_json::Value) {
@@ -609,6 +611,7 @@ fn rebuild_log_view_cache(app: &mut AppState) {
     let exec_by_id: HashMap<Uuid, ExecRow> = execs.into_iter().map(|e| (e.id, e)).collect();
 
     let width = app.exec.log_render_width;
+    let mut last_params: Option<ModelParams> = None;
     for (idx, exec_id) in include.iter().copied().enumerate() {
         let meta = exec_by_id.get(&exec_id);
         let status = meta.and_then(|e| e.status.as_deref()).unwrap_or("unknown");
@@ -627,6 +630,25 @@ fn rebuild_log_view_cache(app: &mut AppState) {
             Style::default().add_modifier(Modifier::BOLD),
         )));
         app.exec.log_line_targets.push(None);
+
+        if let Some(buf) = app.exec.log_buffers.get(&exec_id) {
+            if let Some(params) = extract_model_params_from_store(&buf.store) {
+                if last_params.as_ref() != Some(&params) {
+                    last_params = Some(params.clone());
+                    let mut text = format!("  model: {}", params.model);
+                    if let Some(effort) = params.reasoning_effort.as_ref() {
+                        text.push_str(&format!("  effort: {effort}"));
+                    }
+                    let max = width.saturating_sub(1) as usize;
+                    let text = truncate_to_width(&text, max.max(1));
+                    app.exec.log_lines.push(Line::from(Span::styled(
+                        text,
+                        Style::default().add_modifier(Modifier::DIM),
+                    )));
+                    app.exec.log_line_targets.push(None);
+                }
+            }
+        }
 
         if let Some(buf) = app.exec.log_buffers.get(&exec_id) {
             let cache = buf.cache(width).or_else(|| buf.any_cache());
