@@ -91,6 +91,17 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
                 return diff::handle_diff_left_click(app, mouse, &layout);
             }
         }
+        crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left) => {
+            if rect_contains(layout.exec_logs, col, row) {
+                focus::focus_execution(app);
+                return exec::handle_exec_left_drag(app, mouse, &layout);
+            }
+        }
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left) => {
+            if app.exec.log_mouse_selecting {
+                return exec::handle_exec_left_up(app);
+            }
+        }
         crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Right) => {
             if rect_contains(layout.exec_logs, col, row) {
                 return exec::handle_exec_right_click(app, mouse, &layout);

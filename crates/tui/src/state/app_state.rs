@@ -62,6 +62,11 @@ pub(crate) struct ExecState {
     pub(crate) log_exec_order: Vec<Uuid>,
     pub(crate) log_view_dirty: bool,
 
+    // In-app mouse selection for the log pane (line indices in `log_lines`).
+    pub(crate) log_mouse_selecting: bool,
+    pub(crate) log_mouse_select_anchor: Option<usize>,
+    pub(crate) log_mouse_select_range: Option<(usize, usize)>,
+
     pub(crate) pending_user_log: Option<String>,
     pub(crate) pending_user_log_prev_exec_id: Option<Uuid>,
     pub(crate) pending_user_log_wait_new_exec: bool,
@@ -288,6 +293,10 @@ impl AppState {
                 log_buffers: HashMap::new(),
                 log_exec_order: vec![],
                 log_view_dirty: true,
+
+                log_mouse_selecting: false,
+                log_mouse_select_anchor: None,
+                log_mouse_select_range: None,
 
                 pending_user_log: None,
                 pending_user_log_prev_exec_id: None,

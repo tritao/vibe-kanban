@@ -50,6 +50,7 @@ pub(crate) fn render_help_modal(f: &mut Frame) {
         Line::from("  Y           copy worktree path"),
         Line::from("  W           copy attempt checkout path"),
         Line::from("  Alt-s       toggle mouse capture (text selection)"),
+        Line::from("  drag        select log text (in-app)"),
         Line::from("  e / Enter   expand/collapse entry"),
         Line::from("  Esc         cancel compose"),
         Line::from("  o           toggle raw/normalized"),

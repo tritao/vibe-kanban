@@ -2,7 +2,7 @@ use crossterm::event::MouseEvent;
 
 use super::{
     super::{focus, sel},
-    hit_test::log_entry_hit_at,
+    hit_test::{log_entry_hit_at, log_line_index_hit_at},
 };
 use crate::{layout::rect_contains, state::AppState};
 
@@ -71,12 +71,19 @@ pub(super) fn handle_exec_left_click(
         let area = layout.exec_logs;
         sel::select_log_entry(app, log_entry_hit_at(app, area, col, row));
 
+        // Start an in-app selection range (drag will extend it).
+        if let Some(line_idx) = log_line_index_hit_at(app, area, row) {
+            app.exec.log_mouse_selecting = true;
+            app.exec.log_mouse_select_anchor = Some(line_idx);
+            app.exec.log_mouse_select_range = Some((line_idx, line_idx));
+        }
+
         // Toggle collapse/expand by clicking on the chevron (▸/▾) of a tool block.
         // Right-click already toggles, but left-click on the chevron is more discoverable.
         let inner_x0 = area.x.saturating_add(1);
         let click_x = col.saturating_sub(inner_x0) as usize;
         if click_x <= 3 {
-            if let Some(line_idx) = log_line_hit_at(app, area, row) {
+            if let Some(line_idx) = log_line_index_hit_at(app, area, row) {
                 if let Some(line) = app.exec.log_lines.get(line_idx) {
                     let has_chevron = line
                         .spans
@@ -94,33 +101,27 @@ pub(super) fn handle_exec_left_click(
     false
 }
 
-fn log_line_hit_at(app: &AppState, area: ratatui::layout::Rect, row: u16) -> Option<usize> {
-    let len = app.exec.log_lines.len();
-    if len == 0 {
-        return None;
-    }
-    let inner_y0 = area.y.saturating_add(1);
-    let inner_y1 = area.y.saturating_add(area.height).saturating_sub(1);
-    if row < inner_y0 || row >= inner_y1 {
-        return None;
-    }
-    let visible = area.height.saturating_sub(2) as usize;
-    if visible == 0 {
-        return None;
-    }
-    let visible = visible.min(len);
-    let mut offset = if app.exec.log_autoscroll {
-        0
-    } else {
-        app.exec.log_scroll_offset
+pub(super) fn handle_exec_left_drag(
+    app: &mut AppState,
+    mouse: MouseEvent,
+    layout: &crate::layout::MainLayoutRects,
+) -> bool {
+    let row = mouse.row;
+    let area = layout.exec_logs;
+    let Some(anchor) = app.exec.log_mouse_select_anchor else {
+        return false;
     };
-    offset = offset.min(len.saturating_sub(visible));
-    let start = len.saturating_sub(visible + offset);
-    let inner_row = row.saturating_sub(inner_y0) as usize;
-    if inner_row >= visible {
-        return None;
-    }
-    Some(start.saturating_add(inner_row))
+    let Some(cur) = log_line_index_hit_at(app, area, row) else {
+        return false;
+    };
+    let (a, b) = if anchor <= cur { (anchor, cur) } else { (cur, anchor) };
+    app.exec.log_mouse_select_range = Some((a, b));
+    true
+}
+
+pub(super) fn handle_exec_left_up(app: &mut AppState) -> bool {
+    app.exec.log_mouse_selecting = false;
+    true
 }
 
 pub(super) fn handle_exec_right_click(

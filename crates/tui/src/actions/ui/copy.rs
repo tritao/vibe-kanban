@@ -16,7 +16,11 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
                 .get(&sel.exec_id)
                 .and_then(|b| b.rendered_entry_text(sel.entry_idx, app.exec.log_render_width))
         } else {
-            None
+            app.exec.log_mouse_select_range.map(|(a, b)| {
+                let a = a.min(b);
+                let b = b.max(a);
+                crate::util::lines_plain_text(app.exec.log_lines.get(a..=b).unwrap_or(&[]))
+            })
         }
         .unwrap_or_else(|| {
             let layout = compute_main_layout(current_terminal_rect(), app.ui.focus);

@@ -69,7 +69,30 @@ fn render_logs_viewer(f: &mut Frame, app: &AppState, area: Rect) {
     let start = len.saturating_sub(visible + offset);
     let end = len.saturating_sub(offset);
 
-    let mut text: Vec<Line<'static>> = app.exec.log_lines.get(start..end).unwrap_or(&[]).to_vec();
+    let mut text: Vec<Line<'static>> = app
+        .exec
+        .log_lines
+        .get(start..end)
+        .unwrap_or(&[])
+        .iter()
+        .enumerate()
+        .map(|(i, line)| {
+            let absolute = start.saturating_add(i);
+            let selected = app
+                .exec
+                .log_mouse_select_range
+                .is_some_and(|(a, b)| absolute >= a && absolute <= b);
+            if !selected {
+                return line.clone();
+            }
+            let spans = line
+                .spans
+                .iter()
+                .map(|s| Span::styled(s.content.clone(), s.style.add_modifier(Modifier::REVERSED)))
+                .collect::<Vec<_>>();
+            Line::from(spans)
+        })
+        .collect();
     if text.is_empty() {
         text.push(Line::from("No logs"));
     }
