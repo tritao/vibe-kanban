@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph},
+    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
 };
 
 use crate::{
@@ -1764,15 +1764,17 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
         .and_then(|id| app.diff.commits_by_repo.get(&id))
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
+    let loading = repo_id
+        .and_then(|id| app.diff.commits_loading_by_repo.get(&id).copied())
+        .unwrap_or(false);
+    let has_more = repo_id
+        .and_then(|id| app.diff.commits_has_more_by_repo.get(&id).copied())
+        .unwrap_or(false);
 
     let title = format!(
         "Commits ({}){}",
         commits.len(),
-        if app.diff.commit_preview_loading {
-            ", loading"
-        } else {
-            ""
-        }
+        if loading { ", loading" } else { "" }
     );
 
     let selected = if commits.is_empty() {
@@ -1785,7 +1787,7 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
     let (start, end, selected_in_window) = window_for_list(commits.len(), selected, height);
     let visible = commits.get(start..end).unwrap_or(&[]);
 
-    let items: Vec<ListItem> = if visible.is_empty() {
+    let mut items: Vec<ListItem> = if visible.is_empty() {
         vec![ListItem::new(Line::from("No commits"))]
     } else {
         visible
@@ -1805,6 +1807,17 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
             })
             .collect()
     };
+    if loading {
+        items.push(ListItem::new(Line::from(Span::styled(
+            "Loading…",
+            Style::default().add_modifier(Modifier::DIM),
+        ))));
+    } else if has_more {
+        items.push(ListItem::new(Line::from(Span::styled(
+            "PgDn: older commits",
+            Style::default().add_modifier(Modifier::DIM),
+        ))));
+    }
 
     let widget = List::new(items)
         .block(
@@ -1870,12 +1883,15 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
     let end = (start + height).min(lines.len());
     let visible = lines.get(start..end).unwrap_or(&[]);
 
-    let w = Paragraph::new(visible.to_vec()).block(
+    let mut w = Paragraph::new(visible.to_vec()).block(
         Block::default()
             .borders(Borders::ALL)
             .title(title)
             .border_style(border_style),
     );
+    if app.diff.list_mode == crate::state::DiffListMode::Commits {
+        w = w.wrap(Wrap { trim: false });
+    }
 
     f.render_widget(w, area);
 }

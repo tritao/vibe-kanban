@@ -8,6 +8,34 @@ use crate::{
     state::{AppState, CommitEntry, DiffListMode, JobKey},
 };
 
+fn format_commit_show(text: &str) -> Vec<Line<'static>> {
+    use ratatui::{
+        style::{Modifier, Style},
+        text::Span,
+    };
+
+    let mut out: Vec<Line<'static>> = vec![];
+    for raw in text.lines() {
+        let line = raw.to_string();
+        if line.starts_with("commit ") {
+            out.push(Line::from(Span::styled(
+                line,
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            continue;
+        }
+        if line.starts_with("Author:") || line.starts_with("Date:") {
+            out.push(Line::from(Span::styled(
+                line,
+                Style::default().add_modifier(Modifier::DIM),
+            )));
+            continue;
+        }
+        out.push(Line::from(line));
+    }
+    out
+}
+
 pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
     if app.diff.list_mode != DiffListMode::Commits {
         return;
@@ -19,6 +47,7 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
         return;
     };
     let repo_id = repo.repo_id;
+    app.diff.commits_loading_by_repo.insert(repo_id, true);
 
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
@@ -26,16 +55,92 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
         app,
         JobKey::CommitList,
         tokio::spawn(async move {
-            match commit_list_http(&base_url, attempt_id, repo_id, Some(80)).await {
+            let limit = 80usize;
+            match commit_list_http(&base_url, attempt_id, repo_id, Some(limit), Some(0)).await {
                 Ok(commits) => {
+                    let has_more = commits.len() == limit;
                     let _ = net_tx
-                        .send(NetEvent::CommitListLoaded { repo_id, commits })
+                        .send(NetEvent::CommitListLoaded {
+                            repo_id,
+                            commits,
+                            append: false,
+                            has_more,
+                        })
                         .await;
                 }
                 Err(e) => {
                     let _ = net_tx
                         .send(NetEvent::Error(format!("commit list failed: {e}")))
                         .await;
+                    let _ = net_tx.send(NetEvent::CommitListFailed { repo_id }).await;
+                }
+            }
+        }),
+    );
+}
+
+pub(crate) fn request_commit_list_more(app: &mut AppState) {
+    if app.diff.list_mode != DiffListMode::Commits {
+        return;
+    }
+    let Some(attempt_id) = app.board.selected_attempt_id else {
+        return;
+    };
+    let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+        return;
+    };
+    let repo_id = repo.repo_id;
+    if app
+        .diff
+        .commits_loading_by_repo
+        .get(&repo_id)
+        .copied()
+        .unwrap_or(false)
+    {
+        return;
+    }
+    if !app
+        .diff
+        .commits_has_more_by_repo
+        .get(&repo_id)
+        .copied()
+        .unwrap_or(true)
+    {
+        return;
+    }
+    let offset = app
+        .diff
+        .commits_by_repo
+        .get(&repo_id)
+        .map(|v| v.len())
+        .unwrap_or(0);
+    app.diff.commits_loading_by_repo.insert(repo_id, true);
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    replace_job(
+        app,
+        JobKey::CommitList,
+        tokio::spawn(async move {
+            let limit = 80usize;
+            match commit_list_http(&base_url, attempt_id, repo_id, Some(limit), Some(offset)).await
+            {
+                Ok(commits) => {
+                    let has_more = commits.len() == limit;
+                    let _ = net_tx
+                        .send(NetEvent::CommitListLoaded {
+                            repo_id,
+                            commits,
+                            append: true,
+                            has_more,
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::Error(format!("commit list failed: {e}")))
+                        .await;
+                    let _ = net_tx.send(NetEvent::CommitListFailed { repo_id }).await;
                 }
             }
         }),
@@ -74,8 +179,7 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
         tokio::spawn(async move {
             match commit_show_http(&base_url, attempt_id, repo_id, &oid).await {
                 Ok(text) => {
-                    let lines: Vec<Line<'static>> =
-                        text.lines().map(|l| Line::from(l.to_string())).collect();
+                    let lines: Vec<Line<'static>> = format_commit_show(&text);
                     let _ = net_tx
                         .send(NetEvent::CommitPreviewLoaded { repo_id, lines })
                         .await;
@@ -102,8 +206,24 @@ pub(crate) fn select_files_mode(app: &mut AppState) {
     app.diff.diff_scroll_offset = 0;
 }
 
-pub(crate) fn set_commit_list(app: &mut AppState, repo_id: Uuid, commits: Vec<CommitEntry>) {
-    app.diff.commits_by_repo.insert(repo_id, commits);
-    app.diff.selected_commit_index = 0;
+pub(crate) fn apply_commit_list_page(
+    app: &mut AppState,
+    repo_id: Uuid,
+    commits: Vec<CommitEntry>,
+    append: bool,
+    has_more: bool,
+) {
+    app.diff.commits_loading_by_repo.insert(repo_id, false);
+    app.diff.commits_has_more_by_repo.insert(repo_id, has_more);
+    if append {
+        app.diff
+            .commits_by_repo
+            .entry(repo_id)
+            .or_default()
+            .extend(commits);
+    } else {
+        app.diff.commits_by_repo.insert(repo_id, commits);
+        app.diff.selected_commit_index = 0;
+    }
     request_commit_preview_refresh(app);
 }

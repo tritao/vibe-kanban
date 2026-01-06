@@ -19,6 +19,7 @@ use crate::{DeploymentImpl, error::ApiError};
 pub struct CommitsQuery {
     pub repo_id: Uuid,
     pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,6 +107,7 @@ pub async fn list_commits(
 ) -> Result<ResponseJson<ApiResponse<Vec<CommitEntry>>>, ApiError> {
     let pool = &deployment.db().pool;
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    let offset = q.offset.unwrap_or(0).min(50_000);
 
     let workspace_repo =
         WorkspaceRepo::find_by_workspace_and_repo_id(pool, workspace.id, q.repo_id)
@@ -120,6 +122,7 @@ pub async fn list_commits(
     let worktree_path = worktree_path_for_repo(&deployment, &workspace, &repo).await?;
 
     let range = format!("{base_oid}..HEAD");
+    let offset_s = offset.to_string();
     let out = GitCli::new()
         .git(
             &worktree_path,
@@ -128,6 +131,8 @@ pub async fn list_commits(
                 "log",
                 "--no-color",
                 "--format=%H%x1f%h%x1f%ct%x1f%s",
+                "--skip",
+                &offset_s,
                 "-n",
                 &limit.to_string(),
                 &range,

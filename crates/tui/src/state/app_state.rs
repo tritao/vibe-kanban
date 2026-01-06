@@ -105,6 +105,8 @@ pub(crate) struct DiffState {
 
     pub(crate) list_mode: DiffListMode,
     pub(crate) commits_by_repo: HashMap<Uuid, Vec<CommitEntry>>,
+    pub(crate) commits_loading_by_repo: HashMap<Uuid, bool>,
+    pub(crate) commits_has_more_by_repo: HashMap<Uuid, bool>,
     pub(crate) selected_commit_index: usize,
     pub(crate) commit_preview_lines: Vec<Line<'static>>,
     pub(crate) commit_preview_loading: bool,
@@ -345,6 +347,8 @@ impl AppState {
 
                 list_mode: DiffListMode::Files,
                 commits_by_repo: HashMap::new(),
+                commits_loading_by_repo: HashMap::new(),
+                commits_has_more_by_repo: HashMap::new(),
                 selected_commit_index: 0,
                 commit_preview_lines: vec![Line::from("No commit selected")],
                 commit_preview_loading: false,

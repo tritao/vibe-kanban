@@ -619,6 +619,7 @@ pub(crate) async fn commit_list_http(
     attempt_id: Uuid,
     repo_id: Uuid,
     limit: Option<usize>,
+    offset: Option<usize>,
 ) -> anyhow::Result<Vec<crate::state::CommitEntry>> {
     let client = reqwest::Client::builder()
         .build()
@@ -630,6 +631,9 @@ pub(crate) async fn commit_list_http(
     );
     if let Some(limit) = limit {
         url.push_str(&format!("&limit={limit}"));
+    }
+    if let Some(offset) = offset {
+        url.push_str(&format!("&offset={offset}"));
     }
 
     let resp = client.get(url).send().await?;

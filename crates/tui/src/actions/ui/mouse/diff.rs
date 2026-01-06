@@ -2,7 +2,7 @@ use crossterm::event::MouseEvent;
 
 use super::{
     super::{focus, sel},
-    hit_test::diff_files_hit_at,
+    hit_test::{commit_list_hit_at, diff_files_hit_at},
 };
 use crate::{layout::rect_contains, state::AppState};
 
@@ -25,8 +25,17 @@ pub(super) fn handle_diff_left_click(
     }
     if rect_contains(layout.diff_files, col, row) {
         focus::focus_diff_files(app);
-        if let Some(idx) = diff_files_hit_at(app, layout.diff_files, col, row) {
-            sel::select_diff_file(app, idx);
+        match app.diff.list_mode {
+            crate::state::DiffListMode::Files => {
+                if let Some(idx) = diff_files_hit_at(app, layout.diff_files, col, row) {
+                    sel::select_diff_file(app, idx);
+                }
+            }
+            crate::state::DiffListMode::Commits => {
+                if let Some(idx) = commit_list_hit_at(app, layout.diff_files, col, row) {
+                    sel::select_commit(app, idx);
+                }
+            }
         }
         return true;
     }

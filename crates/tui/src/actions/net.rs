@@ -350,6 +350,16 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             message,
         } => {
             finish_git_op(app, repo_id, kind, ok, message);
+            if ok && app.diff.list_mode == crate::state::DiffListMode::Commits {
+                let selected_repo_id = app
+                    .diff
+                    .repo_statuses
+                    .get(app.diff.selected_repo_index)
+                    .map(|r| r.repo_id);
+                if repo_id.is_none() || repo_id == selected_repo_id {
+                    crate::commands::request_commit_list_refresh(app);
+                }
+            }
             true
         }
         NetEvent::LogStreamStatus(status) => {
@@ -386,8 +396,13 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.diff.stack_status_by_repo.insert(repo_id, status);
             true
         }
-        NetEvent::CommitListLoaded { repo_id, commits } => {
-            crate::commands::set_commit_list(app, repo_id, commits);
+        NetEvent::CommitListLoaded {
+            repo_id,
+            commits,
+            append,
+            has_more,
+        } => {
+            crate::commands::apply_commit_list_page(app, repo_id, commits, append, has_more);
             true
         }
         NetEvent::CommitPreviewLoaded { repo_id, lines } => {
@@ -401,6 +416,10 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 app.diff.commit_preview_lines = lines;
                 app.diff.commit_preview_loading = false;
             }
+            true
+        }
+        NetEvent::CommitListFailed { repo_id } => {
+            app.diff.commits_loading_by_repo.insert(repo_id, false);
             true
         }
         NetEvent::TaskCreated { task_id, status } => {

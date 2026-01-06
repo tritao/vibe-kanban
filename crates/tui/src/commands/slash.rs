@@ -342,6 +342,18 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
             trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
             Ok(false)
         }
+        "commits" => {
+            handle_commits_command(app)?;
+            Ok(false)
+        }
+        "files" => {
+            crate::commands::select_files_mode(app);
+            crate::diff_preview::schedule_diff_preview_refresh(
+                app,
+                std::time::Duration::from_millis(0),
+            );
+            Ok(false)
+        }
         "stack" => {
             handle_stack_command(app, tokens)?;
             Ok(false)
@@ -559,6 +571,37 @@ fn parse_stack_kv_flags(
         bools,
         rest,
     })
+}
+
+fn handle_commits_command(app: &mut AppState) -> Result<(), String> {
+    if app.board.selected_attempt_id.is_none() {
+        return Err("no attempt selected".to_string());
+    }
+    if app.diff.repo_statuses.is_empty() {
+        request_branch_status_refresh(app);
+        return Err("no repo status loaded yet (run /status)".to_string());
+    }
+
+    if let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) {
+        if app
+            .diff
+            .stack_status_by_repo
+            .get(&repo.repo_id)
+            .is_some_and(|s| s.available && s.enabled)
+        {
+            return Err("commits view unavailable while stack mode is enabled".to_string());
+        }
+    }
+
+    if app.diff.list_mode == crate::state::DiffListMode::Commits {
+        crate::commands::request_commit_list_refresh(app);
+        app.ui.last_notice = Some("Commits: refreshing…".to_string());
+        return Ok(());
+    }
+
+    crate::commands::select_commits_mode(app);
+    app.ui.last_notice = Some("Commits: loaded.".to_string());
+    Ok(())
 }
 
 fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {

@@ -74,7 +74,6 @@ pub(in crate::actions) fn select_adjacent_commit(app: &mut AppState, delta: i32)
     crate::commands::request_commit_preview_refresh(app);
 }
 
-#[allow(dead_code)]
 pub(in crate::actions) fn select_commit(app: &mut AppState, idx: usize) {
     let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
         app.diff.selected_commit_index = 0;

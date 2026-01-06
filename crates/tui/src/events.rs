@@ -129,6 +129,11 @@ pub(crate) enum NetEvent {
     CommitListLoaded {
         repo_id: Uuid,
         commits: Vec<crate::state::CommitEntry>,
+        append: bool,
+        has_more: bool,
+    },
+    CommitListFailed {
+        repo_id: Uuid,
     },
     CommitPreviewLoaded {
         repo_id: Uuid,

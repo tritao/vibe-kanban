@@ -88,6 +88,46 @@ pub(super) fn diff_files_hit_at(app: &AppState, area: Rect, col: u16, row: u16) 
     Some(start + inner_row)
 }
 
+pub(super) fn commit_list_hit_at(app: &AppState, area: Rect, col: u16, row: u16) -> Option<usize> {
+    if !rect_contains(area, col, row) {
+        return None;
+    }
+    let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+        return None;
+    };
+    let commits = app
+        .diff
+        .commits_by_repo
+        .get(&repo.repo_id)
+        .map(|v| v.as_slice())
+        .unwrap_or(&[]);
+    if commits.is_empty() {
+        return None;
+    }
+
+    let inner_y0 = area.y.saturating_add(1);
+    let inner_y1 = area.y.saturating_add(area.height).saturating_sub(1);
+    if row < inner_y0 || row >= inner_y1 {
+        return None;
+    }
+
+    let height = area.height.saturating_sub(2) as usize;
+    if height == 0 {
+        return None;
+    }
+
+    let selected = app.diff.selected_commit_index.min(commits.len() - 1);
+    let (start, end, _) = window_for_list(commits.len(), selected, height);
+    let visible_len = end.saturating_sub(start);
+
+    let inner_row = row.saturating_sub(inner_y0) as usize;
+    if inner_row >= visible_len {
+        return None;
+    }
+
+    Some(start + inner_row)
+}
+
 pub(super) fn log_entry_hit_at(
     app: &AppState,
     area: Rect,

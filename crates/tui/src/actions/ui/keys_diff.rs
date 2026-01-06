@@ -244,6 +244,13 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
             Some(true)
         }
         KeyCode::PageDown => {
+            if app.ui.diff_focus == DiffFocus::Files
+                && app.diff.list_mode == crate::state::DiffListMode::Commits
+                && app.ui.focus == FocusPane::Diff
+            {
+                crate::commands::request_commit_list_more(app);
+                return Some(true);
+            }
             scroll::scroll_diff_down(app, 20);
             Some(true)
         }
