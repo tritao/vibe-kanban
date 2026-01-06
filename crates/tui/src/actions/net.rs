@@ -7,7 +7,9 @@ use crate::{
         on_exec_store_updated_for_branch_refresh, request_diff_reconnect,
     },
     diff::{DIFF_ALL_KEY, diff_rows_with_all},
-    diff_preview::{diff_patch_touches_key, schedule_diff_preview_refresh},
+    diff_preview::{
+        diff_patch_touches_key, schedule_diff_preview_refresh, schedule_diff_preview_refresh_debounced,
+    },
     events::{NetEvent, StreamStatus},
     logs::{enqueue_log_patch, maybe_attach_pending_user_log, reset_logs},
     net::ops::find_project_for_repo_path_http,
@@ -287,7 +289,14 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             if should_refresh {
                 app.diff.diff_preview_cache_key = None;
                 app.diff.diff_preview_cache_hash = 0;
-                schedule_diff_preview_refresh(app, Duration::from_millis(0));
+                // The diff stream can send many patches during initial load (one per file).
+                // Rebuilding the combined "__ALL__" preview on every patch is very expensive and
+                // looks like the view is “growing” line-by-line. Debounce in ALL mode.
+                if sel_key == DIFF_ALL_KEY {
+                    schedule_diff_preview_refresh_debounced(app, Duration::from_millis(120));
+                } else {
+                    schedule_diff_preview_refresh(app, Duration::from_millis(0));
+                }
             }
             true
         }

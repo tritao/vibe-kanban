@@ -37,6 +37,18 @@ pub(crate) fn schedule_diff_preview_refresh(app: &mut AppState, delay: Duration)
     };
 }
 
+pub(crate) fn schedule_diff_preview_refresh_debounced(app: &mut AppState, delay: Duration) {
+    // Debounce (push the refresh further out as new patches arrive).
+    cancel_diff_preview_job(app);
+    let now = Instant::now();
+    let next = now + delay;
+    app.diff.diff_preview_pending = true;
+    app.diff.diff_preview_next_refresh_at = match app.diff.diff_preview_next_refresh_at {
+        Some(existing) => Some(existing.max(next)),
+        None => Some(next),
+    };
+}
+
 pub(crate) fn diff_preview_refresh_ready(app: &AppState, now: Instant) -> bool {
     app.diff.diff_preview_pending
         && app
