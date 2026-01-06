@@ -334,6 +334,11 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
         _ => {}
     }
 
+    // Shift+Y copies the worktree/repo root path (independent of focus).
+    if key.code == KeyCode::Char('Y') {
+        return (false, false, reduce_copy(app, CopyTarget::WorktreePath));
+    }
+
     if key.code == KeyCode::Char('y') {
         let target = match app.ui.focus {
             FocusPane::Execution => Some(CopyTarget::Execution),

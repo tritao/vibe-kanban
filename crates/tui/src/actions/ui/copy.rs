@@ -44,6 +44,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
                 .unwrap_or_default()
         }
         CopyTarget::DiffPreview => crate::util::lines_plain_text(&app.diff.diff_preview_lines),
+        CopyTarget::WorktreePath => app.ui.launch_repo_path.clone().unwrap_or_default(),
     };
 
     if text.trim().is_empty() {
@@ -58,6 +59,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
         CopyTarget::Execution => "Copied logs",
         CopyTarget::DiffFiles => "Copied path",
         CopyTarget::DiffPreview => "Copied diff",
+        CopyTarget::WorktreePath => "Copied worktree path",
     };
 
     vec![

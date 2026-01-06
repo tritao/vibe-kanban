@@ -40,6 +40,7 @@ pub(super) enum CopyTarget {
     Execution,
     DiffFiles,
     DiffPreview,
+    WorktreePath,
 }
 
 pub(super) fn reduce_ui(
