@@ -47,6 +47,17 @@ async fn main() -> Result<(), VibeKanbanError> {
 
     let deployment = DeploymentImpl::new().await?;
     deployment.update_sentry_scope().await?;
+
+    tracing::info!(
+        "Worktrees base dir: {}{}",
+        services::services::worktree_manager::WorktreeManager::get_worktree_base_dir().display(),
+        std::env::var("VIBE_WORKTREES_DIR")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .map(|_| " (VIBE_WORKTREES_DIR override)")
+            .unwrap_or("")
+    );
+
     deployment
         .container()
         .cleanup_orphan_executions()
