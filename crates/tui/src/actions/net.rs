@@ -350,6 +350,13 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         }
         NetEvent::LogStreamStatus(status) => {
             app.exec.log_status = status;
+            if matches!(status, StreamStatus::Connected | StreamStatus::Completed) {
+                if let Some(err) = app.ui.last_error.as_deref()
+                    && err.starts_with("log stream connect:")
+                {
+                    app.ui.last_error = None;
+                }
+            }
             true
         }
         NetEvent::LogReset(exec_id) => {
