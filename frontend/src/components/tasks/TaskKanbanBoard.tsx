@@ -18,6 +18,7 @@ export type KanbanColumnItem =
       type: 'task';
       task: TaskWithAttemptStatus;
       sharedTask?: SharedTaskRecord;
+      depth?: number;
     }
   | {
       type: 'shared';
@@ -86,6 +87,7 @@ function TaskKanbanBoard({
                       isOpen={selectedTaskId === item.task.id}
                       projectId={projectId}
                       sharedTask={item.sharedTask}
+                      depth={item.depth}
                     />
                   );
                 }

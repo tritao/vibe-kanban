@@ -11,17 +11,20 @@ import type { SharedTaskRecord } from '@/hooks/useProjectTasks';
 import { TaskCardHeader } from './TaskCardHeader';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/hooks';
+import type { TaskStatus } from 'shared/types';
+import { statusLabels } from '@/utils/statusLabels';
 
 type Task = TaskWithAttemptStatus;
 
 interface TaskCardProps {
   task: Task;
   index: number;
-  status: string;
+  status: TaskStatus;
   onViewDetails: (task: Task) => void;
   isOpen?: boolean;
   projectId: string;
   sharedTask?: SharedTaskRecord;
+  depth?: number;
 }
 
 export function TaskCard({
@@ -32,6 +35,7 @@ export function TaskCard({
   isOpen,
   projectId,
   sharedTask,
+  depth = 0,
 }: TaskCardProps) {
   const { t } = useTranslation('tasks');
   const navigate = useNavigateWithSearch();
@@ -90,15 +94,32 @@ export function TaskCard({
       isOpen={isOpen}
       forwardedRef={localRef}
       dragDisabled={(!!sharedTask || !!task.shared_task_id) && !isSignedIn}
-      className={
+      className={[
         sharedTask || task.shared_task_id
           ? 'relative overflow-hidden pl-5 before:absolute before:left-0 before:top-0 before:bottom-0 before:w-[3px] before:bg-card-foreground before:content-[""]'
-          : undefined
-      }
+          : '',
+        depth === 1 ? 'ml-4' : '',
+        depth === 2 ? 'ml-8' : '',
+        depth >= 3 ? 'ml-12' : '',
+      ]
+        .filter(Boolean)
+        .join(' ') || undefined}
     >
       <div className="flex flex-col gap-2">
         <TaskCardHeader
-          title={task.title}
+          title={
+            <span className="inline-flex items-center gap-1 min-w-0">
+              {depth > 0 ? (
+                <span className="text-muted-foreground shrink-0">↳</span>
+              ) : null}
+              <span className="min-w-0">{task.title}</span>
+              {depth > 0 && task.status !== status ? (
+                <span className="ml-1 shrink-0 rounded px-1.5 py-0.5 text-[11px] leading-none bg-muted text-muted-foreground">
+                  {statusLabels[task.status]}
+                </span>
+              ) : null}
+            </span>
+          }
           avatar={
             sharedTask
               ? {

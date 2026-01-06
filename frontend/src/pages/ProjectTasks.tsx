@@ -398,15 +398,10 @@ export function ProjectTasks() {
       );
     };
 
-    tasks.forEach((task) => {
-      const statusKey = normalizeStatus(task.status);
+    const candidateTasks = tasks.filter((task) => {
       const sharedTask = task.shared_task_id
         ? sharedTasksById[task.shared_task_id]
         : sharedTasksById[task.id];
-
-      if (!matchesSearch(task.title, task.description)) {
-        return;
-      }
 
       const isSharedAssignedElsewhere =
         !showSharedTasks &&
@@ -414,15 +409,84 @@ export function ProjectTasks() {
         !!sharedTask.assignee_user_id &&
         sharedTask.assignee_user_id !== userId;
 
-      if (isSharedAssignedElsewhere) {
-        return;
-      }
+      if (isSharedAssignedElsewhere) return false;
+      return true;
+    });
 
-      columns[statusKey].push({
+    const tasksById = new Map(candidateTasks.map((t) => [t.id, t]));
+    const includedIds = new Set<string>();
+
+    // Default: show everything; when searching, include matches + their ancestors to keep context.
+    if (!hasSearch) {
+      candidateTasks.forEach((t) => includedIds.add(t.id));
+    } else {
+      candidateTasks.forEach((t) => {
+        if (!matchesSearch(t.title, t.description)) return;
+        let cur: string | null | undefined = t.id;
+        while (cur && !includedIds.has(cur)) {
+          includedIds.add(cur);
+          const parentTaskId: string | null | undefined =
+            tasksById.get(cur)?.parent_task_id;
+          cur =
+            parentTaskId && tasksById.has(parentTaskId) ? parentTaskId : null;
+        }
+      });
+    }
+
+    const childrenByParent = new Map<string | null, string[]>();
+    includedIds.forEach((id) => {
+      const task = tasksById.get(id);
+      if (!task) return;
+      const parent =
+        task.parent_task_id && includedIds.has(task.parent_task_id)
+          ? task.parent_task_id
+          : null;
+      const list = childrenByParent.get(parent) ?? [];
+      list.push(id);
+      childrenByParent.set(parent, list);
+    });
+
+    const taskCreatedAt = (taskId: string) => {
+      const t = tasksById.get(taskId);
+      if (!t) return 0;
+      return new Date(t.created_at).getTime();
+    };
+
+    const sortIds = (ids: string[]) => {
+      ids.sort((a, b) => taskCreatedAt(b) - taskCreatedAt(a));
+    };
+
+    const pushSubtree = (
+      rootStatus: TaskStatus,
+      taskId: string,
+      depth: number
+    ) => {
+      const task = tasksById.get(taskId);
+      if (!task) return;
+      const sharedTask = task.shared_task_id
+        ? sharedTasksById[task.shared_task_id]
+        : sharedTasksById[task.id];
+
+      columns[rootStatus].push({
         type: 'task',
         task,
         sharedTask,
+        depth,
       });
+
+      const childIds = childrenByParent.get(taskId) ?? [];
+      if (childIds.length === 0) return;
+      sortIds(childIds);
+      childIds.forEach((cid) => pushSubtree(rootStatus, cid, depth + 1));
+    };
+
+    const roots = childrenByParent.get(null) ?? [];
+    sortIds(roots);
+    roots.forEach((rootId) => {
+      const root = tasksById.get(rootId);
+      if (!root) return;
+      const rootStatus = normalizeStatus(root.status);
+      pushSubtree(rootStatus, rootId, 0);
     });
 
     (
@@ -447,16 +511,6 @@ export function ProjectTasks() {
       });
     });
 
-    const getTimestamp = (item: KanbanColumnItem) => {
-      const createdAt =
-        item.type === 'task' ? item.task.created_at : item.task.created_at;
-      return new Date(createdAt).getTime();
-    };
-
-    TASK_STATUSES.forEach((status) => {
-      columns[status].sort((a, b) => getTimestamp(b) - getTimestamp(a));
-    });
-
     return columns;
   }, [
     hasSearch,
@@ -467,6 +521,17 @@ export function ProjectTasks() {
     showSharedTasks,
     userId,
   ]);
+
+  const displayStatusByTaskId = useMemo(() => {
+    const map: Record<string, TaskStatus> = {};
+    TASK_STATUSES.forEach((status) => {
+      kanbanColumns[status].forEach((item) => {
+        if (item.type !== 'task') return;
+        map[item.task.id] = status;
+      });
+    });
+    return map;
+  }, [kanbanColumns]);
 
   const visibleTasksByStatus = useMemo(() => {
     const map: Record<TaskStatus, Task[]> = {
@@ -676,7 +741,9 @@ export function ProjectTasks() {
 
   const selectNextTask = useCallback(() => {
     if (selectedTask) {
-      const statusKey = normalizeStatus(selectedTask.status);
+      const statusKey =
+        displayStatusByTaskId[selectedTask.id] ??
+        normalizeStatus(selectedTask.status);
       const tasksInStatus = visibleTasksByStatus[statusKey] || [];
       const currentIndex = tasksInStatus.findIndex(
         (task) => task.id === selectedTask.id
@@ -693,11 +760,13 @@ export function ProjectTasks() {
         }
       }
     }
-  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails]);
+  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails, displayStatusByTaskId]);
 
   const selectPreviousTask = useCallback(() => {
     if (selectedTask) {
-      const statusKey = normalizeStatus(selectedTask.status);
+      const statusKey =
+        displayStatusByTaskId[selectedTask.id] ??
+        normalizeStatus(selectedTask.status);
       const tasksInStatus = visibleTasksByStatus[statusKey] || [];
       const currentIndex = tasksInStatus.findIndex(
         (task) => task.id === selectedTask.id
@@ -714,11 +783,13 @@ export function ProjectTasks() {
         }
       }
     }
-  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails]);
+  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails, displayStatusByTaskId]);
 
   const selectNextColumn = useCallback(() => {
     if (selectedTask) {
-      const currentStatus = normalizeStatus(selectedTask.status);
+      const currentStatus =
+        displayStatusByTaskId[selectedTask.id] ??
+        normalizeStatus(selectedTask.status);
       const currentIndex = TASK_STATUSES.findIndex(
         (status) => status === currentStatus
       );
@@ -738,11 +809,13 @@ export function ProjectTasks() {
         }
       }
     }
-  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails]);
+  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails, displayStatusByTaskId]);
 
   const selectPreviousColumn = useCallback(() => {
     if (selectedTask) {
-      const currentStatus = normalizeStatus(selectedTask.status);
+      const currentStatus =
+        displayStatusByTaskId[selectedTask.id] ??
+        normalizeStatus(selectedTask.status);
       const currentIndex = TASK_STATUSES.findIndex(
         (status) => status === currentStatus
       );
@@ -762,7 +835,7 @@ export function ProjectTasks() {
         }
       }
     }
-  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails]);
+  }, [selectedTask, visibleTasksByStatus, handleViewTaskDetails, displayStatusByTaskId]);
 
   const handleDragEnd = useCallback(
     async (event: DragEndEvent) => {
@@ -779,6 +852,7 @@ export function ProjectTasks() {
           title: task.title,
           description: task.description,
           status: newStatus,
+          parent_task_id: task.parent_task_id ?? null,
           parent_workspace_id: task.parent_workspace_id,
           image_ids: null,
         });
