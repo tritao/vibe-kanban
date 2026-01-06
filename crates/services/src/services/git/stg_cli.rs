@@ -1,10 +1,12 @@
 use std::{
     ffi::OsString,
+    fs::OpenOptions,
     path::Path,
     process::{Command, Stdio},
     sync::{Arc, Mutex},
 };
 
+use fs4::fs_std::FileExt;
 use once_cell::sync::Lazy;
 use thiserror::Error;
 use utils::shell::resolve_executable_path_blocking;
@@ -55,6 +57,23 @@ fn with_worktree_lock<T>(
     let _guard = lock
         .lock()
         .map_err(|_| StgCliError::CommandFailed("worktree lock poisoned".to_string()))?;
+
+    // Cross-process lock (stg mutates branch state; avoid concurrent ops across multiple server processes).
+    let lock_path = worktree_path.join(".vibe-kanban-stg.lock");
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|e| {
+            StgCliError::CommandFailed(format!(
+                "failed to open stg lock file '{}': {e}",
+                lock_path.display()
+            ))
+        })?;
+    lock_file
+        .lock_exclusive()
+        .map_err(|e| StgCliError::CommandFailed(format!("failed to lock stg lock file: {e}")))?;
     f()
 }
 

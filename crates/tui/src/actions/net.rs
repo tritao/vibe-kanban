@@ -378,6 +378,11 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         NetEvent::BranchStatusLoaded(statuses) => {
             app.diff.repo_statuses = statuses;
             sync_selected_repo_from_diff_selection(app);
+            crate::commands::request_stack_status_refresh(app);
+            true
+        }
+        NetEvent::StackStatusLoaded { repo_id, status } => {
+            app.diff.stack_status_by_repo.insert(repo_id, status);
             true
         }
         NetEvent::TaskCreated { task_id, status } => {

@@ -38,6 +38,7 @@ pub(in crate::actions) fn select_adjacent_diff_file(app: &mut AppState, delta: i
     app.diff.selected_diff_index = next;
     app.diff.diff_scroll_offset = 0;
     sync_selected_repo_from_diff_selection(app);
+    crate::commands::request_stack_status_refresh(app);
     schedule_diff_preview_refresh(app, Duration::from_millis(0));
 }
 
@@ -56,5 +57,6 @@ pub(in crate::actions) fn select_diff_file(app: &mut AppState, idx: usize) {
     app.diff.selected_diff_index = next;
     app.diff.diff_scroll_offset = 0;
     sync_selected_repo_from_diff_selection(app);
+    crate::commands::request_stack_status_refresh(app);
     schedule_diff_preview_refresh(app, Duration::from_millis(0));
 }

@@ -81,9 +81,17 @@ pub struct PatchEntry {
 pub enum StackError {
     StgNotInstalled,
     NotEnabled,
-    ConflictsInProgress { message: String },
-    DirtyWorktree { message: String },
-    Failed { message: String },
+    ConflictsInProgress {
+        message: String,
+        op: Option<String>,
+        files: Vec<String>,
+    },
+    DirtyWorktree {
+        message: String,
+    },
+    Failed {
+        message: String,
+    },
 }
 
 fn map_stack_error(err: GitServiceError) -> StackError {
@@ -91,7 +99,11 @@ fn map_stack_error(err: GitServiceError) -> StackError {
         GitServiceError::StgCLI(StgCliError::NotAvailable) => StackError::StgNotInstalled,
         GitServiceError::StgCLI(StgCliError::NotInitialized) => StackError::NotEnabled,
         GitServiceError::StgCLI(StgCliError::ConflictsInProgress { message }) => {
-            StackError::ConflictsInProgress { message }
+            StackError::ConflictsInProgress {
+                message,
+                op: None,
+                files: vec![],
+            }
         }
         GitServiceError::StgCLI(StgCliError::DirtyWorktree { message }) => {
             StackError::DirtyWorktree { message }
@@ -162,9 +174,17 @@ async fn stack_status_for(
 
 fn conflicts_guard(deployment: &DeploymentImpl, worktree_path: &Path) -> Result<(), StackError> {
     match deployment.git().detect_conflict_op(worktree_path) {
-        Ok(Some(op)) => Err(StackError::ConflictsInProgress {
-            message: format!("conflicts in progress ({op:?})"),
-        }),
+        Ok(Some(op)) => {
+            let files = deployment
+                .git()
+                .get_conflicted_files(worktree_path)
+                .unwrap_or_default();
+            Err(StackError::ConflictsInProgress {
+                message: "conflicts in progress".to_string(),
+                op: Some(format!("{op:?}")),
+                files,
+            })
+        }
         Ok(None) => Ok(()),
         Err(e) => Err(StackError::Failed {
             message: e.to_string(),

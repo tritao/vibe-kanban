@@ -581,7 +581,11 @@ fn push_exec_order(app: &mut AppState, attempt_id: Option<Uuid>, exec_id: Uuid) 
     let Some(attempt_id) = attempt_id else {
         return;
     };
-    let list = app.exec.log_exec_order_by_attempt.entry(attempt_id).or_default();
+    let list = app
+        .exec
+        .log_exec_order_by_attempt
+        .entry(attempt_id)
+        .or_default();
     if !list.contains(&exec_id) {
         list.push(exec_id);
     }

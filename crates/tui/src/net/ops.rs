@@ -3,7 +3,8 @@ use utils::response::ApiResponse;
 use uuid::Uuid;
 
 use crate::state::{
-    ConflictOp, ExecutorProfileSelection, MergeStatus, RepoBranchStatus, TaskStatus,
+    ConflictOp, ExecutorProfileSelection, MergeStatus, RepoBranchStatus, StackPatchEntry,
+    StackStatusResponse, TaskStatus,
 };
 
 pub(crate) async fn update_task_status_http(
@@ -603,6 +604,247 @@ pub(crate) async fn branch_status_http(
         );
     }
     Ok(api.data.unwrap_or_default())
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub(crate) enum StackErrorWire {
+    StgNotInstalled,
+    NotEnabled,
+    ConflictsInProgress {
+        message: String,
+        op: Option<String>,
+        files: Vec<String>,
+    },
+    DirtyWorktree {
+        message: String,
+    },
+    Failed {
+        message: String,
+    },
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct StackPatchWire {
+    pub(crate) name: String,
+    pub(crate) description: Option<String>,
+    pub(crate) state: String,
+    pub(crate) is_current: bool,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct StackStatusWire {
+    pub(crate) available: bool,
+    pub(crate) enabled: bool,
+    pub(crate) patches: Vec<StackPatchWire>,
+}
+
+fn map_stack_status_wire(dto: StackStatusWire) -> StackStatusResponse {
+    StackStatusResponse {
+        available: dto.available,
+        enabled: dto.enabled,
+        patches: dto
+            .patches
+            .into_iter()
+            .map(|p| StackPatchEntry {
+                name: p.name,
+                description: p.description,
+                state: p.state,
+                is_current: p.is_current,
+            })
+            .collect(),
+    }
+}
+
+pub(crate) async fn stack_status_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<StackStatusResponse> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/stack/status?repo_id={repo_id}",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client.get(url).send().await?;
+    let api = resp
+        .json::<ApiResponseWire<StackStatusWire, StackErrorWire>>()
+        .await?;
+    if api.success {
+        return Ok(map_stack_status_wire(
+            api.data
+                .ok_or_else(|| anyhow::anyhow!("missing stack status payload"))?,
+        ));
+    }
+    if let Some(err) = api.error_data {
+        match err {
+            StackErrorWire::StgNotInstalled => {
+                anyhow::bail!("stg is not installed on the backend host")
+            }
+            StackErrorWire::NotEnabled => anyhow::bail!("stack not enabled (run /stack enable)"),
+            StackErrorWire::ConflictsInProgress { message, op, files } => {
+                let mut msg = message;
+                if let Some(op) = op {
+                    msg.push_str(&format!(" (op: {op})"));
+                }
+                if !files.is_empty() {
+                    msg.push_str(&format!("; files: {}", files.join(", ")));
+                }
+                anyhow::bail!("{msg}");
+            }
+            StackErrorWire::DirtyWorktree { message } => anyhow::bail!("{message}"),
+            StackErrorWire::Failed { message } => anyhow::bail!("{message}"),
+        }
+    }
+    anyhow::bail!(
+        "{}",
+        api.message
+            .as_deref()
+            .unwrap_or("backend rejected stack status request")
+    );
+}
+
+pub(crate) async fn stack_enable_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<StackStatusResponse> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/stack/enable",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client
+        .post(url)
+        .json(&RepoIdRequest { repo_id })
+        .send()
+        .await?;
+    let api = resp
+        .json::<ApiResponseWire<StackStatusWire, StackErrorWire>>()
+        .await?;
+    if api.success {
+        return Ok(map_stack_status_wire(
+            api.data
+                .ok_or_else(|| anyhow::anyhow!("missing stack status payload"))?,
+        ));
+    }
+    if let Some(err) = api.error_data {
+        match err {
+            StackErrorWire::StgNotInstalled => {
+                anyhow::bail!("stg is not installed on the backend host")
+            }
+            StackErrorWire::NotEnabled => anyhow::bail!("stack not enabled"),
+            StackErrorWire::ConflictsInProgress { message, op, files } => {
+                let mut msg = message;
+                if let Some(op) = op {
+                    msg.push_str(&format!(" (op: {op})"));
+                }
+                if !files.is_empty() {
+                    msg.push_str(&format!("; files: {}", files.join(", ")));
+                }
+                anyhow::bail!("{msg}");
+            }
+            StackErrorWire::DirtyWorktree { message } => anyhow::bail!("{message}"),
+            StackErrorWire::Failed { message } => anyhow::bail!("{message}"),
+        }
+    }
+    anyhow::bail!(
+        "{}",
+        api.message
+            .as_deref()
+            .unwrap_or("backend rejected stack enable request")
+    );
+}
+
+async fn stack_post_repo_id(
+    base_url: &str,
+    attempt_id: Uuid,
+    path: &str,
+    repo_id: Uuid,
+) -> anyhow::Result<StackStatusResponse> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+    let url = format!(
+        "{}/api/task-attempts/{attempt_id}/stack/{path}",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client
+        .post(url)
+        .json(&RepoIdRequest { repo_id })
+        .send()
+        .await?;
+    let api = resp
+        .json::<ApiResponseWire<StackStatusWire, StackErrorWire>>()
+        .await?;
+    if api.success {
+        return Ok(map_stack_status_wire(
+            api.data
+                .ok_or_else(|| anyhow::anyhow!("missing stack status payload"))?,
+        ));
+    }
+    if let Some(err) = api.error_data {
+        match err {
+            StackErrorWire::StgNotInstalled => {
+                anyhow::bail!("stg is not installed on the backend host")
+            }
+            StackErrorWire::NotEnabled => anyhow::bail!("stack not enabled (run /stack enable)"),
+            StackErrorWire::ConflictsInProgress { message, op, files } => {
+                let mut msg = message;
+                if let Some(op) = op {
+                    msg.push_str(&format!(" (op: {op})"));
+                }
+                if !files.is_empty() {
+                    msg.push_str(&format!("; files: {}", files.join(", ")));
+                }
+                anyhow::bail!("{msg}");
+            }
+            StackErrorWire::DirtyWorktree { message } => anyhow::bail!("{message}"),
+            StackErrorWire::Failed { message } => anyhow::bail!("{message}"),
+        }
+    }
+    anyhow::bail!(
+        "{}",
+        api.message
+            .as_deref()
+            .unwrap_or("backend rejected stack request")
+    );
+}
+
+pub(crate) async fn stack_push_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<StackStatusResponse> {
+    stack_post_repo_id(base_url, attempt_id, "push", repo_id).await
+}
+
+pub(crate) async fn stack_pop_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<StackStatusResponse> {
+    stack_post_repo_id(base_url, attempt_id, "pop", repo_id).await
+}
+
+pub(crate) async fn stack_undo_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<StackStatusResponse> {
+    stack_post_repo_id(base_url, attempt_id, "undo", repo_id).await
+}
+
+pub(crate) async fn stack_redo_http(
+    base_url: &str,
+    attempt_id: Uuid,
+    repo_id: Uuid,
+) -> anyhow::Result<StackStatusResponse> {
+    stack_post_repo_id(base_url, attempt_id, "redo", repo_id).await
 }
 
 pub(crate) async fn rebase_task_attempt_http(

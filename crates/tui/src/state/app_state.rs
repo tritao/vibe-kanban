@@ -100,6 +100,8 @@ pub(crate) struct DiffState {
 
     pub(crate) git_ops: HashMap<Uuid, GitOpState>,
     pub(crate) git_op_global: Option<GitOpState>,
+
+    pub(crate) stack_status_by_repo: HashMap<Uuid, super::types::StackStatusResponse>,
 }
 
 pub(crate) struct UiState {
@@ -332,6 +334,8 @@ impl AppState {
 
                 git_ops: HashMap::new(),
                 git_op_global: None,
+
+                stack_status_by_repo: HashMap::new(),
             },
 
             jobs: HashMap::new(),

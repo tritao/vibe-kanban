@@ -195,6 +195,52 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         usage: None,
     },
     CommandSpec {
+        name: "stack",
+        aliases: &["stg"],
+        desc: "stgit stack operations",
+        flags: EMPTY_FLAGS,
+        subcommands: &[
+            SubcommandSpec {
+                name: "status",
+                desc: "refresh stack status",
+                flags: EMPTY_FLAGS,
+                help_syntax: "/stack status",
+            },
+            SubcommandSpec {
+                name: "enable",
+                desc: "enable stack mode (stg init)",
+                flags: EMPTY_FLAGS,
+                help_syntax: "/stack enable",
+            },
+            SubcommandSpec {
+                name: "push",
+                desc: "push next patch",
+                flags: EMPTY_FLAGS,
+                help_syntax: "/stack push",
+            },
+            SubcommandSpec {
+                name: "pop",
+                desc: "pop top patch",
+                flags: EMPTY_FLAGS,
+                help_syntax: "/stack pop",
+            },
+            SubcommandSpec {
+                name: "undo",
+                desc: "undo last stack operation",
+                flags: EMPTY_FLAGS,
+                help_syntax: "/stack undo",
+            },
+            SubcommandSpec {
+                name: "redo",
+                desc: "redo last stack operation",
+                flags: EMPTY_FLAGS,
+                help_syntax: "/stack redo",
+            },
+        ],
+        help_syntax: "/stack <status|enable|push|pop|undo|redo>",
+        usage: Some("usage: /stack status|enable|push|pop|undo|redo"),
+    },
+    CommandSpec {
         name: "repo",
         aliases: &[],
         desc: "select repo for git ops",

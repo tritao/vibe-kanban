@@ -11,6 +11,7 @@ pub(crate) enum JobKey {
     DiffPreview,
     BranchStatus,
     BranchStatusAuto,
+    StackStatus,
     LogPrewarm,
 }
 
@@ -103,6 +104,22 @@ impl LogRenderMode {
 pub(crate) enum DiffFocus {
     Files,
     Preview,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StackPatchEntry {
+    pub(crate) name: String,
+    #[allow(dead_code)]
+    pub(crate) description: Option<String>,
+    pub(crate) state: String,
+    pub(crate) is_current: bool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct StackStatusResponse {
+    pub(crate) available: bool,
+    pub(crate) enabled: bool,
+    pub(crate) patches: Vec<StackPatchEntry>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

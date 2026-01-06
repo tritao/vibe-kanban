@@ -1226,6 +1226,43 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
     }
 }
 
+fn selected_stack_badge(
+    app: &AppState,
+    repo: Option<&RepoBranchStatus>,
+) -> Option<(String, Span<'static>)> {
+    let repo_id = repo?.repo_id;
+    let status = app.diff.stack_status_by_repo.get(&repo_id)?;
+    if !status.available {
+        return Some((
+            " Stack: missing ".to_string(),
+            badge("Stack: missing", Color::White, Color::Red),
+        ));
+    }
+    if !status.enabled {
+        return Some((
+            " Stack: off ".to_string(),
+            badge("Stack: off", Color::Black, Color::LightYellow),
+        ));
+    }
+    let current = status
+        .patches
+        .iter()
+        .find(|p| p.is_current)
+        .map(|p| p.name.as_str())
+        .unwrap_or("?");
+    let applied = status
+        .patches
+        .iter()
+        .filter(|p| p.state == "applied")
+        .count();
+    let total = status.patches.len();
+    let label = format!("Stack: {applied}/{total} [{current}]");
+    Some((
+        format!(" {label} "),
+        badge(label, Color::Black, Color::LightGreen),
+    ))
+}
+
 fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
     let border_style = if app.ui.focus == FocusPane::Diff {
         Style::default().fg(Color::Cyan)
@@ -1302,6 +1339,7 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
 
     let now = Instant::now();
     let buttons = repo_bar_button_specs(app, repo, now);
+    let stack_badge = selected_stack_badge(app, repo);
 
     // Compute right-side width based on what we actually render (badges + buttons),
     // so we don't truncate the left segment unnecessarily.
@@ -1355,6 +1393,13 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
             right_plain.push(' ');
         }
         right_plain.push_str(&format!(" PR#{n} "));
+        any_badge = true;
+    }
+    if let Some((plain, _)) = stack_badge.as_ref() {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(plain);
         any_badge = true;
     }
     if any_badge {
@@ -1446,6 +1491,13 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
             }
             let (fg, bg) = pr_badge_style(status);
             spans.push(badge(format!("PR#{n}"), fg, bg));
+            first = false;
+        }
+        if let Some((_, span)) = stack_badge {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(span);
             first = false;
         }
 

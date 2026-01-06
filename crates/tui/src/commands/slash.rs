@@ -342,6 +342,10 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
             trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
             Ok(false)
         }
+        "stack" => {
+            handle_stack_command(app, tokens)?;
+            Ok(false)
+        }
         "resolve" => {
             handle_resolve_command(app, tokens)?;
             Ok(false)
@@ -387,6 +391,58 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
             Ok(false)
         }
         _ => Err(crate::slash::unknown_command_error(tokens[0].as_str())),
+    }
+}
+
+fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let attempt_id = app
+        .board
+        .selected_attempt_id
+        .ok_or_else(|| "no attempt selected".to_string())?;
+    if app.diff.repo_statuses.is_empty() {
+        request_branch_status_refresh(app);
+        return Err("no repo status loaded yet (run /status)".to_string());
+    }
+
+    // Default: /stack status
+    let sub = tokens.get(1).map(|s| s.as_str()).unwrap_or("status");
+    match sub {
+        "status" => {
+            crate::commands::request_stack_status_refresh(app);
+            app.ui.last_notice = Some("Stack: refreshing…".to_string());
+            Ok(())
+        }
+        "enable" => {
+            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            crate::commands::trigger_stack_enable(app, attempt_id, repo_id);
+            app.ui.last_notice = Some(format!("Stack: enabling for {repo_name}…"));
+            Ok(())
+        }
+        "push" => {
+            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            crate::commands::trigger_stack_push(app, attempt_id, repo_id);
+            app.ui.last_notice = Some(format!("Stack: push ({repo_name})…"));
+            Ok(())
+        }
+        "pop" => {
+            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            crate::commands::trigger_stack_pop(app, attempt_id, repo_id);
+            app.ui.last_notice = Some(format!("Stack: pop ({repo_name})…"));
+            Ok(())
+        }
+        "undo" => {
+            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            crate::commands::trigger_stack_undo(app, attempt_id, repo_id);
+            app.ui.last_notice = Some(format!("Stack: undo ({repo_name})…"));
+            Ok(())
+        }
+        "redo" => {
+            let (repo_id, repo_name) = resolve_repo_for_command(app, None)?;
+            crate::commands::trigger_stack_redo(app, attempt_id, repo_id);
+            app.ui.last_notice = Some(format!("Stack: redo ({repo_name})…"));
+            Ok(())
+        }
+        other => Err(format!("unknown stack subcommand: {other}")),
     }
 }
 

@@ -66,6 +66,25 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
             trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
             Some(true)
         }
+        KeyCode::Char('K') => {
+            crate::commands::request_stack_status_refresh(app);
+            Some(true)
+        }
+        KeyCode::Char('E') => {
+            if app.diff.repo_statuses.is_empty() {
+                trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
+                app.ui.last_error = Some("Stack: load repo status first (press S)".to_string());
+                return Some(true);
+            }
+            let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+                return Some(false);
+            };
+            let Some(attempt_id) = app.board.selected_attempt_id else {
+                return Some(false);
+            };
+            crate::commands::trigger_stack_enable(app, attempt_id, repo.repo_id);
+            Some(true)
+        }
         KeyCode::Char('B') => {
             if app.diff.repo_statuses.is_empty() {
                 trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
