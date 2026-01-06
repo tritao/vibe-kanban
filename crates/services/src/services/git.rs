@@ -11,9 +11,11 @@ use ts_rs::TS;
 use utils::diff::{Diff, DiffChangeKind, FileDiffDetails, compute_line_change_counts};
 
 mod cli;
+mod stg_cli;
 
 use cli::{ChangeType, StatusDiffEntry, StatusDiffOptions};
 pub use cli::{GitCli, GitCliError};
+pub use stg_cli::{PatchEntry as StgPatchEntry, PatchState as StgPatchState, StgCli, StgCliError};
 
 use super::file_ranker::FileStat;
 use crate::services::github::GitHubRepoInfo;
@@ -24,6 +26,8 @@ pub enum GitServiceError {
     Git(#[from] GitError),
     #[error(transparent)]
     GitCLI(#[from] GitCliError),
+    #[error(transparent)]
+    StgCLI(#[from] StgCliError),
     #[error(transparent)]
     IoError(#[from] std::io::Error),
     #[error("Invalid repository: {0}")]
@@ -153,6 +157,76 @@ impl GitService {
     /// Create a new GitService for the given repository path
     pub fn new() -> Self {
         Self {}
+    }
+
+    pub fn stg_is_enabled(&self, worktree_path: &Path) -> Result<bool, GitServiceError> {
+        Ok(StgCli::new().is_enabled(worktree_path)?)
+    }
+
+    pub fn stg_enable(&self, worktree_path: &Path) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().enable(worktree_path)?)
+    }
+
+    pub fn stg_series(&self, worktree_path: &Path) -> Result<Vec<StgPatchEntry>, GitServiceError> {
+        Ok(StgCli::new().series(worktree_path)?)
+    }
+
+    pub fn stg_new_patch(
+        &self,
+        worktree_path: &Path,
+        name: Option<&str>,
+        message: &str,
+    ) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().new_patch(worktree_path, name, message)?)
+    }
+
+    pub fn stg_refresh(
+        &self,
+        worktree_path: &Path,
+        paths: &[String],
+        allow_dirty_index: bool,
+    ) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().refresh(worktree_path, paths, allow_dirty_index)?)
+    }
+
+    pub fn stg_goto(&self, worktree_path: &Path, patch: &str) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().goto(worktree_path, patch)?)
+    }
+
+    pub fn stg_push(
+        &self,
+        worktree_path: &Path,
+        range: Option<&str>,
+    ) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().push(worktree_path, range)?)
+    }
+
+    pub fn stg_pop(
+        &self,
+        worktree_path: &Path,
+        range: Option<&str>,
+    ) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().pop(worktree_path, range)?)
+    }
+
+    pub fn stg_float(
+        &self,
+        worktree_path: &Path,
+        patches: &[String],
+    ) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().float(worktree_path, patches)?)
+    }
+
+    pub fn stg_rebase(&self, worktree_path: &Path, new_base: &str) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().rebase(worktree_path, new_base)?)
+    }
+
+    pub fn stg_undo(&self, worktree_path: &Path) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().undo(worktree_path)?)
+    }
+
+    pub fn stg_redo(&self, worktree_path: &Path) -> Result<(), GitServiceError> {
+        Ok(StgCli::new().redo(worktree_path)?)
     }
 
     pub fn is_branch_name_valid(&self, name: &str) -> bool {
