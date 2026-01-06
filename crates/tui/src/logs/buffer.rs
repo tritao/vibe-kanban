@@ -158,6 +158,9 @@ pub(crate) struct LogAssemblerState {
     pub(crate) last_system_hash: u64,
     pub(crate) last_system_len: u16,
     pub(crate) has_last_system: bool,
+    pub(crate) last_todos_hash: u64,
+    pub(crate) last_todos_len: u16,
+    pub(crate) has_last_todos: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

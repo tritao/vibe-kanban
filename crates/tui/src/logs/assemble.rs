@@ -1021,6 +1021,29 @@ fn append_normalized_entry(
                 "todo_management" => {
                     let todos = action_type.get("todos").and_then(|v| v.as_array()).cloned();
                     if let Some(todos) = todos {
+                        // De-duplicate repeated identical todo lists. Some executors emit the
+                        // same list multiple times (often separated by thinking/progress).
+                        let mut fingerprint = String::new();
+                        for t in &todos {
+                            let content =
+                                t.get("content").and_then(|v| v.as_str()).unwrap_or("");
+                            let status = t.get("status").and_then(|v| v.as_str()).unwrap_or("");
+                            fingerprint.push_str(status);
+                            fingerprint.push('\t');
+                            fingerprint.push_str(content);
+                            fingerprint.push('\n');
+                        }
+                        let (h, len) = fnv1a64(&fingerprint);
+                        if state.has_last_todos
+                            && state.last_todos_hash == h
+                            && state.last_todos_len == len
+                        {
+                            return;
+                        }
+                        state.has_last_todos = true;
+                        state.last_todos_hash = h;
+                        state.last_todos_len = len;
+
                         let count = todos.len();
                         push_line(
                             lines,
