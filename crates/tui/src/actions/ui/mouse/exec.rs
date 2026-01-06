@@ -69,7 +69,16 @@ pub(super) fn handle_exec_left_click(
 
     if rect_contains(layout.exec_logs, col, row) {
         let area = layout.exec_logs;
-        sel::select_log_entry(app, log_entry_hit_at(app, area, col, row));
+        let hit = log_entry_hit_at(app, area, col, row);
+        if hit.is_none() {
+            // Clicking on empty space inside the log pane should clear selection.
+            app.exec.log_selected = None;
+            app.exec.log_mouse_selecting = false;
+            app.exec.log_mouse_select_anchor = None;
+            app.exec.log_mouse_select_range = None;
+            return true;
+        }
+        sel::select_log_entry(app, hit);
 
         // Start an in-app selection range (drag will extend it).
         if let Some(line_idx) = log_line_index_hit_at(app, area, row) {
