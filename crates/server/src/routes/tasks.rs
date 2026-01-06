@@ -113,6 +113,17 @@ pub async fn create_task(
 ) -> Result<ResponseJson<ApiResponse<Task>>, ApiError> {
     let id = Uuid::new_v4();
 
+    let mut payload = payload;
+    // Back-compat: older clients use `parent_workspace_id` to mean "subtask of the task that owns
+    // this workspace". If `parent_task_id` isn't provided, infer it so hierarchy works everywhere.
+    if payload.parent_task_id.is_none() && payload.parent_workspace_id.is_some() {
+        payload.parent_task_id = infer_parent_task_id_from_parent_workspace(
+            &deployment.db().pool,
+            payload.parent_workspace_id,
+        )
+        .await?;
+    }
+
     validate_parent_task_id(
         &deployment.db().pool,
         payload.project_id,
@@ -169,17 +180,24 @@ pub async fn create_task_and_start(
 
     let task_id = Uuid::new_v4();
 
+    let mut task_payload = payload.task;
+    if task_payload.parent_task_id.is_none() && task_payload.parent_workspace_id.is_some() {
+        task_payload.parent_task_id =
+            infer_parent_task_id_from_parent_workspace(pool, task_payload.parent_workspace_id)
+                .await?;
+    }
+
     validate_parent_task_id(
         pool,
-        payload.task.project_id,
+        task_payload.project_id,
         task_id,
-        payload.task.parent_task_id,
+        task_payload.parent_task_id,
     )
     .await?;
 
-    let task = Task::create(pool, &payload.task, task_id).await?;
+    let task = Task::create(pool, &task_payload, task_id).await?;
 
-    if let Some(image_ids) = &payload.task.image_ids {
+    if let Some(image_ids) = &task_payload.image_ids {
         TaskImage::associate_many_dedup(pool, task.id, image_ids).await?;
     }
 
@@ -190,7 +208,7 @@ pub async fn create_task_and_start(
                 "task_id": task.id.to_string(),
                 "project_id": task.project_id,
                 "has_description": task.description.is_some(),
-                "has_images": payload.task.image_ids.is_some(),
+                "has_images": task_payload.image_ids.is_some(),
             }),
         )
         .await;
@@ -261,6 +279,21 @@ pub async fn create_task_and_start(
         last_attempt_failed: false,
         executor: payload.executor_profile_id.executor.to_string(),
     })))
+}
+
+async fn infer_parent_task_id_from_parent_workspace(
+    pool: &sqlx::SqlitePool,
+    parent_workspace_id: Option<Uuid>,
+) -> Result<Option<Uuid>, ApiError> {
+    let Some(parent_workspace_id) = parent_workspace_id else {
+        return Ok(None);
+    };
+    let Some(ws) = Workspace::find_by_id(pool, parent_workspace_id).await? else {
+        return Err(ApiError::BadRequest(
+            "Parent workspace not found".to_string(),
+        ));
+    };
+    Ok(Some(ws.task_id))
 }
 
 pub async fn update_task(
