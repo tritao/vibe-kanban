@@ -347,12 +347,16 @@ fn tasks_list(store: &serde_json::Value) -> Vec<TaskRow> {
 }
 
 pub(crate) fn tasks_filtered_base(app: &AppState) -> Vec<TaskRow> {
-    let mut tasks = tasks_list(&app.board.tasks_store);
+    let mut tasks = tasks_all(&app.board.tasks_store);
     let q = app.board.task_filter.trim();
     if !q.is_empty() {
         tasks.retain(|t| contains_ci(&t.title, q));
     }
     tasks
+}
+
+pub(crate) fn tasks_all(store: &serde_json::Value) -> Vec<TaskRow> {
+    tasks_list(store)
 }
 
 pub(crate) fn find_task(store: &serde_json::Value, task_id: Uuid) -> Option<TaskRow> {

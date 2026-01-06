@@ -30,6 +30,7 @@ pub(crate) fn render_help_modal(f: &mut Frame) {
         Line::from(""),
         Line::from("Board (left)"),
         Line::from("  n           new task"),
+        Line::from("  d           delete task"),
         Line::from("  j/k or ↑/↓  move within status"),
         Line::from("  J/K         change status section"),
         Line::from("  ←/→         move task status"),
@@ -97,7 +98,7 @@ pub(crate) fn render_confirm_modal(f: &mut Frame, confirm: &ConfirmState) {
     let area = centered_rect(70, 35, f.area());
     f.render_widget(Clear, area);
 
-    let lines = vec![
+    let mut lines = vec![
         Line::from(vec![Span::styled(
             confirm.title.clone(),
             Style::default().add_modifier(Modifier::BOLD),
@@ -105,8 +106,15 @@ pub(crate) fn render_confirm_modal(f: &mut Frame, confirm: &ConfirmState) {
         Line::from(""),
         Line::from(confirm.body.clone()),
         Line::from(""),
-        Line::from("y = confirm, n/Esc = cancel"),
     ];
+    if let Some(alt) = confirm.alt_action.as_ref() {
+        lines.push(Line::from(format!(
+            "y/Enter = confirm, {} = {}, n/Esc = cancel",
+            alt.key, alt.label
+        )));
+    } else {
+        lines.push(Line::from("y/Enter = confirm, n/Esc = cancel"));
+    }
 
     let p = Paragraph::new(lines)
         .block(Block::default().borders(Borders::ALL).title("Confirm"))

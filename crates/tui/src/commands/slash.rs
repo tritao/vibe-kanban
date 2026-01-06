@@ -13,7 +13,7 @@ use crate::{
     logs::{append_local_user_message, set_pending_user_log},
     net::ops::{
         CreateGitHubPrRequest, abort_conflicts_http, attach_pr_http, branch_status_http,
-        create_pr_http, create_task_attempt_http, follow_up_http,
+        create_pr_http, create_task_attempt_http, delete_task_http, follow_up_http,
         force_push_task_attempt_branch_http, get_pr_comments_http, latest_session_id_http,
         list_task_attempts_http, merge_task_attempt_http, open_editor_http,
         project_repositories_http, push_task_attempt_branch_http, queue_follow_up_http,
@@ -382,6 +382,10 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
             handle_model_command(app, tokens)?;
             Ok(false)
         }
+        "delete" => {
+            handle_delete_command(app, tokens)?;
+            Ok(false)
+        }
         _ => Err(crate::slash::unknown_command_error(tokens[0].as_str())),
     }
 }
@@ -598,6 +602,40 @@ fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
                     .send(NetEvent::Error(format!(
                         "failed to update model settings: {e}"
                     )))
+                    .await;
+            }
+        }
+    });
+
+    Ok(())
+}
+
+fn handle_delete_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
+    let Some(task_id) = app.board.selected_task_id else {
+        return Err("no task selected".to_string());
+    };
+
+    let help = crate::slash::help_syntax_for_command("delete").unwrap_or("/delete [--subtree]");
+    let parsed =
+        crate::slash::parse_flags(tokens, 1, crate::slash::flags_for_command("delete"), help)?;
+    let mode = if parsed.get_bool("--subtree") {
+        Some("subtree")
+    } else {
+        Some("promote")
+    };
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match delete_task_http(&base_url, task_id, mode).await {
+            Ok(()) => {
+                let _ = net_tx
+                    .send(NetEvent::Notice("Deleted task.".to_string()))
+                    .await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(NetEvent::Error(format!("delete task failed: {e}")))
                     .await;
             }
         }

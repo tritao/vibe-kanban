@@ -79,6 +79,12 @@ const RESOLVE_FLAGS: &[FlagSpec] = &[FlagSpec {
     takes_value: true,
 }];
 
+const DELETE_FLAGS: &[FlagSpec] = &[FlagSpec {
+    name: "--subtree",
+    desc: "delete subtree (destructive)",
+    takes_value: false,
+}];
+
 const MODEL_FLAGS: &[FlagSpec] = &[FlagSpec {
     name: "--effort",
     desc: "reasoning effort",
@@ -281,6 +287,15 @@ const COMMAND_SPECS: &[CommandSpec] = &[
         subcommands: EMPTY_SUBS,
         help_syntax: "/model <MODEL> [--effort E]",
         usage: Some("usage: /model <MODEL> [--effort E]"),
+    },
+    CommandSpec {
+        name: "delete",
+        aliases: &["del", "rm"],
+        desc: "delete selected task",
+        flags: DELETE_FLAGS,
+        subcommands: EMPTY_SUBS,
+        help_syntax: "/delete [--subtree]",
+        usage: Some("usage: /delete [--subtree]"),
     },
 ];
 

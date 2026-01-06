@@ -28,6 +28,7 @@ pub(super) fn handle_board_key(app: &mut AppState, key: KeyEvent) -> Option<bool
             open_create_task_modal(app, app.board.selected_task_id);
             Some(true)
         }
+        KeyCode::Char('d') => Some(super::confirm::open_delete_task_confirm(app)),
         KeyCode::Char('K') => {
             sel::move_active_status(app, -1);
             Some(true)

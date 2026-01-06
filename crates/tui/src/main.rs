@@ -104,6 +104,31 @@ fn handle_confirm_action(app: &mut AppState, action: ConfirmAction) {
                 }
             });
         }
+        ConfirmAction::DeleteTask {
+            task_id,
+            delete_mode,
+        } => {
+            let base_url = app.backend_url.clone();
+            let net_tx = app.net_tx.clone();
+            let mode = match delete_mode {
+                crate::state::DeleteTaskMode::Promote => Some("promote"),
+                crate::state::DeleteTaskMode::Subtree => Some("subtree"),
+            };
+            tokio::spawn(async move {
+                match crate::net::ops::delete_task_http(&base_url, task_id, mode).await {
+                    Ok(()) => {
+                        let _ = net_tx
+                            .send(NetEvent::Notice("Deleted task.".to_string()))
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = net_tx
+                            .send(NetEvent::Error(format!("delete task failed: {e}")))
+                            .await;
+                    }
+                }
+            });
+        }
     }
 }
 

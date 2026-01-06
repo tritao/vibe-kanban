@@ -26,6 +26,28 @@ pub(crate) async fn update_task_status_http(
     Ok(())
 }
 
+pub(crate) async fn delete_task_http(
+    base_url: &str,
+    task_id: Uuid,
+    delete_mode: Option<&str>,
+) -> anyhow::Result<()> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let mut url = format!("{}/api/tasks/{}", base_url.trim_end_matches('/'), task_id);
+    if let Some(mode) = delete_mode.filter(|s| !s.trim().is_empty()) {
+        url.push_str(&format!("?delete_mode={mode}"));
+    }
+
+    let resp = client.delete(url).send().await?;
+    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected delete task");
+    }
+    Ok(())
+}
+
 pub(crate) async fn create_task_http(
     base_url: &str,
     project_id: Uuid,

@@ -119,7 +119,26 @@ pub(crate) struct InputState {
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum ConfirmAction {
-    StopExec { exec_id: Uuid },
+    StopExec {
+        exec_id: Uuid,
+    },
+    DeleteTask {
+        task_id: Uuid,
+        delete_mode: DeleteTaskMode,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DeleteTaskMode {
+    Promote,
+    Subtree,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ConfirmAltAction {
+    pub(crate) key: char,
+    pub(crate) label: String,
+    pub(crate) action: ConfirmAction,
 }
 
 #[derive(Debug, Clone)]
@@ -127,6 +146,7 @@ pub(crate) struct ConfirmState {
     pub(crate) title: String,
     pub(crate) body: String,
     pub(crate) action: ConfirmAction,
+    pub(crate) alt_action: Option<ConfirmAltAction>,
 }
 
 #[derive(Debug, Clone)]
