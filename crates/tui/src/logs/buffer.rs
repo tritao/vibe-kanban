@@ -153,6 +153,9 @@ pub(crate) struct LogAssemblerState {
     pub(crate) progress_kind: Option<ProgressKind>,
     pub(crate) progress_count: usize,
     pub(crate) progress_line_pos: Option<usize>,
+    pub(crate) last_system_hash: u64,
+    pub(crate) last_system_len: u16,
+    pub(crate) has_last_system: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -348,6 +348,16 @@ fn append_normalized_entry(
     diff_theme: DiffTheme,
     collapsed: bool,
 ) {
+    fn fnv1a64(s: &str) -> (u64, u16) {
+        const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+        const FNV_PRIME: u64 = 0x100000001b3;
+        let mut hash = FNV_OFFSET;
+        for &b in s.as_bytes() {
+            hash ^= b as u64;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        (hash, s.len().min(u16::MAX as usize) as u16)
+    }
     fn progress_line(kind: ProgressKind, count: usize, width: usize) -> Line<'static> {
         let label = match kind {
             ProgressKind::Thinking => "thinking…",
@@ -456,13 +466,25 @@ fn append_normalized_entry(
             );
         }
         "system_message" => {
+            let trimmed = content_text.trim();
+            if trimmed.is_empty() {
+                return;
+            }
+            let (h, len) = fnv1a64(trimmed);
+            if state.has_last_system && state.last_system_hash == h && state.last_system_len == len
+            {
+                return;
+            }
+            state.has_last_system = true;
+            state.last_system_hash = h;
+            state.last_system_len = len;
             append_text_block(
                 lines,
                 map,
                 entry_idx,
                 "System",
                 Color::Gray,
-                content_text,
+                trimmed,
                 width,
                 render_mode,
             );
