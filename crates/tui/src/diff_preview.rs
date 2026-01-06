@@ -77,11 +77,18 @@ pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
     let wrap = app.diff.diff_wrap;
     let net_tx = app.net_tx.clone();
 
-    // Immediate feedback; rendering is updated when the job completes.
-    app.diff.diff_preview_lines = vec![Line::from(Span::styled(
-        "Loading diff…".to_string(),
-        Style::default().add_modifier(Modifier::DIM),
-    ))];
+    // Avoid flicker: keep the previous preview content rendered while the async
+    // rebuild runs, and only swap in the new content once ready. If there is no
+    // existing content, show a single-line placeholder.
+    app.diff.diff_preview_loading = true;
+    if app.diff.diff_preview_lines.is_empty()
+        || app.diff.diff_preview_lines == vec![Line::from("No diffs")]
+    {
+        app.diff.diff_preview_lines = vec![Line::from(Span::styled(
+            "Loading diff…".to_string(),
+            Style::default().add_modifier(Modifier::DIM),
+        ))];
+    }
 
     replace_job(
         app,

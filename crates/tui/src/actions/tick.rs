@@ -140,6 +140,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
             dirty = true;
         } else if app.diff.diff_preview_lines != vec![Line::from("No diffs")] {
             app.diff.diff_preview_lines = vec![Line::from("No diffs")];
+            app.diff.diff_preview_loading = false;
             dirty = true;
         }
         app.diff.diff_preview_pending = false;

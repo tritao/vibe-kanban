@@ -320,6 +320,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.diff.diff_preview_cache_hash = cache_hash;
             app.diff.diff_preview_cache_width = width;
             app.diff.diff_preview_lines = lines;
+            app.diff.diff_preview_loading = false;
             true
         }
         NetEvent::LogPrewarmReady {

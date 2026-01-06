@@ -85,6 +85,7 @@ pub(crate) struct DiffState {
     pub(crate) diff_preview_pending: bool,
     pub(crate) diff_preview_next_refresh_at: Option<Instant>,
     pub(crate) diff_preview_gen: u64,
+    pub(crate) diff_preview_loading: bool,
 
     pub(crate) repo_statuses: Vec<RepoBranchStatus>,
     pub(crate) selected_repo_index: usize,
@@ -304,6 +305,7 @@ impl AppState {
                 diff_preview_pending: false,
                 diff_preview_next_refresh_at: None,
                 diff_preview_gen: 0,
+                diff_preview_loading: false,
 
                 repo_statuses: vec![],
                 selected_repo_index: 0,

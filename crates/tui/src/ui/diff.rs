@@ -1706,9 +1706,11 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
         Block::default()
             .borders(Borders::ALL)
             .title(format!(
-                "Diff ({}){}",
+                "Diff ({}){}{}",
                 app.diff.diff_theme.label(),
                 if app.diff.diff_wrap { ", wrap" } else { "" }
+                ,
+                if app.diff.diff_preview_loading { ", loading" } else { "" }
             ))
             .border_style(border_style),
     );
