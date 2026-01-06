@@ -13,10 +13,12 @@ use crate::{
     logs::{append_local_user_message, set_pending_user_log},
     net::ops::{
         CreateGitHubPrRequest, abort_conflicts_http, attach_pr_http, branch_status_http,
-        create_pr_http, follow_up_http, force_push_task_attempt_branch_http, get_pr_comments_http,
-        latest_session_id_http, merge_task_attempt_http, open_editor_http,
-        push_task_attempt_branch_http, queue_follow_up_http, rebase_task_attempt_http,
-        update_executor_profile_http, update_model_settings_http,
+        create_pr_http, create_task_attempt_http, follow_up_http,
+        force_push_task_attempt_branch_http, get_pr_comments_http, latest_session_id_http,
+        list_task_attempts_http, merge_task_attempt_http, open_editor_http,
+        project_repositories_http, push_task_attempt_branch_http, queue_follow_up_http,
+        rebase_task_attempt_http, repo_branches_http, update_executor_profile_http,
+        update_model_settings_http,
     },
     selection::{exec_list, find_task},
     state::{AppState, Merge},
@@ -76,6 +78,9 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
     let attempt_id = app.board.selected_attempt_id;
+    let task_id = app.board.selected_task_id;
+    let project_id = app.board.selected_project_id;
+    let executor_profile = app.ui.selected_executor_profile.clone();
 
     let execs = exec_list(&app.exec.exec_store);
     let active = app
@@ -85,7 +90,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     let session_id = active.and_then(|e| e.session_id);
     let is_running = active.and_then(|e| e.status.as_deref()) == Some("running");
 
-    if session_id.is_none() && attempt_id.is_none() {
+    if session_id.is_none() && attempt_id.is_none() && task_id.is_none() {
         app.ui.last_error = Some(
             "No task/attempt selected. Create/select a task first (press `n` to create a task)."
                 .to_string(),
@@ -114,6 +119,149 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     }
 
     tokio::spawn(async move {
+        let mut attempt_id = attempt_id;
+        let mut session_id = session_id;
+
+        if session_id.is_none() {
+            if attempt_id.is_none() {
+                let Some(task_id) = task_id else {
+                    let _ = net_tx
+                        .send(NetEvent::Error(
+                            "no task selected; cannot create attempt".to_string(),
+                        ))
+                        .await;
+                    return;
+                };
+
+                let existing_attempts = match list_task_attempts_http(&base_url, task_id).await {
+                    Ok(a) => a,
+                    Err(e) => {
+                        let _ = net_tx
+                            .send(NetEvent::Error(format!(
+                                "failed to load task attempts: {e}"
+                            )))
+                            .await;
+                        return;
+                    }
+                };
+                let _ = net_tx
+                    .send(NetEvent::AttemptsLoaded {
+                        task_id,
+                        attempts: existing_attempts.clone(),
+                    })
+                    .await;
+
+                if let Some(first) = existing_attempts.first() {
+                    attempt_id = Some(first.id);
+                } else {
+                    let Some(project_id) = project_id else {
+                        let _ = net_tx
+                            .send(NetEvent::Error(
+                                "no project selected; cannot create attempt".to_string(),
+                            ))
+                            .await;
+                        return;
+                    };
+                    let Some(executor_profile) = executor_profile else {
+                        let _ = net_tx
+                            .send(NetEvent::Error(
+                                "no executor selected yet; wait for /api/info".to_string(),
+                            ))
+                            .await;
+                        return;
+                    };
+
+                    let repos = match project_repositories_http(&base_url, project_id).await {
+                        Ok(r) => r,
+                        Err(e) => {
+                            let _ = net_tx
+                                .send(NetEvent::Error(format!(
+                                    "failed to load project repositories: {e}"
+                                )))
+                                .await;
+                            return;
+                        }
+                    };
+                    if repos.is_empty() {
+                        let _ = net_tx
+                            .send(NetEvent::Error(
+                                "project has no repositories; add one first".to_string(),
+                            ))
+                            .await;
+                        return;
+                    }
+
+                    let mut repo_inputs: Vec<(Uuid, String)> = Vec::with_capacity(repos.len());
+                    for repo in repos {
+                        let branches = repo_branches_http(&base_url, repo.id)
+                            .await
+                            .unwrap_or_default();
+                        let target_branch = branches
+                            .iter()
+                            .find(|b| b.is_current && !b.is_remote)
+                            .or_else(|| branches.iter().find(|b| b.is_current))
+                            .map(|b| b.name.clone())
+                            .unwrap_or_else(|| "main".to_string());
+                        repo_inputs.push((repo.id, target_branch));
+                    }
+
+                    let created = match create_task_attempt_http(
+                        &base_url,
+                        task_id,
+                        &executor_profile,
+                        repo_inputs,
+                    )
+                    .await
+                    {
+                        Ok(a) => a,
+                        Err(e) => {
+                            let _ = net_tx
+                                .send(NetEvent::Error(format!(
+                                    "failed to create task attempt: {e}"
+                                )))
+                                .await;
+                            return;
+                        }
+                    };
+
+                    attempt_id = Some(created.id);
+                    let _ = net_tx
+                        .send(NetEvent::AttemptsLoaded {
+                            task_id,
+                            attempts: vec![created.clone()],
+                        })
+                        .await;
+                    let _ = net_tx
+                        .send(NetEvent::Notice(format!(
+                            "Started attempt on branch {}.",
+                            created.branch
+                        )))
+                        .await;
+                }
+            }
+
+            // The workspace start can be async; poll briefly for a session to appear.
+            if let Some(workspace_id) = attempt_id {
+                for _ in 0..40 {
+                    match latest_session_id_http(&base_url, workspace_id).await {
+                        Ok(Some(sid)) => {
+                            session_id = Some(sid);
+                            break;
+                        }
+                        Ok(None) => tokio::time::sleep(Duration::from_millis(250)).await,
+                        Err(e) => {
+                            let _ = net_tx
+                                .send(NetEvent::Error(format!(
+                                    "failed to load sessions: {e}"
+                                )))
+                                .await;
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
         let session_id = match session_id {
             Some(id) => Some(id),
             None => match attempt_id {
@@ -133,7 +281,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
         let Some(session_id) = session_id else {
             let _ = net_tx
                 .send(NetEvent::Error(
-                    "no session available for this attempt".to_string(),
+                    "no session available for this attempt (workspace still starting?)".to_string(),
                 ))
                 .await;
             return;

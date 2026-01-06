@@ -63,6 +63,112 @@ pub(crate) async fn create_task_http(
         .ok_or_else(|| anyhow::anyhow!("missing task in create response"))
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct WorkspaceDto {
+    id: Uuid,
+    branch: String,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+    setup_completed_at: Option<String>,
+}
+
+pub(crate) async fn list_task_attempts_http(
+    base_url: &str,
+    task_id: Uuid,
+) -> anyhow::Result<Vec<crate::state::AttemptRow>> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/task-attempts?task_id={task_id}",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client.get(url).send().await?;
+    let api = resp.json::<ApiResponse<Vec<WorkspaceDto>>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected task attempts request");
+    }
+    Ok(api
+        .into_data()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|w| crate::state::AttemptRow {
+            id: w.id,
+            branch: w.branch,
+            created_at: w.created_at,
+            updated_at: w.updated_at,
+            setup_completed_at: w.setup_completed_at,
+        })
+        .collect())
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub(crate) struct ProjectRepoItem {
+    pub(crate) id: Uuid,
+    #[allow(dead_code)]
+    pub(crate) name: String,
+    #[allow(dead_code)]
+    pub(crate) display_name: String,
+}
+
+pub(crate) async fn project_repositories_http(
+    base_url: &str,
+    project_id: Uuid,
+) -> anyhow::Result<Vec<ProjectRepoItem>> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!(
+        "{}/api/projects/{project_id}/repositories",
+        base_url.trim_end_matches('/')
+    );
+    let resp = client.get(url).send().await?;
+    let api = resp.json::<ApiResponse<Vec<ProjectRepoItem>>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected project repositories request");
+    }
+    Ok(api.into_data().unwrap_or_default())
+}
+
+pub(crate) async fn create_task_attempt_http(
+    base_url: &str,
+    task_id: Uuid,
+    executor_profile: &ExecutorProfileSelection,
+    repos: Vec<(Uuid, String)>,
+) -> anyhow::Result<crate::state::AttemptRow> {
+    let client = reqwest::Client::builder()
+        .build()
+        .context("build reqwest client")?;
+
+    let url = format!("{}/api/task-attempts", base_url.trim_end_matches('/'));
+    let body = serde_json::json!({
+        "task_id": task_id,
+        "executor_profile_id": executor_profile,
+        "repos": repos.into_iter().map(|(repo_id, target_branch)| serde_json::json!({
+            "repo_id": repo_id,
+            "target_branch": target_branch,
+        })).collect::<Vec<_>>(),
+    });
+
+    let resp = client.post(url).json(&body).send().await?;
+    let api = resp.json::<ApiResponse<WorkspaceDto>>().await?;
+    if !api.is_success() {
+        anyhow::bail!("backend rejected create task attempt");
+    }
+    let w = api
+        .into_data()
+        .ok_or_else(|| anyhow::anyhow!("missing workspace in create attempt response"))?;
+    Ok(crate::state::AttemptRow {
+        id: w.id,
+        branch: w.branch,
+        created_at: w.created_at,
+        updated_at: w.updated_at,
+        setup_completed_at: w.setup_completed_at,
+    })
+}
+
 pub(crate) async fn stop_exec_http(base_url: &str, exec_id: Uuid) -> anyhow::Result<()> {
     let client = reqwest::Client::builder()
         .build()
