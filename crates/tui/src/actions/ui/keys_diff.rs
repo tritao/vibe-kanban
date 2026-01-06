@@ -28,6 +28,27 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
             app.diff.diff_preview_cache_key = None;
             Some(true)
         }
+        KeyCode::Char('u') => {
+            app.diff.diff_show_untracked = !app.diff.diff_show_untracked;
+            app.diff.diff_preview_cache_key = None;
+            app.diff.diff_preview_cache_hash = 0;
+
+            let rows = crate::diff::diff_rows_with_all_filtered(
+                &app.diff.diff_store,
+                app.diff.diff_show_untracked,
+            );
+            if rows.is_empty() {
+                app.diff.selected_diff_index = 0;
+            } else {
+                app.diff.selected_diff_index = app.diff.selected_diff_index.min(rows.len() - 1);
+            }
+            crate::ui::sync_selected_repo_from_diff_selection(app);
+            crate::diff_preview::schedule_diff_preview_refresh(
+                app,
+                std::time::Duration::from_millis(0),
+            );
+            Some(true)
+        }
         KeyCode::Char('t') => {
             app.diff.diff_theme = app.diff.diff_theme.cycle_next();
             app.prefs.diff_theme = app.diff.diff_theme;

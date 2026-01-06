@@ -3,7 +3,7 @@ use std::time::Duration;
 use ratatui::text::Line;
 
 use crate::{
-    diff::diff_rows_with_all,
+    diff::diff_rows_with_all_filtered,
     diff_preview::{cancel_diff_preview_job, schedule_diff_preview_refresh},
     state::AppState,
     ui::sync_selected_repo_from_diff_selection,
@@ -23,7 +23,7 @@ pub(in crate::actions) fn reset_diff_stream_state(app: &mut AppState) {
 }
 
 pub(in crate::actions) fn select_adjacent_diff_file(app: &mut AppState, delta: i32) {
-    let rows = diff_rows_with_all(&app.diff.diff_store);
+    let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
     if rows.is_empty() {
         app.diff.selected_diff_index = 0;
         return;
@@ -42,7 +42,7 @@ pub(in crate::actions) fn select_adjacent_diff_file(app: &mut AppState, delta: i
 }
 
 pub(in crate::actions) fn select_diff_file(app: &mut AppState, idx: usize) {
-    let rows = diff_rows_with_all(&app.diff.diff_store);
+    let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
     if rows.is_empty() {
         app.diff.selected_diff_index = 0;
         return;

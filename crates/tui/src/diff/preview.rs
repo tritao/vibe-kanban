@@ -8,7 +8,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use super::{DIFF_ALL_KEY, diff_rows_with_all, highlight_unified_diff};
+use super::{DIFF_ALL_KEY, diff_rows_with_all_filtered, highlight_unified_diff};
 use crate::state::DiffTheme;
 
 fn hash_text_sample(hasher: &mut impl Hasher, s: &str) {
@@ -52,8 +52,9 @@ pub(crate) enum DiffPreviewRequest {
 pub(crate) fn build_diff_preview_request(
     diff_store: &serde_json::Value,
     selected_diff_index: usize,
+    show_untracked: bool,
 ) -> DiffPreviewRequest {
-    let rows = diff_rows_with_all(diff_store);
+    let rows = diff_rows_with_all_filtered(diff_store, show_untracked);
     let selected = rows
         .get(selected_diff_index.min(rows.len().saturating_sub(1)))
         .cloned();

@@ -13,7 +13,7 @@ use crate::{
         begin_git_op, open_url, request_branch_status_refresh, resolve_repo_for_command, set_toast,
         trigger_abort_conflicts,
     },
-    diff::{DIFF_ALL_KEY, diff_rows_with_all},
+    diff::{DIFF_ALL_KEY, diff_rows_with_all_filtered},
     events::{GitOpKind, NetEvent, StreamStatus},
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     net::ops::{
@@ -62,7 +62,7 @@ fn selected_repo_status_from_diff(app: &AppState) -> Option<usize> {
     if app.diff.repo_statuses.is_empty() {
         return None;
     }
-    let rows = diff_rows_with_all(&app.diff.diff_store);
+    let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
     let selected = rows.get(app.diff.selected_diff_index)?;
     let path = selected
         .new_path
@@ -1469,7 +1469,7 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
 }
 
 fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
-    let rows = diff_rows_with_all(&app.diff.diff_store);
+    let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
     let file_count = rows.len().saturating_sub(1);
     let border_style = if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Files {
         Style::default().fg(Color::Cyan)
@@ -1480,7 +1480,7 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
     };
 
     let title = format!(
-        "Files ({}, {})",
+        "Files ({}, {}, untracked:{})",
         file_count,
         match app.diff.diff_status {
             StreamStatus::Connected => "live",
@@ -1488,7 +1488,8 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
             StreamStatus::Completed => "done",
             StreamStatus::Disconnected => "offline",
             StreamStatus::Error => "error",
-        }
+        },
+        if app.diff.diff_show_untracked { "on" } else { "off" }
     );
 
     let selected = if rows.is_empty() {

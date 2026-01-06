@@ -68,7 +68,11 @@ pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
 
     let generation = app.diff.diff_preview_gen;
     let width_u16 = (width.min(u16::MAX as usize)) as u16;
-    let req = build_diff_preview_request(&app.diff.diff_store, app.diff.selected_diff_index);
+    let req = build_diff_preview_request(
+        &app.diff.diff_store,
+        app.diff.selected_diff_index,
+        app.diff.diff_show_untracked,
+    );
     let theme = app.diff.diff_theme;
     let wrap = app.diff.diff_wrap;
     let net_tx = app.net_tx.clone();

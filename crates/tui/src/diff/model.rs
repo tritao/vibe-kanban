@@ -65,8 +65,19 @@ fn diff_rows(store: &serde_json::Value) -> Vec<DiffRow> {
     rows
 }
 
-pub(crate) fn diff_rows_with_all(store: &serde_json::Value) -> Vec<DiffRow> {
+pub(crate) fn diff_rows_filtered(store: &serde_json::Value, show_untracked: bool) -> Vec<DiffRow> {
     let mut rows = diff_rows(store);
+    if !show_untracked {
+        rows.retain(|r| r.change.as_deref() != Some("added"));
+    }
+    rows
+}
+
+pub(crate) fn diff_rows_with_all_filtered(
+    store: &serde_json::Value,
+    show_untracked: bool,
+) -> Vec<DiffRow> {
+    let mut rows = diff_rows_filtered(store, show_untracked);
     if rows.is_empty() {
         return rows;
     }

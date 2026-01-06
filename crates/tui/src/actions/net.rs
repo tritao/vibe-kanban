@@ -6,7 +6,7 @@ use crate::{
         clear_pending_branch_status_refresh, finish_git_op,
         on_exec_store_updated_for_branch_refresh, request_diff_reconnect,
     },
-    diff::{DIFF_ALL_KEY, diff_rows_with_all},
+    diff::{DIFF_ALL_KEY, diff_rows_with_all_filtered},
     diff_preview::{
         diff_patch_touches_key, schedule_diff_preview_refresh, schedule_diff_preview_refresh_debounced,
     },
@@ -268,7 +268,8 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 return true;
             }
 
-            let rows = diff_rows_with_all(&app.diff.diff_store);
+            let rows =
+                diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
             if rows.is_empty() {
                 return true;
             }

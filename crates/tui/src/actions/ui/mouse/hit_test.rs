@@ -2,7 +2,7 @@ use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 
 use crate::{
-    diff::diff_rows_with_all,
+    diff::diff_rows_with_all_filtered,
     layout::{current_terminal_rect, rect_contains},
     state::AppState,
     util::window_for_list,
@@ -60,7 +60,7 @@ pub(super) fn diff_files_hit_at(app: &AppState, area: Rect, col: u16, row: u16) 
         return None;
     }
 
-    let rows = diff_rows_with_all(&app.diff.diff_store);
+    let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
     if rows.is_empty() {
         return None;
     }
