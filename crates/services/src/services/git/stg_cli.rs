@@ -85,6 +85,31 @@ impl StgCli {
         Self {}
     }
 
+    fn git_stdout(&self, worktree_path: &Path, args: &[&str]) -> Result<String, StgCliError> {
+        let output = Command::new("git")
+            .current_dir(worktree_path)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .map_err(|e| StgCliError::CommandFailed(format!("failed to spawn git: {e}")))?;
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            let mut msg = String::new();
+            msg.push_str(&String::from_utf8_lossy(&output.stderr));
+            if msg.trim().is_empty() {
+                msg = String::from_utf8_lossy(&output.stdout).to_string();
+            }
+            Err(StgCliError::CommandFailed(format!(
+                "git {} failed: {}",
+                args.join(" "),
+                msg.trim()
+            )))
+        }
+    }
+
     fn ensure_available(&self) -> Result<(), StgCliError> {
         if resolve_executable_path_blocking("stg").is_none() {
             return Err(StgCliError::NotAvailable);
@@ -123,20 +148,33 @@ impl StgCli {
     }
 
     pub fn is_enabled(&self, worktree_path: &Path) -> Result<bool, StgCliError> {
-        // `stg series` fails if not enabled; treat that as disabled.
-        match self.stg_impl(
-            worktree_path,
-            vec![
-                OsString::from("--color=never"),
-                OsString::from("series"),
-                OsString::from("--description"),
-            ],
-        ) {
-            Ok(_) => Ok(true),
-            Err(StgCliError::NotInitialized) => Ok(false),
-            Err(StgCliError::CommandFailed(_)) => Ok(false),
-            Err(e) => Err(e),
-        }
+        self.ensure_available()?;
+        with_worktree_lock(worktree_path, || {
+            // StGit writes its per-branch metadata under `refs/stacks/<branch>`.
+            // `stg series` can exit 0 even when not initialized (prints nothing), so we need a
+            // structural check instead of a command-success check.
+            let branch =
+                match self.git_stdout(worktree_path, &["symbolic-ref", "-q", "--short", "HEAD"]) {
+                    Ok(s) => s.trim().to_string(),
+                    Err(_) => return Ok(false), // detached HEAD or not a repo
+                };
+            if branch.is_empty() || branch == "HEAD" {
+                return Ok(false);
+            }
+
+            let ref_name = format!("refs/stacks/{branch}");
+            let output = Command::new("git")
+                .current_dir(worktree_path)
+                .args(["show-ref", "--verify", "--quiet", &ref_name])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|e| {
+                    StgCliError::CommandFailed(format!("failed to spawn git show-ref: {e}"))
+                })?;
+            Ok(output.success())
+        })
     }
 
     pub fn enable(&self, worktree_path: &Path) -> Result<(), StgCliError> {
