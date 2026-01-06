@@ -17,8 +17,9 @@ use crate::{
     events::{GitOpKind, NetEvent, StreamStatus},
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     net::ops::{
-        CreateGitHubPrRequest, branch_status_http, create_pr_http, merge_task_attempt_http,
-        open_editor_http, rebase_task_attempt_http,
+        CreateGitHubPrRequest, branch_status_http, create_pr_http, create_task_attempt_http,
+        list_task_attempts_http, merge_task_attempt_http, open_editor_http,
+        project_repositories_http, rebase_task_attempt_http, repo_branches_http,
     },
     selection::find_task,
     state::{
@@ -750,16 +751,6 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             trigger_abort_conflicts(app, attempt_id, repo_id, &repo_name);
         }
         DiffRepoAction::RefreshStatus => {
-            let Some(attempt_id) = app.board.selected_attempt_id else {
-                set_toast(
-                    app,
-                    "Git: no attempt selected".to_string(),
-                    Color::Red,
-                    Some(Instant::now() + Duration::from_secs(2)),
-                );
-                return;
-            };
-
             let repo = app.diff.repo_statuses.get(
                 app.diff
                     .selected_repo_index
@@ -776,7 +767,194 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
 
             let base_url = app.backend_url.clone();
             let net_tx = app.net_tx.clone();
+            let attempt_id = app.board.selected_attempt_id;
+            let task_id = app.board.selected_task_id;
+            let project_id = app.board.selected_project_id;
+            let executor_profile = app.ui.selected_executor_profile.clone();
             tokio::spawn(async move {
+                let attempt_id = match attempt_id {
+                    Some(id) => id,
+                    None => {
+                        let Some(task_id) = task_id else {
+                            let _ = net_tx
+                                .send(NetEvent::Error(
+                                    "Git: no task selected (select/create a task first)".to_string(),
+                                ))
+                                .await;
+                            let _ = net_tx
+                                .send(NetEvent::GitOpFinished {
+                                    repo_id,
+                                    kind: GitOpKind::Status,
+                                    ok: false,
+                                    message: "Git: status failed".to_string(),
+                                })
+                                .await;
+                            return;
+                        };
+
+                        let existing_attempts =
+                            match list_task_attempts_http(&base_url, task_id).await {
+                                Ok(a) => a,
+                                Err(e) => {
+                                    let _ = net_tx
+                                        .send(NetEvent::Error(format!(
+                                            "Git: failed to load task attempts: {e}"
+                                        )))
+                                        .await;
+                                    let _ = net_tx
+                                        .send(NetEvent::GitOpFinished {
+                                            repo_id,
+                                            kind: GitOpKind::Status,
+                                            ok: false,
+                                            message: "Git: status failed".to_string(),
+                                        })
+                                        .await;
+                                    return;
+                                }
+                            };
+
+                        if let Some(first) = existing_attempts.first() {
+                            let first_id = first.id;
+                            let _ = net_tx
+                                .send(NetEvent::AttemptsLoaded {
+                                    task_id,
+                                    attempts: existing_attempts,
+                                })
+                                .await;
+                            first_id
+                        } else {
+                            let Some(project_id) = project_id else {
+                                let _ = net_tx
+                                    .send(NetEvent::Error(
+                                        "Git: no project selected (select a project first)"
+                                            .to_string(),
+                                    ))
+                                    .await;
+                                let _ = net_tx
+                                    .send(NetEvent::GitOpFinished {
+                                        repo_id,
+                                        kind: GitOpKind::Status,
+                                        ok: false,
+                                        message: "Git: status failed".to_string(),
+                                    })
+                                    .await;
+                                return;
+                            };
+                            let Some(executor_profile) = executor_profile else {
+                                let _ = net_tx
+                                    .send(NetEvent::Error(
+                                        "Git: no executor selected yet (wait for /api/info)"
+                                            .to_string(),
+                                    ))
+                                    .await;
+                                let _ = net_tx
+                                    .send(NetEvent::GitOpFinished {
+                                        repo_id,
+                                        kind: GitOpKind::Status,
+                                        ok: false,
+                                        message: "Git: status failed".to_string(),
+                                    })
+                                    .await;
+                                return;
+                            };
+
+                            let repos =
+                                match project_repositories_http(&base_url, project_id).await {
+                                    Ok(r) => r,
+                                    Err(e) => {
+                                        let _ = net_tx
+                                            .send(NetEvent::Error(format!(
+                                                "Git: failed to load project repositories: {e}"
+                                            )))
+                                            .await;
+                                        let _ = net_tx
+                                            .send(NetEvent::GitOpFinished {
+                                                repo_id,
+                                                kind: GitOpKind::Status,
+                                                ok: false,
+                                                message: "Git: status failed".to_string(),
+                                            })
+                                            .await;
+                                        return;
+                                    }
+                                };
+                            if repos.is_empty() {
+                                let _ = net_tx
+                                    .send(NetEvent::Error(
+                                        "Git: project has no repositories (add one first)"
+                                            .to_string(),
+                                    ))
+                                    .await;
+                                let _ = net_tx
+                                    .send(NetEvent::GitOpFinished {
+                                        repo_id,
+                                        kind: GitOpKind::Status,
+                                        ok: false,
+                                        message: "Git: status failed".to_string(),
+                                    })
+                                    .await;
+                                return;
+                            }
+
+                            let mut repo_inputs: Vec<(uuid::Uuid, String)> =
+                                Vec::with_capacity(repos.len());
+                            for repo in repos {
+                                let branches = repo_branches_http(&base_url, repo.id)
+                                    .await
+                                    .unwrap_or_default();
+                                let target_branch = branches
+                                    .iter()
+                                    .find(|b| b.is_current && !b.is_remote)
+                                    .or_else(|| branches.iter().find(|b| b.is_current))
+                                    .map(|b| b.name.clone())
+                                    .unwrap_or_else(|| "main".to_string());
+                                repo_inputs.push((repo.id, target_branch));
+                            }
+
+                            let created = match create_task_attempt_http(
+                                &base_url,
+                                task_id,
+                                &executor_profile,
+                                repo_inputs,
+                            )
+                            .await
+                            {
+                                Ok(a) => a,
+                                Err(e) => {
+                                    let _ = net_tx
+                                        .send(NetEvent::Error(format!(
+                                            "Git: failed to start attempt: {e}"
+                                        )))
+                                        .await;
+                                    let _ = net_tx
+                                        .send(NetEvent::GitOpFinished {
+                                            repo_id,
+                                            kind: GitOpKind::Status,
+                                            ok: false,
+                                            message: "Git: status failed".to_string(),
+                                        })
+                                        .await;
+                                    return;
+                                }
+                            };
+
+                            let _ = net_tx
+                                .send(NetEvent::AttemptsLoaded {
+                                    task_id,
+                                    attempts: vec![created.clone()],
+                                })
+                                .await;
+                            let _ = net_tx
+                                .send(NetEvent::Notice(format!(
+                                    "Started attempt on branch {}.",
+                                    created.branch
+                                )))
+                                .await;
+                            created.id
+                        }
+                    }
+                };
+
                 match branch_status_http(&base_url, attempt_id).await {
                     Ok(statuses) => {
                         let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
