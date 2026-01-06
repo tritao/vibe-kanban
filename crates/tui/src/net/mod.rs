@@ -757,10 +757,12 @@ pub(crate) async fn logs_stream_task(
 ) {
     let max_backoff = Duration::from_secs(8);
     let mut backoff = Duration::from_millis(250);
+    let mut last_reset: Option<(Uuid, LogMode)> = None;
 
     loop {
         let exec_id = *exec_rx.borrow();
         let Some(exec_id) = exec_id else {
+            last_reset = None;
             let _ = net_tx.send(NetEvent::LogReset(None)).await;
             let _ = net_tx
                 .send(NetEvent::LogStreamStatus(StreamStatus::Disconnected))
@@ -798,9 +800,12 @@ pub(crate) async fn logs_stream_task(
         let _ = net_tx
             .send(NetEvent::LogStreamStatus(StreamStatus::Connecting))
             .await;
-        let _ = net_tx.send(NetEvent::LogReset(Some(exec_id))).await;
+        if last_reset != Some((exec_id, log_mode)) {
+            let _ = net_tx.send(NetEvent::LogReset(Some(exec_id))).await;
+            last_reset = Some((exec_id, log_mode));
+        }
 
-        match connect_ws(&endpoint).await {
+        match connect_ws_detailed(&endpoint).await {
             Ok(mut stream) => {
                 let _ = net_tx
                     .send(NetEvent::LogStreamStatus(StreamStatus::Connected))
@@ -886,6 +891,14 @@ pub(crate) async fn logs_stream_task(
 
                 continue;
             }
+            Err(WsConnectError::HttpStatus(404)) => {
+                // This can happen briefly right after a new execution is created, before the
+                // log stream endpoint is available. Treat as transient and retry quickly.
+                let _ = net_tx
+                    .send(NetEvent::LogStreamStatus(StreamStatus::Disconnected))
+                    .await;
+                backoff = Duration::from_millis(250);
+            }
             Err(e) => {
                 let _ = net_tx
                     .send(NetEvent::LogStreamStatus(StreamStatus::Error))
@@ -918,6 +931,50 @@ pub(crate) async fn logs_stream_task(
             }
         }
         backoff = (backoff * 2).min(max_backoff);
+    }
+}
+
+#[derive(Debug)]
+enum WsConnectError {
+    HttpStatus(u16),
+    Other(anyhow::Error),
+}
+
+impl std::fmt::Display for WsConnectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::HttpStatus(code) => write!(f, "HTTP {code}"),
+            Self::Other(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for WsConnectError {}
+
+async fn connect_ws_detailed(
+    http_url: &str,
+) -> Result<
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
+    WsConnectError,
+> {
+    let ws_url = if let Some(rest) = http_url.strip_prefix("http://") {
+        format!("ws://{rest}")
+    } else if let Some(rest) = http_url.strip_prefix("https://") {
+        format!("wss://{rest}")
+    } else if http_url.starts_with("ws://") || http_url.starts_with("wss://") {
+        http_url.to_string()
+    } else {
+        return Err(WsConnectError::Other(anyhow::anyhow!(
+            "unsupported URL scheme: {http_url}"
+        )));
+    };
+
+    match tokio_tungstenite::connect_async(ws_url).await {
+        Ok((ws, _resp)) => Ok(ws),
+        Err(tokio_tungstenite::tungstenite::Error::Http(resp)) => {
+            Err(WsConnectError::HttpStatus(resp.status().as_u16()))
+        }
+        Err(e) => Err(WsConnectError::Other(anyhow::Error::new(e))),
     }
 }
 
