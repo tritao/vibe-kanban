@@ -68,11 +68,59 @@ pub(super) fn handle_exec_left_click(
     }
 
     if rect_contains(layout.exec_logs, col, row) {
-        sel::select_log_entry(app, log_entry_hit_at(app, layout.exec_logs, col, row));
+        let area = layout.exec_logs;
+        sel::select_log_entry(app, log_entry_hit_at(app, area, col, row));
+
+        // Toggle collapse/expand by clicking on the chevron (▸/▾) of a tool block.
+        // Right-click already toggles, but left-click on the chevron is more discoverable.
+        let inner_x0 = area.x.saturating_add(1);
+        let click_x = col.saturating_sub(inner_x0) as usize;
+        if click_x <= 3 {
+            if let Some(line_idx) = log_line_hit_at(app, area, row) {
+                if let Some(line) = app.exec.log_lines.get(line_idx) {
+                    let has_chevron = line
+                        .spans
+                        .iter()
+                        .any(|s| s.content.contains('▸') || s.content.contains('▾'));
+                    if has_chevron {
+                        crate::logs::toggle_selected_log_entry(app);
+                    }
+                }
+            }
+        }
         return true;
     }
 
     false
+}
+
+fn log_line_hit_at(app: &AppState, area: ratatui::layout::Rect, row: u16) -> Option<usize> {
+    let len = app.exec.log_lines.len();
+    if len == 0 {
+        return None;
+    }
+    let inner_y0 = area.y.saturating_add(1);
+    let inner_y1 = area.y.saturating_add(area.height).saturating_sub(1);
+    if row < inner_y0 || row >= inner_y1 {
+        return None;
+    }
+    let visible = area.height.saturating_sub(2) as usize;
+    if visible == 0 {
+        return None;
+    }
+    let visible = visible.min(len);
+    let mut offset = if app.exec.log_autoscroll {
+        0
+    } else {
+        app.exec.log_scroll_offset
+    };
+    offset = offset.min(len.saturating_sub(visible));
+    let start = len.saturating_sub(visible + offset);
+    let inner_row = row.saturating_sub(inner_y0) as usize;
+    if inner_row >= visible {
+        return None;
+    }
+    Some(start.saturating_add(inner_row))
 }
 
 pub(super) fn handle_exec_right_click(
