@@ -16,6 +16,7 @@ use crate::{
 
 pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool {
     let mut dirty = false;
+    const DIFF_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(120);
 
     if reap_finished_jobs(app) {
         dirty = true;
@@ -141,10 +142,37 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         } else if app.diff.diff_preview_lines != vec![Line::from("No diffs")] {
             app.diff.diff_preview_lines = vec![Line::from("No diffs")];
             app.diff.diff_preview_loading = false;
+            app.diff.diff_preview_loading_started_at = None;
+            app.diff.diff_preview_loading_placeholder_pending = false;
             dirty = true;
         }
         app.diff.diff_preview_pending = false;
         app.diff.diff_preview_next_refresh_at = None;
+    }
+
+    // Show the diff preview loading indicator only if the async preview job takes long enough to
+    // be noticeable. This avoids a split-second ", loading" flash for fast rebuilds.
+    if job_running(app, JobKey::DiffPreview)
+        && let Some(started) = app.diff.diff_preview_loading_started_at
+        && !app.diff.diff_preview_loading
+        && now.saturating_duration_since(started) >= DIFF_LOADING_INDICATOR_DELAY
+    {
+        app.diff.diff_preview_loading = true;
+        dirty = true;
+    }
+    if job_running(app, JobKey::DiffPreview)
+        && app.diff.diff_preview_loading_placeholder_pending
+        && let Some(started) = app.diff.diff_preview_loading_started_at
+        && now.saturating_duration_since(started) >= DIFF_LOADING_INDICATOR_DELAY
+        && (app.diff.diff_preview_lines.is_empty()
+            || app.diff.diff_preview_lines == vec![Line::from("No diffs")])
+    {
+        app.diff.diff_preview_loading_placeholder_pending = false;
+        app.diff.diff_preview_lines = vec![Line::from(ratatui::text::Span::styled(
+            "Loading diff…".to_string(),
+            ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::DIM),
+        ))];
+        dirty = true;
     }
 
     if clamp_scroll_offsets(app, layout) {
