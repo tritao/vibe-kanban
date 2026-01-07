@@ -15,7 +15,7 @@ pub(crate) use commits::*;
 pub(crate) use context::*;
 pub(crate) use git_ops::*;
 pub(crate) use git_runner::*;
-pub(crate) use job_runner::{run_net_job, spawn_net_task};
+pub(crate) use job_runner::{run_net_job, run_net_job_latest, spawn_net_task};
 pub(crate) use open_url::open_url;
 pub(crate) use slash::*;
 pub(crate) use stack_ops::*;
