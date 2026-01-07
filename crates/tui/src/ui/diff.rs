@@ -1903,7 +1903,12 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
     let end = (start + height).min(lines.len());
     let visible = lines.get(start..end).unwrap_or(&[]);
 
-    let mut w = Paragraph::new(visible.to_vec()).block(
+    // Pad to the full viewport height so old content doesn't remain on screen when the new
+    // preview has fewer lines than the previous one.
+    let mut visible_vec = visible.to_vec();
+    visible_vec.resize(height, Line::from(""));
+
+    let mut w = Paragraph::new(visible_vec).block(
         Block::default()
             .borders(Borders::ALL)
             .title(title)
