@@ -25,7 +25,6 @@ mod keys_exec;
 mod keys_global;
 mod modals;
 mod mouse;
-mod scroll;
 mod slash;
 mod text_edit;
 

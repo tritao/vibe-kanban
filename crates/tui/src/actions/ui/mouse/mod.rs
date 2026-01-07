@@ -1,6 +1,6 @@
 use crossterm::event::MouseEvent;
 
-use super::{focus, modals, scroll, sel};
+use super::{focus, modals, sel};
 use crate::{
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     state::AppState,
@@ -10,13 +10,14 @@ use crate::{
             UiComponent,
             diff_list::{DiffList, DiffListEvent},
             diff_preview::{DiffPreview, DiffPreviewEvent},
+            exec_input::ExecInput,
+            exec_log::{ExecLog, ExecLogEvent, ExecLogHitKind},
         },
     },
 };
 
 mod board;
 mod diff;
-mod exec;
 mod hit_test;
 
 pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
@@ -44,7 +45,10 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         crossterm::event::MouseEventKind::ScrollUp => {
             if rect_contains(layout.exec_logs, col, row) {
                 focus::focus_execution(app);
-                scroll::scroll_exec_older(app, LOG_WHEEL_STEP);
+                let _ = <ExecLog as UiComponent>::on_event(
+                    app,
+                    ExecLogEvent::WheelDelta(-(LOG_WHEEL_STEP as i32)),
+                );
                 return true;
             }
             if rect_contains(layout.diff_preview, col, row) {
@@ -70,7 +74,10 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         crossterm::event::MouseEventKind::ScrollDown => {
             if rect_contains(layout.exec_logs, col, row) {
                 focus::focus_execution(app);
-                scroll::scroll_exec_newer(app, LOG_WHEEL_STEP);
+                let _ = <ExecLog as UiComponent>::on_event(
+                    app,
+                    ExecLogEvent::WheelDelta(LOG_WHEEL_STEP as i32),
+                );
                 return true;
             }
             if rect_contains(layout.diff_preview, col, row) {
@@ -97,8 +104,23 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
             if rect_contains(layout.board, col, row) {
                 return board::handle_board_left_click(app, mouse, layout.board);
             }
-            if rect_contains(layout.exec, col, row) {
-                return exec::handle_exec_left_click(app, mouse, &layout);
+            if rect_contains(layout.exec_input, col, row) {
+                focus::focus_execution(app);
+                if let Some(evt) =
+                    <ExecInput as UiComponent>::hit_test(app, layout.exec_input, col, row)
+                {
+                    return <ExecInput as UiComponent>::on_event(app, evt);
+                }
+                return true;
+            }
+            if rect_contains(layout.exec_logs, col, row) {
+                focus::focus_execution(app);
+                if let Some(evt) =
+                    <ExecLog as UiComponent>::hit_test(app, layout.exec_logs, col, row)
+                {
+                    return <ExecLog as UiComponent>::on_event(app, evt);
+                }
+                return true;
             }
             if rect_contains(layout.diff, col, row) {
                 return diff::handle_diff_left_click(app, mouse, &layout);
@@ -107,17 +129,34 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left) => {
             if rect_contains(layout.exec_logs, col, row) {
                 focus::focus_execution(app);
-                return exec::handle_exec_left_drag(app, mouse, &layout);
+                let Some(ExecLogEvent::Hit(_, hit)) =
+                    <ExecLog as UiComponent>::hit_test(app, layout.exec_logs, col, row)
+                else {
+                    return false;
+                };
+                let Some(line_idx) = hit.line_idx else {
+                    return false;
+                };
+                return <ExecLog as UiComponent>::on_event(app, ExecLogEvent::DragTo(line_idx));
             }
         }
         crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left) => {
             if app.exec.log_mouse_selecting {
-                return exec::handle_exec_left_up(app);
+                return <ExecLog as UiComponent>::on_event(app, ExecLogEvent::DragEnd);
             }
         }
         crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Right) => {
             if rect_contains(layout.exec_logs, col, row) {
-                return exec::handle_exec_right_click(app, mouse, &layout);
+                focus::focus_execution(app);
+                let Some(ExecLogEvent::Hit(_, hit)) =
+                    <ExecLog as UiComponent>::hit_test(app, layout.exec_logs, col, row)
+                else {
+                    return false;
+                };
+                return <ExecLog as UiComponent>::on_event(
+                    app,
+                    ExecLogEvent::Hit(ExecLogHitKind::Right, hit),
+                );
             }
         }
         _ => {}

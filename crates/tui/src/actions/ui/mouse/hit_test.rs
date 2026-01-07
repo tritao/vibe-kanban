@@ -1,10 +1,6 @@
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
-use ratatui::layout::Rect;
 
-use crate::{
-    layout::{current_terminal_rect, rect_contains},
-    state::AppState,
-};
+use crate::{layout::current_terminal_rect, state::AppState};
 
 pub(super) fn handle_search_caret_click(app: &mut AppState, mouse: MouseEvent) -> bool {
     let col = mouse.column;
@@ -51,81 +47,4 @@ pub(super) fn handle_search_caret_click(app: &mut AppState, mouse: MouseEvent) -
     input.field.goal_col = None;
     input.field.ensure_cursor_visible(content_w, 1);
     true
-}
-
-pub(super) fn log_entry_hit_at(
-    app: &AppState,
-    area: Rect,
-    col: u16,
-    row: u16,
-) -> Option<crate::logs::LogSelection> {
-    if !rect_contains(area, col, row) {
-        return None;
-    }
-
-    let len = app.exec.log_lines.len();
-    if len == 0 {
-        return None;
-    }
-
-    let inner_y0 = area.y.saturating_add(1);
-    let inner_y1 = area.y.saturating_add(area.height).saturating_sub(1);
-    if row < inner_y0 || row >= inner_y1 {
-        return None;
-    }
-
-    let visible = area.height.saturating_sub(2) as usize;
-    if visible == 0 {
-        return None;
-    }
-
-    let visible = visible.min(len);
-    let mut offset = if app.exec.log_autoscroll {
-        0
-    } else {
-        app.exec.log_scroll_offset
-    };
-    offset = offset.min(len.saturating_sub(visible));
-    let start = len.saturating_sub(visible + offset);
-
-    let inner_row = row.saturating_sub(inner_y0) as usize;
-    if inner_row >= visible {
-        return None;
-    }
-
-    let line_idx = start.saturating_add(inner_row);
-    app.exec.log_line_targets.get(line_idx).and_then(|v| *v)
-}
-
-pub(super) fn log_line_index_hit_at(app: &AppState, area: Rect, row: u16) -> Option<usize> {
-    let len = app.exec.log_lines.len();
-    if len == 0 {
-        return None;
-    }
-
-    let inner_y0 = area.y.saturating_add(1);
-    let inner_y1 = area.y.saturating_add(area.height).saturating_sub(1);
-    if row < inner_y0 || row >= inner_y1 {
-        return None;
-    }
-
-    let visible = area.height.saturating_sub(2) as usize;
-    if visible == 0 {
-        return None;
-    }
-
-    let visible = visible.min(len);
-    let mut offset = if app.exec.log_autoscroll {
-        0
-    } else {
-        app.exec.log_scroll_offset
-    };
-    offset = offset.min(len.saturating_sub(visible));
-    let start = len.saturating_sub(visible + offset);
-
-    let inner_row = row.saturating_sub(inner_y0) as usize;
-    if inner_row >= visible {
-        return None;
-    }
-    Some(start.saturating_add(inner_row))
 }
