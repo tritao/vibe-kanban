@@ -78,9 +78,8 @@ pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
     // Avoid flicker: keep the previous preview content rendered while the async
     // rebuild runs, and only swap in the new content once ready. If there is no
     // existing content, show a single-line placeholder.
-    app.diff.diff_preview_loading.start(
-        Instant::now(),
-        Duration::from_millis(120),
+    crate::ui::loading::start_with_default_delay(
+        &mut app.diff.diff_preview_loading,
         app.diff.diff_preview_lines.is_empty()
             || app.diff.diff_preview_lines == vec![Line::from("No diffs")],
     );

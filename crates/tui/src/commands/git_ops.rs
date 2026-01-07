@@ -135,7 +135,7 @@ pub(crate) fn on_exec_store_updated_for_branch_refresh(app: &mut AppState) {
         return;
     }
 
-    schedule_branch_status_refresh(app, Duration::from_millis(0));
+    schedule_branch_status_refresh(app, Duration::ZERO);
     app.exec.pending_branch_refresh = None;
 }
 

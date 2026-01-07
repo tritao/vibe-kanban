@@ -39,7 +39,7 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
             crate::commands::select_files_mode(app);
             crate::diff_preview::schedule_diff_preview_refresh(
                 app,
-                std::time::Duration::from_millis(0),
+                crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY,
             );
             Ok(false)
         }

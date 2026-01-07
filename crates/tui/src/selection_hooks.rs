@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     diff_preview::schedule_diff_preview_refresh,
     state::{AppState, DiffListMode},
@@ -25,7 +23,7 @@ pub(crate) fn on_repo_selected(app: &mut AppState) {
     }
     // Repo selection can affect the diff preview (e.g. combined repo filter), and this is also a
     // good time to refresh the preview if it was stale.
-    schedule_diff_preview_refresh(app, Duration::from_millis(0));
+    schedule_diff_preview_refresh(app, crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY);
 }
 
 pub(crate) fn on_diff_file_selected(app: &mut AppState) {
@@ -33,7 +31,7 @@ pub(crate) fn on_diff_file_selected(app: &mut AppState) {
     crate::ui::sync_selected_repo_from_diff_selection(app);
     // Selecting a different file should always refresh the preview, even if the repo selection
     // didn't change.
-    schedule_diff_preview_refresh(app, Duration::from_millis(0));
+    schedule_diff_preview_refresh(app, crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY);
 }
 
 pub(crate) fn on_commit_selected(app: &mut AppState) {

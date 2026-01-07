@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::{
     actions::selection as sel,
@@ -63,9 +63,12 @@ pub(super) fn diff_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
         // Rebuilding the combined "__ALL__" preview on every patch is very expensive and
         // looks like the view is “growing” line-by-line. Debounce in ALL mode.
         if sel_key == DIFF_ALL_KEY {
-            schedule_diff_preview_refresh_debounced(app, Duration::from_millis(120));
+            schedule_diff_preview_refresh_debounced(
+                app,
+                crate::ui::constants::DIFF_ALL_DEBOUNCE_DELAY,
+            );
         } else {
-            schedule_diff_preview_refresh(app, Duration::from_millis(0));
+            schedule_diff_preview_refresh(app, crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY);
         }
     }
     true

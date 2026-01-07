@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use ratatui::{layout::Rect, text::Line};
 
@@ -16,7 +16,6 @@ use crate::{
 
 pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool {
     let mut dirty = false;
-    const COMMIT_LIST_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(200);
 
     if reap_finished_jobs(app) {
         dirty = true;
@@ -121,7 +120,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         app.diff.diff_preview_cache_width = diff_inner_width_u16;
         app.diff.diff_preview_cache_key = None;
         if has_diffs {
-            schedule_diff_preview_refresh(app, Duration::from_millis(0));
+            schedule_diff_preview_refresh(app, crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY);
         }
     }
     if app.diff.diff_preview_cache_key.is_none()
@@ -129,7 +128,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         && !job_running(app, JobKey::DiffPreview)
         && has_diffs
     {
-        schedule_diff_preview_refresh(app, Duration::from_millis(0));
+        schedule_diff_preview_refresh(app, crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY);
     }
     if diff_preview_refresh_ready(app, now) && !job_running(app, JobKey::DiffPreview) {
         if has_diffs {
@@ -183,8 +182,8 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
             let repo_id = repo.repo_id;
             let running = job_running(app, JobKey::CommitList);
             if let Some(ind) = app.diff.commits_loading_by_repo.get_mut(&repo_id) {
-                if ind.delay != COMMIT_LIST_LOADING_INDICATOR_DELAY {
-                    ind.delay = COMMIT_LIST_LOADING_INDICATOR_DELAY;
+                if ind.delay != crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY {
+                    ind.delay = crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY;
                 }
                 if ind.tick(now, running) {
                     dirty = true;

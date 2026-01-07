@@ -67,7 +67,7 @@ async fn main() -> anyhow::Result<()> {
 fn spawn_input_reader(ui_tx: mpsc::Sender<UiEvent>) {
     std::thread::spawn(move || {
         loop {
-            if crossterm::event::poll(Duration::from_millis(50)).unwrap_or(false) {
+            if crossterm::event::poll(crate::ui::constants::INPUT_POLL_INTERVAL).unwrap_or(false) {
                 if let Ok(ev) = crossterm::event::read() {
                     if ui_tx.blocking_send(UiEvent::Crossterm(ev)).is_err() {
                         break;

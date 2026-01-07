@@ -68,15 +68,13 @@ fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
     let row = mouse.row;
     let split = crate::layout::split_exec_pane(area);
 
-    const LOG_WHEEL_STEP: usize = 3;
-
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             if crate::layout::rect_contains(split.logs, col, row) {
                 app.ui.focus_execution();
                 let _ = <ExecLog as UiComponent>::on_event(
                     app,
-                    ExecLogEvent::WheelDelta(-(LOG_WHEEL_STEP as i32)),
+                    ExecLogEvent::WheelDelta(-crate::ui::constants::LOG_WHEEL_STEP),
                 );
                 return true;
             }
@@ -87,7 +85,7 @@ fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
                 app.ui.focus_execution();
                 let _ = <ExecLog as UiComponent>::on_event(
                     app,
-                    ExecLogEvent::WheelDelta(LOG_WHEEL_STEP as i32),
+                    ExecLogEvent::WheelDelta(crate::ui::constants::LOG_WHEEL_STEP),
                 );
                 return true;
             }

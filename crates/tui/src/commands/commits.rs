@@ -1,5 +1,3 @@
-use std::time::Instant;
-
 use ratatui::text::Line;
 use uuid::Uuid;
 
@@ -11,6 +9,7 @@ use crate::{
 };
 
 const COMMIT_FILES_MARKER: &str = "----8<---- VK-FILES ----8<----";
+const COMMIT_LIST_PAGE_SIZE: usize = 80;
 
 fn sanitize_for_terminal(s: &str) -> String {
     // Tabs cause cursor jumps in terminals but are treated as a single cell in ratatui buffers,
@@ -126,17 +125,16 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
     let Some(repo_id) = selected_repo_id(app) else {
         return;
     };
-    app.diff
-        .commits_loading_by_repo
-        .entry(repo_id)
-        .or_default()
-        .start(Instant::now(), std::time::Duration::from_millis(200));
+    crate::ui::loading::start_indicator_with_delay(
+        app.diff.commits_loading_by_repo.entry(repo_id).or_default(),
+        crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY,
+    );
 
     run_net_job(
         app,
         JobKey::CommitList,
         move |base_url, net_tx| async move {
-            let limit = 80usize;
+            let limit = COMMIT_LIST_PAGE_SIZE;
             match commit_list_http(&base_url, attempt_id, repo_id, Some(limit), Some(0)).await {
                 Ok(commits) => {
                     let has_more = commits.len() == limit;
@@ -188,17 +186,16 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
         .get(&repo_id)
         .map(|v| v.len())
         .unwrap_or(0);
-    app.diff
-        .commits_loading_by_repo
-        .entry(repo_id)
-        .or_default()
-        .start(Instant::now(), std::time::Duration::from_millis(200));
+    crate::ui::loading::start_indicator_with_delay(
+        app.diff.commits_loading_by_repo.entry(repo_id).or_default(),
+        crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY,
+    );
 
     run_net_job(
         app,
         JobKey::CommitList,
         move |base_url, net_tx| async move {
-            let limit = 80usize;
+            let limit = COMMIT_LIST_PAGE_SIZE;
             match commit_list_http(&base_url, attempt_id, repo_id, Some(limit), Some(offset)).await
             {
                 Ok(commits) => {
@@ -245,11 +242,7 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     let idx = app.diff.selected_commit_index.min(commits.len() - 1);
     let oid = commits[idx].oid.clone();
 
-    app.diff.commit_preview_loading.start(
-        Instant::now(),
-        std::time::Duration::from_millis(120),
-        true,
-    );
+    crate::ui::loading::start_with_default_delay(&mut app.diff.commit_preview_loading, true);
     app.diff.commit_preview_text = None;
     app.diff.commit_preview_render_width = 0;
     run_net_job_latest(

@@ -39,15 +39,13 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
     let row = mouse.row;
     let split = crate::layout::split_diff_pane(area);
 
-    const DIFF_WHEEL_STEP: usize = 3;
-
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             if crate::layout::rect_contains(split.preview, col, row) {
                 app.ui.focus_diff_preview();
                 let _ = <DiffPreview as UiComponent>::on_event(
                     app,
-                    DiffPreviewEvent::WheelDelta(-(DIFF_WHEEL_STEP as i32)),
+                    DiffPreviewEvent::WheelDelta(-crate::ui::constants::DIFF_WHEEL_STEP),
                 );
                 return true;
             }
@@ -63,7 +61,7 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
                 app.ui.focus_diff_preview();
                 let _ = <DiffPreview as UiComponent>::on_event(
                     app,
-                    DiffPreviewEvent::WheelDelta(DIFF_WHEEL_STEP as i32),
+                    DiffPreviewEvent::WheelDelta(crate::ui::constants::DIFF_WHEEL_STEP),
                 );
                 return true;
             }
@@ -130,7 +128,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
             crate::commands::select_files_mode(app);
             crate::diff_preview::schedule_diff_preview_refresh(
                 app,
-                std::time::Duration::from_millis(0),
+                crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY,
             );
             return true;
         }
@@ -175,7 +173,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
             crate::ui::sync_selected_repo_from_diff_selection(app);
             crate::diff_preview::schedule_diff_preview_refresh(
                 app,
-                std::time::Duration::from_millis(0),
+                crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY,
             );
             true
         }
