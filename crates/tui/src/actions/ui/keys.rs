@@ -96,22 +96,27 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
         }
     }
 
-    if <crate::ui::components::board_pane::BoardPane as crate::ui::components::UiComponent>::on_event(
-        app,
-        crate::ui::components::board_pane::BoardPaneEvent::Key(key),
-    ) {
-        return (false, true, vec![]);
-    }
-    if <crate::ui::components::diff_pane::DiffPane as crate::ui::components::UiComponent>::on_event(
-        app,
-        crate::ui::components::diff_pane::DiffPaneEvent::Key(key),
-    ) {
-        return (false, true, vec![]);
-    }
-    if <crate::ui::components::exec_pane::ExecPane as crate::ui::components::UiComponent>::on_event(
-        app,
-        crate::ui::components::exec_pane::ExecPaneEvent::Key(key),
-    ) {
+    let handled = match app.ui.focus {
+        FocusPane::Board => {
+            <crate::ui::components::board_pane::BoardPane as crate::ui::components::UiComponent>::on_event(
+                app,
+                crate::ui::components::board_pane::BoardPaneEvent::Key(key),
+            )
+        }
+        FocusPane::Diff => {
+            <crate::ui::components::diff_pane::DiffPane as crate::ui::components::UiComponent>::on_event(
+                app,
+                crate::ui::components::diff_pane::DiffPaneEvent::Key(key),
+            )
+        }
+        FocusPane::Execution => {
+            <crate::ui::components::exec_pane::ExecPane as crate::ui::components::UiComponent>::on_event(
+                app,
+                crate::ui::components::exec_pane::ExecPaneEvent::Key(key),
+            )
+        }
+    };
+    if handled {
         return (false, true, vec![]);
     }
 
