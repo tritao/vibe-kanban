@@ -48,13 +48,7 @@ pub(crate) fn render_task_line(task: &TaskRow) -> Line<'static> {
     if task.has_in_progress_attempt {
         spans.push(Span::styled("RUN ", Style::default().fg(Color::Green)));
     } else if task.last_attempt_failed {
-        spans.push(Span::styled(
-            "FAIL",
-            Style::default()
-                .fg(Color::White)
-                .bg(Color::Red)
-                .add_modifier(Modifier::BOLD),
-        ));
+        spans.push(Span::styled("FAIL", crate::ui::palette::badge_fail()));
         spans.push(Span::raw(" "));
     }
     spans.push(Span::raw(task.title.clone()));
@@ -84,13 +78,7 @@ pub(crate) fn render_board_task_line(item: &BoardTaskItem) -> Line<'static> {
     if item.task.has_in_progress_attempt {
         spans.push(Span::styled("RUN ", Style::default().fg(Color::Green)));
     } else if item.task.last_attempt_failed {
-        spans.push(Span::styled(
-            "FAIL",
-            Style::default()
-                .fg(Color::White)
-                .bg(Color::Red)
-                .add_modifier(Modifier::BOLD),
-        ));
+        spans.push(Span::styled("FAIL", crate::ui::palette::badge_fail()));
         spans.push(Span::raw(" "));
     }
 

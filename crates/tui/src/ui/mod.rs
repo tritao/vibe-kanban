@@ -6,6 +6,7 @@ pub(crate) mod diff;
 pub(crate) mod execution;
 pub(crate) mod layout;
 pub(crate) mod modals;
+pub(crate) mod palette;
 pub(crate) mod viewport;
 pub(crate) mod widgets;
 

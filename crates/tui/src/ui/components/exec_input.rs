@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::Line,
     widgets::{Block, Borders, Paragraph, Wrap},
 };
@@ -27,7 +27,7 @@ pub(crate) struct ExecInput;
 impl ExecInput {
     fn border_style(app: &AppState) -> Style {
         if app.ui.focus == FocusPane::Execution {
-            Style::default().fg(Color::Cyan)
+            crate::ui::palette::border_active()
         } else {
             Style::default()
         }

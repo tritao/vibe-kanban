@@ -5,7 +5,7 @@ use ratatui::{
 
 pub(crate) fn focused_border(active: bool) -> Style {
     if active {
-        Style::default().fg(Color::Cyan)
+        crate::ui::palette::border_active()
     } else {
         Style::default()
     }

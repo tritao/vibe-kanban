@@ -43,7 +43,7 @@ pub(crate) struct ExecLog;
 impl ExecLog {
     fn border_style(app: &AppState) -> Style {
         if app.ui.focus == FocusPane::Execution {
-            Style::default().fg(Color::Cyan)
+            crate::ui::palette::border_active()
         } else {
             Style::default()
         }

@@ -296,12 +296,7 @@ fn render_files_list(f: &mut Frame, app: &AppState, area: Rect) {
 
                 if d.key == DIFF_ALL_KEY {
                     let mut spans: Vec<Span<'static>> = vec![];
-                    spans.extend(label_spans(
-                        "ALL",
-                        Style::default()
-                            .fg(Color::Cyan)
-                            .add_modifier(Modifier::BOLD),
-                    ));
+                    spans.extend(label_spans("ALL", crate::ui::palette::diff_label_all()));
                     spans.push(Span::styled(
                         "All changes".to_string(),
                         Style::default().add_modifier(Modifier::BOLD),
@@ -319,18 +314,12 @@ fn render_files_list(f: &mut Frame, app: &AppState, area: Rect) {
                         spans.push(Span::raw(" "));
                         spans.push(Span::styled(
                             format!("+{adds}"),
-                            Style::default()
-                                .fg(Color::Black)
-                                .bg(Color::Green)
-                                .add_modifier(Modifier::BOLD),
+                            crate::ui::palette::diff_count_added(),
                         ));
                         spans.push(Span::raw(" "));
                         spans.push(Span::styled(
                             format!("-{dels}"),
-                            Style::default()
-                                .fg(Color::White)
-                                .bg(Color::Red)
-                                .add_modifier(Modifier::BOLD),
+                            crate::ui::palette::diff_count_deleted(),
                         ));
                     }
 
@@ -345,13 +334,12 @@ fn render_files_list(f: &mut Frame, app: &AppState, area: Rect) {
                 };
 
                 let label_style = match label {
-                    "ADD" => Style::default().fg(Color::Black).bg(Color::Green),
-                    "DEL" => Style::default().fg(Color::White).bg(Color::Red),
-                    "REN" => Style::default().fg(Color::Black).bg(Color::LightYellow),
-                    "MOD" => Style::default().fg(Color::Black).bg(Color::LightBlue),
-                    _ => Style::default(),
-                }
-                .add_modifier(Modifier::BOLD);
+                    "ADD" => crate::ui::palette::diff_label_add(),
+                    "DEL" => crate::ui::palette::diff_label_del(),
+                    "REN" => crate::ui::palette::diff_label_ren(),
+                    "MOD" => crate::ui::palette::diff_label_mod(),
+                    _ => Style::default().add_modifier(Modifier::BOLD),
+                };
 
                 let mut spans: Vec<Span<'static>> = vec![];
                 spans.extend(label_spans(label, label_style));
@@ -375,18 +363,12 @@ fn render_files_list(f: &mut Frame, app: &AppState, area: Rect) {
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
                         format!("+{adds}"),
-                        Style::default()
-                            .fg(Color::Black)
-                            .bg(Color::Green)
-                            .add_modifier(Modifier::BOLD),
+                        crate::ui::palette::diff_count_added(),
                     ));
                     spans.push(Span::raw(" "));
                     spans.push(Span::styled(
                         format!("-{dels}"),
-                        Style::default()
-                            .fg(Color::White)
-                            .bg(Color::Red)
-                            .add_modifier(Modifier::BOLD),
+                        crate::ui::palette::diff_count_deleted(),
                     ));
                 }
 

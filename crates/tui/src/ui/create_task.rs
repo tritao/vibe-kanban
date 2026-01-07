@@ -117,7 +117,7 @@ pub(crate) fn handle_create_task_key(app: &mut AppState, key: crossterm::event::
 
 fn create_task_focus_border(focus: CreateTaskFocus, current: CreateTaskFocus) -> Style {
     if focus == current {
-        Style::default().fg(Color::Cyan)
+        crate::ui::palette::border_active()
     } else {
         Style::default()
     }
@@ -147,7 +147,7 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
         .title(format!(
             "Create Task  (project: {project_label}, parent: {parent_label})"
         ))
-        .border_style(Style::default().fg(Color::Cyan));
+        .border_style(crate::ui::palette::border_active());
 
     let inner_area = inner.inner(area);
     f.render_widget(inner, area);

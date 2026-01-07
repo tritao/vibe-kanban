@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::Line,
     widgets::{Block, Borders, List, ListItem},
 };
@@ -258,9 +258,9 @@ pub(crate) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
 
         let is_active = status == app.board.tasks_active_column;
         let border_style = if app.ui.focus == FocusPane::Board && is_active {
-            Style::default().fg(Color::Cyan)
+            crate::ui::palette::border_active()
         } else if app.ui.focus == FocusPane::Board {
-            Style::default().fg(Color::Gray)
+            crate::ui::palette::border_inactive()
         } else {
             Style::default()
         };

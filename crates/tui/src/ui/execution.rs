@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem},
 };
@@ -83,7 +83,7 @@ pub(crate) fn render_composer_autocomplete(f: &mut Frame, app: &AppState, input_
             Block::default()
                 .borders(Borders::ALL)
                 .title("Commands")
-                .border_style(Style::default().fg(Color::Cyan)),
+                .border_style(crate::ui::palette::border_active()),
         )
         .highlight_style(
             Style::default()
