@@ -1,6 +1,4 @@
 mod preview;
-mod repo_bar;
-
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -8,8 +6,8 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem},
 };
-pub(crate) use repo_bar::{DiffRepoAction, diff_repo_bar_action_at, trigger_diff_repo_action};
 
+use super::components::{UiComponent, diff_repo_bar::DiffRepoBar};
 use crate::{
     diff::{DIFF_ALL_KEY, diff_rows_with_all_filtered},
     events::StreamStatus,
@@ -28,7 +26,7 @@ pub(crate) fn render_diff_pane(f: &mut Frame, app: &AppState, area: Rect) {
         ])
         .split(area);
 
-    repo_bar::render_diff_repo_bar(f, app, sections[0]);
+    <DiffRepoBar as UiComponent>::render(f, app, sections[0]);
     render_diff_files(f, app, sections[1]);
     preview::render_diff_preview(f, app, sections[2]);
 }

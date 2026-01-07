@@ -4,12 +4,19 @@ use super::{focus, scroll, sel};
 use crate::{
     prefs::save_prefs,
     state::{AppState, DiffFocus, FocusPane},
-    ui::{DiffRepoAction, trigger_diff_repo_action},
+    ui::components::{
+        UiComponent,
+        diff_repo_bar::{DiffRepoAction, DiffRepoBar, DiffRepoBarEvent},
+    },
 };
 
 pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool> {
     if app.ui.focus != FocusPane::Diff {
         return None;
+    }
+
+    if <DiffRepoBar as UiComponent>::on_event(app, DiffRepoBarEvent::Key(key)) {
+        return Some(true);
     }
 
     match key.code {
@@ -87,17 +94,16 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
             app.diff.diff_scroll_offset = 0;
             Some(true)
         }
-        KeyCode::Char('S') => {
-            trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
-            Some(true)
-        }
         KeyCode::Char('K') => {
             crate::commands::request_stack_status_refresh(app);
             Some(true)
         }
         KeyCode::Char('E') => {
             if app.diff.repo_statuses.is_empty() {
-                trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
+                let _ = <DiffRepoBar as UiComponent>::on_event(
+                    app,
+                    DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
+                );
                 app.ui.last_error = Some("Stack: load repo status first (press S)".to_string());
                 return Some(true);
             }
@@ -112,7 +118,10 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
         }
         KeyCode::Char('B') => {
             if app.diff.repo_statuses.is_empty() {
-                trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
+                let _ = <DiffRepoBar as UiComponent>::on_event(
+                    app,
+                    DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
+                );
                 app.ui.last_error = Some("Branches: load repo status first (press S)".to_string());
                 return Some(true);
             }
@@ -155,7 +164,10 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
         }
         KeyCode::Char('T') => {
             if app.diff.repo_statuses.is_empty() {
-                trigger_diff_repo_action(app, DiffRepoAction::RefreshStatus);
+                let _ = <DiffRepoBar as UiComponent>::on_event(
+                    app,
+                    DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
+                );
                 app.ui.last_error =
                     Some("Target branch: load repo status first (press S)".to_string());
                 return Some(true);
@@ -195,34 +207,6 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
                 }
             });
 
-            Some(true)
-        }
-        KeyCode::Char('M') => {
-            trigger_diff_repo_action(app, DiffRepoAction::Merge);
-            Some(true)
-        }
-        KeyCode::Char('R') => {
-            trigger_diff_repo_action(app, DiffRepoAction::Rebase);
-            Some(true)
-        }
-        KeyCode::Char('P') => {
-            trigger_diff_repo_action(app, DiffRepoAction::CreatePr);
-            Some(true)
-        }
-        KeyCode::Char('C') => {
-            trigger_diff_repo_action(app, DiffRepoAction::ResolveConflicts);
-            Some(true)
-        }
-        KeyCode::Char('O') => {
-            trigger_diff_repo_action(app, DiffRepoAction::OpenConflict);
-            Some(true)
-        }
-        KeyCode::Char('A') => {
-            trigger_diff_repo_action(app, DiffRepoAction::AbortConflicts);
-            Some(true)
-        }
-        KeyCode::Char('U') | KeyCode::Enter => {
-            trigger_diff_repo_action(app, DiffRepoAction::OpenPr);
             Some(true)
         }
         KeyCode::Up | KeyCode::Char('k') if app.ui.diff_focus == DiffFocus::Files => {

@@ -4,7 +4,11 @@ use super::{
     super::{focus, sel},
     hit_test::{commit_list_hit_at, diff_files_hit_at},
 };
-use crate::{layout::rect_contains, state::AppState};
+use crate::{
+    layout::rect_contains,
+    state::AppState,
+    ui::components::{UiComponent, diff_repo_bar::DiffRepoBar},
+};
 
 pub(super) fn handle_diff_left_click(
     app: &mut AppState,
@@ -16,10 +20,10 @@ pub(super) fn handle_diff_left_click(
 
     if rect_contains(layout.diff_repo_bar, col, row) {
         focus::focus_diff(app);
-        if let Some(action) =
-            crate::ui::diff_repo_bar_action_at(app, layout.diff_repo_bar, col, row)
+        if let Some(evt) =
+            <DiffRepoBar as UiComponent>::hit_test(app, layout.diff_repo_bar, col, row)
         {
-            crate::ui::trigger_diff_repo_action(app, action);
+            let _ = <DiffRepoBar as UiComponent>::on_event(app, evt);
         }
         return true;
     }

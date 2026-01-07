@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -8,6 +9,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use super::UiComponent;
 use crate::{
     commands::{
         begin_git_op, open_url, request_branch_status_refresh, resolve_repo_for_command, set_toast,
@@ -26,6 +28,13 @@ use crate::{
     },
     text::{display_width, truncate_to_width},
 };
+
+pub(crate) enum DiffRepoBarEvent {
+    Key(KeyEvent),
+    Action(DiffRepoAction),
+}
+
+pub(crate) struct DiffRepoBar;
 
 fn selected_attempt_branch(app: &AppState) -> String {
     app.board
@@ -1042,7 +1051,7 @@ fn selected_stack_badge(
     ))
 }
 
-pub(super) fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
+pub(crate) fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
     let border_style = if app.ui.focus == FocusPane::Diff {
         Style::default().fg(Color::Cyan)
     } else {
@@ -1295,4 +1304,56 @@ pub(super) fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
             .border_style(border_style),
     );
     f.render_widget(p, area);
+}
+
+fn action_for_key(code: KeyCode) -> Option<DiffRepoAction> {
+    match code {
+        KeyCode::Char('S') => Some(DiffRepoAction::RefreshStatus),
+        KeyCode::Char('M') => Some(DiffRepoAction::Merge),
+        KeyCode::Char('R') => Some(DiffRepoAction::Rebase),
+        KeyCode::Char('P') => Some(DiffRepoAction::CreatePr),
+        KeyCode::Char('C') => Some(DiffRepoAction::ResolveConflicts),
+        KeyCode::Char('O') => Some(DiffRepoAction::OpenConflict),
+        KeyCode::Char('A') => Some(DiffRepoAction::AbortConflicts),
+        KeyCode::Char('U') | KeyCode::Enter => Some(DiffRepoAction::OpenPr),
+        _ => None,
+    }
+}
+
+impl DiffRepoBar {
+    pub(crate) fn render(f: &mut Frame, app: &AppState, area: Rect) {
+        render_diff_repo_bar(f, app, area);
+    }
+
+    pub(crate) fn on_event(app: &mut AppState, event: DiffRepoBarEvent) -> bool {
+        match event {
+            DiffRepoBarEvent::Action(action) => {
+                trigger_diff_repo_action(app, action);
+                true
+            }
+            DiffRepoBarEvent::Key(key) => {
+                let Some(action) = action_for_key(key.code) else {
+                    return false;
+                };
+                trigger_diff_repo_action(app, action);
+                true
+            }
+        }
+    }
+}
+
+impl UiComponent for DiffRepoBar {
+    type Event = DiffRepoBarEvent;
+
+    fn render(f: &mut Frame, app: &AppState, area: Rect) {
+        DiffRepoBar::render(f, app, area);
+    }
+
+    fn hit_test(app: &AppState, area: Rect, col: u16, row: u16) -> Option<Self::Event> {
+        diff_repo_bar_action_at(app, area, col, row).map(DiffRepoBarEvent::Action)
+    }
+
+    fn on_event(app: &mut AppState, event: Self::Event) -> bool {
+        DiffRepoBar::on_event(app, event)
+    }
 }
