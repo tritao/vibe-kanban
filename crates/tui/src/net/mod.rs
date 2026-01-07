@@ -13,6 +13,7 @@ use crate::{
     state::{AttemptRow, ExecutorProfileSelection, LogMode},
 };
 
+pub(crate) mod api_client;
 pub(crate) mod ops;
 
 pub(crate) async fn resolve_backend_url(args: &Args) -> anyhow::Result<String> {
