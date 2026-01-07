@@ -448,6 +448,8 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         }
         NetEvent::CommitListFailed { repo_id } => {
             app.diff.commits_loading_by_repo.insert(repo_id, false);
+            app.diff.commits_loading_started_at.remove(&repo_id);
+            app.diff.commits_loading_indicator_pending.remove(&repo_id);
             true
         }
         NetEvent::TaskCreated { task_id, status } => {

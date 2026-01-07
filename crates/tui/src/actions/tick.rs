@@ -18,6 +18,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     let mut dirty = false;
     const DIFF_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(120);
     const COMMIT_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(120);
+    const COMMIT_LIST_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(200);
 
     if reap_finished_jobs(app) {
         dirty = true;
@@ -185,6 +186,36 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
 
     if app.diff.list_mode == crate::state::DiffListMode::Commits {
         if crate::commands::ensure_commit_preview_rendered(app, layout.diff_preview.width) {
+            dirty = true;
+        }
+    }
+
+    if app.diff.list_mode == crate::state::DiffListMode::Commits {
+        let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+            // no repo status yet
+            return dirty;
+        };
+        let repo_id = repo.repo_id;
+        if app
+            .diff
+            .commits_loading_indicator_pending
+            .get(&repo_id)
+            .copied()
+            .unwrap_or(false)
+            && let Some(started) = app.diff.commits_loading_started_at.get(&repo_id).copied()
+            && !app
+                .diff
+                .commits_loading_by_repo
+                .get(&repo_id)
+                .copied()
+                .unwrap_or(false)
+            && now.saturating_duration_since(started) >= COMMIT_LIST_LOADING_INDICATOR_DELAY
+            && job_running(app, JobKey::CommitList)
+        {
+            app.diff.commits_loading_by_repo.insert(repo_id, true);
+            app.diff
+                .commits_loading_indicator_pending
+                .insert(repo_id, false);
             dirty = true;
         }
     }

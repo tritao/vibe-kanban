@@ -127,7 +127,13 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
         return;
     };
     let repo_id = repo.repo_id;
-    app.diff.commits_loading_by_repo.insert(repo_id, true);
+    app.diff.commits_loading_by_repo.insert(repo_id, false);
+    app.diff
+        .commits_loading_started_at
+        .insert(repo_id, Instant::now());
+    app.diff
+        .commits_loading_indicator_pending
+        .insert(repo_id, true);
 
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
@@ -194,7 +200,13 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
         .get(&repo_id)
         .map(|v| v.len())
         .unwrap_or(0);
-    app.diff.commits_loading_by_repo.insert(repo_id, true);
+    app.diff.commits_loading_by_repo.insert(repo_id, false);
+    app.diff
+        .commits_loading_started_at
+        .insert(repo_id, Instant::now());
+    app.diff
+        .commits_loading_indicator_pending
+        .insert(repo_id, true);
 
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
@@ -300,6 +312,8 @@ pub(crate) fn apply_commit_list_page(
     has_more: bool,
 ) {
     app.diff.commits_loading_by_repo.insert(repo_id, false);
+    app.diff.commits_loading_started_at.remove(&repo_id);
+    app.diff.commits_loading_indicator_pending.remove(&repo_id);
     app.diff.commits_has_more_by_repo.insert(repo_id, has_more);
     if append {
         app.diff
