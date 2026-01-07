@@ -121,7 +121,10 @@ pub(crate) enum NetEvent {
         exec_id: Uuid,
         patch: json_patch::Patch,
     },
-    BranchStatusLoaded(Vec<RepoBranchStatus>),
+    BranchStatusLoaded {
+        attempt_id: Uuid,
+        statuses: Vec<RepoBranchStatus>,
+    },
     StackStatusLoaded {
         repo_id: Uuid,
         status: crate::state::StackStatusResponse,

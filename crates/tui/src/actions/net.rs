@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use super::selection as sel;
 use crate::{
@@ -385,8 +385,16 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             enqueue_log_patch(app, app.board.selected_attempt_id, exec_id, patch);
             true
         }
-        NetEvent::BranchStatusLoaded(statuses) => {
+        NetEvent::BranchStatusLoaded {
+            attempt_id,
+            statuses,
+        } => {
+            if app.board.selected_attempt_id != Some(attempt_id) {
+                return true;
+            }
             app.diff.repo_statuses = statuses;
+            app.diff.branch_status_loaded_attempt_id = Some(attempt_id);
+            app.diff.branch_status_loaded_at = Some(Instant::now());
             sync_selected_repo_from_diff_selection(app);
             crate::commands::request_stack_status_refresh(app);
             crate::commands::request_commit_list_refresh(app);

@@ -146,7 +146,10 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
                                 crate::net::ops::branch_status_http(&base_url, attempt_id).await
                             {
                                 let _ = net_tx
-                                    .send(crate::events::NetEvent::BranchStatusLoaded(statuses))
+                                    .send(crate::events::NetEvent::BranchStatusLoaded {
+                                        attempt_id,
+                                        statuses,
+                                    })
                                     .await;
                             }
                             let _ = net_tx.send(crate::events::NetEvent::DiffReconnect).await;

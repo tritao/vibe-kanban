@@ -958,7 +958,12 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
 
                 match branch_status_http(&base_url, attempt_id).await {
                     Ok(statuses) => {
-                        let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                        let _ = net_tx
+                            .send(NetEvent::BranchStatusLoaded {
+                                attempt_id,
+                                statuses,
+                            })
+                            .await;
                         let _ = net_tx
                             .send(NetEvent::GitOpFinished {
                                 repo_id,
@@ -1028,7 +1033,12 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                             .send(NetEvent::Notice(format!("Merged {repo_name}.")))
                             .await;
                         if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                            let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                            let _ = net_tx
+                                .send(NetEvent::BranchStatusLoaded {
+                                    attempt_id,
+                                    statuses,
+                                })
+                                .await;
                         }
                         let _ = net_tx
                             .send(NetEvent::GitOpFinished {
@@ -1095,7 +1105,12 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                             .send(NetEvent::Notice(format!("Rebase started for {repo_name}.")))
                             .await;
                         if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                            let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                            let _ = net_tx
+                                .send(NetEvent::BranchStatusLoaded {
+                                    attempt_id,
+                                    statuses,
+                                })
+                                .await;
                         }
                         let _ = net_tx.send(NetEvent::DiffReconnect).await;
                         let _ = net_tx
@@ -1196,7 +1211,12 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                             )))
                             .await;
                         if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                            let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                            let _ = net_tx
+                                .send(NetEvent::BranchStatusLoaded {
+                                    attempt_id,
+                                    statuses,
+                                })
+                                .await;
                         }
                         let _ = net_tx
                             .send(NetEvent::GitOpFinished {

@@ -24,7 +24,12 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
         tokio::spawn(async move {
             match branch_status_http(&base_url, attempt_id).await {
                 Ok(statuses) => {
-                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                    let _ = net_tx
+                        .send(NetEvent::BranchStatusLoaded {
+                            attempt_id,
+                            statuses,
+                        })
+                        .await;
                 }
                 Err(e) => {
                     let _ = net_tx
@@ -50,7 +55,12 @@ pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration
             tokio::time::sleep(delay).await;
             match branch_status_http(&base_url, attempt_id).await {
                 Ok(statuses) => {
-                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                    let _ = net_tx
+                        .send(NetEvent::BranchStatusLoaded {
+                            attempt_id,
+                            statuses,
+                        })
+                        .await;
                 }
                 Err(e) => {
                     let _ = net_tx
@@ -60,6 +70,23 @@ pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration
             }
         }),
     );
+}
+
+pub(crate) fn schedule_branch_status_refresh_debounced(app: &mut AppState, delay: Duration) {
+    const MIN_REFRESH_AGE: Duration = Duration::from_secs(8);
+    let Some(attempt_id) = app.board.selected_attempt_id else {
+        return;
+    };
+    let now = Instant::now();
+    if app.diff.branch_status_loaded_attempt_id == Some(attempt_id)
+        && app
+            .diff
+            .branch_status_loaded_at
+            .is_some_and(|t| now.saturating_duration_since(t) < MIN_REFRESH_AGE)
+    {
+        return;
+    }
+    schedule_branch_status_refresh(app, delay);
 }
 
 pub(crate) fn arm_branch_status_refresh_for_exec(app: &mut AppState, exec_id: Uuid) {

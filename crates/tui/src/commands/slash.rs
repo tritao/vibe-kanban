@@ -899,7 +899,12 @@ pub(crate) fn trigger_abort_conflicts(
                     )))
                     .await;
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                    let _ = net_tx
+                        .send(NetEvent::BranchStatusLoaded {
+                            attempt_id,
+                            statuses,
+                        })
+                        .await;
                 }
                 let _ = net_tx
                     .send(NetEvent::GitOpFinished {
@@ -1072,7 +1077,12 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
                     .send(NetEvent::Notice(format!("Rebase started for {repo_name}.")))
                     .await;
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                    let _ = net_tx
+                        .send(NetEvent::BranchStatusLoaded {
+                            attempt_id,
+                            statuses,
+                        })
+                        .await;
                 }
                 let _ = net_tx.send(NetEvent::DiffReconnect).await;
                 let _ = net_tx
@@ -1148,7 +1158,12 @@ fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
                     .send(NetEvent::Notice(format!("Merged {repo_name}.")))
                     .await;
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                    let _ = net_tx
+                        .send(NetEvent::BranchStatusLoaded {
+                            attempt_id,
+                            statuses,
+                        })
+                        .await;
                 }
                 let _ = net_tx
                     .send(NetEvent::GitOpFinished {
@@ -1216,7 +1231,12 @@ fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
                     )))
                     .await;
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                    let _ = net_tx
+                        .send(NetEvent::BranchStatusLoaded {
+                            attempt_id,
+                            statuses,
+                        })
+                        .await;
                 }
                 let _ = net_tx
                     .send(NetEvent::GitOpFinished {
@@ -1399,7 +1419,12 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
                     )))
                     .await;
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                    let _ = net_tx
+                        .send(NetEvent::BranchStatusLoaded {
+                            attempt_id,
+                            statuses,
+                        })
+                        .await;
                 }
                 let _ = net_tx
                     .send(NetEvent::GitOpFinished {
@@ -1464,7 +1489,12 @@ fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(),
                 };
                 let _ = net_tx.send(NetEvent::Notice(msg)).await;
                 if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx.send(NetEvent::BranchStatusLoaded(statuses)).await;
+                    let _ = net_tx
+                        .send(NetEvent::BranchStatusLoaded {
+                            attempt_id,
+                            statuses,
+                        })
+                        .await;
                 }
                 let _ = net_tx
                     .send(NetEvent::GitOpFinished {

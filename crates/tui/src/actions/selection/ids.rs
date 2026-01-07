@@ -59,10 +59,12 @@ pub(in crate::actions) fn select_attempt(app: &mut AppState, attempt_id: Option<
     reset_diff_stream_state(app);
 
     app.diff.repo_statuses.clear();
+    app.diff.branch_status_loaded_attempt_id = None;
+    app.diff.branch_status_loaded_at = None;
     app.diff.selected_repo_index = 0;
 
     let _ = app.attempt_sel_tx.send(attempt_id);
-    crate::commands::request_branch_status_refresh(app);
+    crate::commands::schedule_branch_status_refresh_debounced(app, Duration::from_millis(250));
 }
 
 pub(in crate::actions) fn select_exec(app: &mut AppState, exec_id: Option<Uuid>) {
