@@ -245,6 +245,7 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     let idx = app.diff.selected_commit_index.min(commits.len() - 1);
     let oid = commits[idx].oid.clone();
 
+    let generation = crate::async_jobs::next_generation(&mut app.diff.commit_preview_gen);
     app.diff.commit_preview_loading.start(
         Instant::now(),
         std::time::Duration::from_millis(120),
@@ -259,14 +260,22 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
             match commit_show_http(&base_url, attempt_id, repo_id, &oid).await {
                 Ok(text) => {
                     let _ = net_tx
-                        .send(NetEvent::CommitPreviewLoaded { repo_id, text })
+                        .send(NetEvent::CommitPreviewLoaded {
+                            repo_id,
+                            text,
+                            generation,
+                        })
                         .await;
                 }
                 Err(e) => {
                     let message = format!("commit show failed: {e}");
                     let _ = net_tx.send(NetEvent::Error(message.clone())).await;
                     let _ = net_tx
-                        .send(NetEvent::CommitPreviewFailed { repo_id, message })
+                        .send(NetEvent::CommitPreviewFailed {
+                            repo_id,
+                            message,
+                            generation,
+                        })
                         .await;
                 }
             }

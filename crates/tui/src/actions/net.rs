@@ -398,7 +398,18 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             crate::commands::request_commit_list_refresh(app);
             true
         }
-        NetEvent::StackStatusLoaded { repo_id, status } => {
+        NetEvent::StackStatusLoaded {
+            repo_id,
+            status,
+            generation,
+        } => {
+            if !crate::async_jobs::is_latest_for(
+                &app.diff.stack_status_gen_by_repo,
+                repo_id,
+                generation,
+            ) {
+                return true;
+            }
             app.diff.stack_status_by_repo.insert(repo_id, status);
             true
         }
@@ -411,14 +422,18 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             crate::commands::apply_commit_list_page(app, repo_id, commits, append, has_more);
             true
         }
-        NetEvent::CommitPreviewLoaded { repo_id, text } => {
+        NetEvent::CommitPreviewLoaded {
+            repo_id,
+            text,
+            generation,
+        } => {
             // Only update the preview if we're still looking at this repo.
             let selected_repo_id = app
                 .diff
                 .repo_statuses
                 .get(app.diff.selected_repo_index)
                 .map(|r| r.repo_id);
-            if selected_repo_id == Some(repo_id) {
+            if selected_repo_id == Some(repo_id) && generation == app.diff.commit_preview_gen {
                 app.diff.commit_preview_text =
                     Some(crate::commands::sanitize_commit_preview_text(&text));
                 app.diff.commit_preview_render_width = 0;
@@ -426,13 +441,17 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             }
             true
         }
-        NetEvent::CommitPreviewFailed { repo_id, message } => {
+        NetEvent::CommitPreviewFailed {
+            repo_id,
+            message,
+            generation,
+        } => {
             let selected_repo_id = app
                 .diff
                 .repo_statuses
                 .get(app.diff.selected_repo_index)
                 .map(|r| r.repo_id);
-            if selected_repo_id == Some(repo_id) {
+            if selected_repo_id == Some(repo_id) && generation == app.diff.commit_preview_gen {
                 app.diff.commit_preview_text = None;
                 app.diff.commit_preview_lines = vec![ratatui::text::Line::from(message)];
                 app.diff.commit_preview_render_width = 0;

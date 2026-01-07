@@ -128,6 +128,7 @@ pub(crate) enum NetEvent {
     StackStatusLoaded {
         repo_id: Uuid,
         status: crate::state::StackStatusResponse,
+        generation: u64,
     },
     CommitListLoaded {
         repo_id: Uuid,
@@ -141,10 +142,12 @@ pub(crate) enum NetEvent {
     CommitPreviewLoaded {
         repo_id: Uuid,
         text: String,
+        generation: u64,
     },
     CommitPreviewFailed {
         repo_id: Uuid,
         message: String,
+        generation: u64,
     },
     TaskCreated {
         task_id: Uuid,

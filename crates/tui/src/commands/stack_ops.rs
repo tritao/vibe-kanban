@@ -17,6 +17,8 @@ pub(crate) fn request_stack_status_refresh(app: &mut AppState) {
     let Some(repo_id) = selected_repo_id(app) else {
         return;
     };
+    let generation =
+        crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id);
 
     run_net_job(
         app,
@@ -25,7 +27,11 @@ pub(crate) fn request_stack_status_refresh(app: &mut AppState) {
             match stack_status_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
                     let _ = net_tx
-                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .send(NetEvent::StackStatusLoaded {
+                            repo_id,
+                            status,
+                            generation,
+                        })
                         .await;
                 }
                 Err(e) => {
@@ -39,6 +45,8 @@ pub(crate) fn request_stack_status_refresh(app: &mut AppState) {
 }
 
 pub(crate) fn trigger_stack_enable(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
+    let generation =
+        crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id);
     run_net_job(
         app,
         JobKey::StackStatus,
@@ -46,7 +54,11 @@ pub(crate) fn trigger_stack_enable(app: &mut AppState, attempt_id: Uuid, repo_id
             match stack_enable_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
                     let _ = net_tx
-                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .send(NetEvent::StackStatusLoaded {
+                            repo_id,
+                            status,
+                            generation,
+                        })
                         .await;
                     let _ = net_tx
                         .send(NetEvent::Notice("Stack enabled.".to_string()))
@@ -68,6 +80,8 @@ pub(crate) fn trigger_stack_disable(
     repo_id: Uuid,
     force: bool,
 ) {
+    let generation =
+        crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id);
     run_net_job(
         app,
         JobKey::StackStatus,
@@ -75,7 +89,11 @@ pub(crate) fn trigger_stack_disable(
             match stack_disable_http(&base_url, attempt_id, repo_id, force).await {
                 Ok(status) => {
                     let _ = net_tx
-                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .send(NetEvent::StackStatusLoaded {
+                            repo_id,
+                            status,
+                            generation,
+                        })
                         .await;
                     let _ = net_tx
                         .send(NetEvent::Notice("Stack disabled.".to_string()))
@@ -92,6 +110,8 @@ pub(crate) fn trigger_stack_disable(
 }
 
 pub(crate) fn trigger_stack_push(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
+    let generation =
+        crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id);
     run_net_job(
         app,
         JobKey::StackStatus,
@@ -99,7 +119,11 @@ pub(crate) fn trigger_stack_push(app: &mut AppState, attempt_id: Uuid, repo_id: 
             match stack_push_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
                     let _ = net_tx
-                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .send(NetEvent::StackStatusLoaded {
+                            repo_id,
+                            status,
+                            generation,
+                        })
                         .await;
                     let _ = net_tx
                         .send(NetEvent::Notice("Stack: push ok.".to_string()))
@@ -116,6 +140,8 @@ pub(crate) fn trigger_stack_push(app: &mut AppState, attempt_id: Uuid, repo_id: 
 }
 
 pub(crate) fn trigger_stack_pop(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
+    let generation =
+        crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id);
     run_net_job(
         app,
         JobKey::StackStatus,
@@ -123,7 +149,11 @@ pub(crate) fn trigger_stack_pop(app: &mut AppState, attempt_id: Uuid, repo_id: U
             match stack_pop_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
                     let _ = net_tx
-                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .send(NetEvent::StackStatusLoaded {
+                            repo_id,
+                            status,
+                            generation,
+                        })
                         .await;
                     let _ = net_tx
                         .send(NetEvent::Notice("Stack: pop ok.".to_string()))
@@ -140,6 +170,8 @@ pub(crate) fn trigger_stack_pop(app: &mut AppState, attempt_id: Uuid, repo_id: U
 }
 
 pub(crate) fn trigger_stack_undo(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
+    let generation =
+        crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id);
     run_net_job(
         app,
         JobKey::StackStatus,
@@ -147,7 +179,11 @@ pub(crate) fn trigger_stack_undo(app: &mut AppState, attempt_id: Uuid, repo_id: 
             match stack_undo_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
                     let _ = net_tx
-                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .send(NetEvent::StackStatusLoaded {
+                            repo_id,
+                            status,
+                            generation,
+                        })
                         .await;
                     let _ = net_tx
                         .send(NetEvent::Notice("Stack: undo ok.".to_string()))
@@ -164,6 +200,8 @@ pub(crate) fn trigger_stack_undo(app: &mut AppState, attempt_id: Uuid, repo_id: 
 }
 
 pub(crate) fn trigger_stack_redo(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
+    let generation =
+        crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id);
     run_net_job(
         app,
         JobKey::StackStatus,
@@ -171,7 +209,11 @@ pub(crate) fn trigger_stack_redo(app: &mut AppState, attempt_id: Uuid, repo_id: 
             match stack_redo_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
                     let _ = net_tx
-                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .send(NetEvent::StackStatusLoaded {
+                            repo_id,
+                            status,
+                            generation,
+                        })
                         .await;
                     let _ = net_tx
                         .send(NetEvent::Notice("Stack: redo ok.".to_string()))
@@ -194,6 +236,8 @@ pub(crate) fn trigger_stack_new(
     name: Option<String>,
     message: String,
 ) {
+    let generation =
+        crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id);
     run_net_job(
         app,
         JobKey::StackStatus,
@@ -201,7 +245,11 @@ pub(crate) fn trigger_stack_new(
             match stack_new_http(&base_url, attempt_id, repo_id, name, message).await {
                 Ok(status) => {
                     let _ = net_tx
-                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .send(NetEvent::StackStatusLoaded {
+                            repo_id,
+                            status,
+                            generation,
+                        })
                         .await;
                     let _ = net_tx
                         .send(NetEvent::Notice("Stack: new ok.".to_string()))
@@ -224,6 +272,8 @@ pub(crate) fn trigger_stack_refresh(
     paths: Option<Vec<String>>,
     allow_dirty_index: bool,
 ) {
+    let generation =
+        crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id);
     run_net_job(
         app,
         JobKey::StackStatus,
@@ -232,7 +282,11 @@ pub(crate) fn trigger_stack_refresh(
             {
                 Ok(status) => {
                     let _ = net_tx
-                        .send(NetEvent::StackStatusLoaded { repo_id, status })
+                        .send(NetEvent::StackStatusLoaded {
+                            repo_id,
+                            status,
+                            generation,
+                        })
                         .await;
                     let _ = net_tx
                         .send(NetEvent::Notice("Stack: refresh ok.".to_string()))
