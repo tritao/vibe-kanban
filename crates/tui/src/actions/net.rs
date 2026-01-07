@@ -426,6 +426,18 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             }
             true
         }
+        NetEvent::CommitPreviewFailed { repo_id, message } => {
+            let selected_repo_id = app
+                .diff
+                .repo_statuses
+                .get(app.diff.selected_repo_index)
+                .map(|r| r.repo_id);
+            if selected_repo_id == Some(repo_id) {
+                app.diff.commit_preview_lines = vec![ratatui::text::Line::from(message)];
+                app.diff.commit_preview_loading = false;
+            }
+            true
+        }
         NetEvent::CommitListFailed { repo_id } => {
             app.diff.commits_loading_by_repo.insert(repo_id, false);
             true

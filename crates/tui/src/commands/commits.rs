@@ -171,6 +171,7 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     let oid = commits[idx].oid.clone();
 
     app.diff.commit_preview_loading = true;
+    app.diff.commit_preview_lines = vec![Line::from("Loading commit…")];
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
     replace_job(
@@ -185,8 +186,10 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
                         .await;
                 }
                 Err(e) => {
+                    let message = format!("commit show failed: {e}");
+                    let _ = net_tx.send(NetEvent::Error(message.clone())).await;
                     let _ = net_tx
-                        .send(NetEvent::Error(format!("commit show failed: {e}")))
+                        .send(NetEvent::CommitPreviewFailed { repo_id, message })
                         .await;
                 }
             }

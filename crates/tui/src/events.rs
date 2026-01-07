@@ -142,6 +142,10 @@ pub(crate) enum NetEvent {
         repo_id: Uuid,
         lines: Vec<Line<'static>>,
     },
+    CommitPreviewFailed {
+        repo_id: Uuid,
+        message: String,
+    },
     TaskCreated {
         task_id: Uuid,
         status: TaskStatus,
