@@ -1,4 +1,4 @@
-use crate::state::{AppState, DiffFocus, FocusPane};
+use crate::state::{AppState, FocusPane};
 
 pub(super) fn focus_board(app: &mut AppState) {
     app.ui.focus = FocusPane::Board;
@@ -6,20 +6,6 @@ pub(super) fn focus_board(app: &mut AppState) {
 
 pub(super) fn focus_execution(app: &mut AppState) {
     app.ui.focus = FocusPane::Execution;
-}
-
-pub(super) fn focus_diff_files(app: &mut AppState) {
-    app.ui.focus = FocusPane::Diff;
-    app.ui.diff_focus = DiffFocus::Files;
-}
-
-pub(super) fn focus_diff_preview(app: &mut AppState) {
-    app.ui.focus = FocusPane::Diff;
-    app.ui.diff_focus = DiffFocus::Preview;
-}
-
-pub(super) fn focus_diff(app: &mut AppState) {
-    app.ui.focus = FocusPane::Diff;
 }
 
 pub(super) fn cycle_focus(app: &mut AppState) {

@@ -26,9 +26,6 @@ pub(crate) struct MainLayoutRects {
     pub(crate) diff: Rect,
     pub(crate) exec_logs: Rect,
     pub(crate) exec_input: Rect,
-    #[allow(dead_code)]
-    pub(crate) diff_repo_bar: Rect,
-    pub(crate) diff_files: Rect,
     pub(crate) diff_preview: Rect,
 }
 
@@ -77,8 +74,6 @@ pub(crate) fn compute_main_layout(area: Rect, focus: FocusPane) -> MainLayoutRec
         diff: main[2],
         exec_logs: exec_sections[0],
         exec_input: exec_sections[1],
-        diff_repo_bar: diff_sections[0],
-        diff_files: diff_sections[1],
         diff_preview: diff_sections[2],
     }
 }

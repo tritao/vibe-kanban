@@ -1,4 +1,5 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::{
     UiComponent,
@@ -13,9 +14,22 @@ use crate::{
 
 pub(crate) enum DiffPaneEvent {
     Key(KeyEvent),
+    Mouse { mouse: MouseEvent, area: Rect },
 }
 
 pub(crate) struct DiffPane;
+
+fn split_diff_area(area: Rect) -> [Rect; 3] {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(10),
+            Constraint::Min(3),
+        ])
+        .split(area);
+    [sections[0], sections[1], sections[2]]
+}
 
 impl UiComponent for DiffPane {
     type Event = DiffPaneEvent;
@@ -34,224 +48,292 @@ impl UiComponent for DiffPane {
     }
 
     fn on_event(app: &mut AppState, event: Self::Event) -> bool {
-        let DiffPaneEvent::Key(key) = event;
-
-        if app.ui.focus != FocusPane::Diff {
-            return false;
+        match event {
+            DiffPaneEvent::Key(key) => handle_diff_key(app, key),
+            DiffPaneEvent::Mouse { mouse, area } => handle_diff_mouse(app, mouse, area),
         }
+    }
+}
 
-        if <DiffRepoBar as UiComponent>::on_event(app, DiffRepoBarEvent::Key(key)) {
-            return true;
-        }
+fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool {
+    let col = mouse.column;
+    let row = mouse.row;
+    let [repo_bar, files, preview] = split_diff_area(area);
 
-        if <DiffList as UiComponent>::on_event(app, DiffListEvent::Key(key)) {
-            return true;
-        }
-        if <DiffPreview as UiComponent>::on_event(app, DiffPreviewEvent::Key(key)) {
-            return true;
-        }
+    const DIFF_WHEEL_STEP: usize = 3;
 
-        match key.code {
-            KeyCode::Char('h') => {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Files;
-                true
-            }
-            KeyCode::Char('l') => {
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            if crate::layout::rect_contains(preview, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Preview;
-                true
-            }
-            KeyCode::Char('f') => {
-                crate::commands::select_files_mode(app);
-                crate::diff_preview::schedule_diff_preview_refresh(
+                let _ = <DiffPreview as UiComponent>::on_event(
                     app,
-                    std::time::Duration::from_millis(0),
+                    DiffPreviewEvent::WheelDelta(-(DIFF_WHEEL_STEP as i32)),
                 );
-                true
+                return true;
             }
-            KeyCode::Char('c') => {
-                // Only show commits when stack mode is not enabled for this repo.
-                if let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) {
-                    if app
-                        .diff
-                        .stack_status_by_repo
-                        .get(&repo.repo_id)
-                        .is_some_and(|s| s.available && s.enabled)
-                    {
-                        app.ui.last_error = Some(
-                            "Commits view unavailable while stack mode is enabled.".to_string(),
-                        );
-                        return true;
-                    }
-                }
-                crate::commands::select_commits_mode(app);
-                true
+            if crate::layout::rect_contains(files, col, row) {
+                app.ui.focus = FocusPane::Diff;
+                app.ui.diff_focus = DiffFocus::Files;
+                let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(-1));
+                return true;
             }
-            KeyCode::Char('w') => {
-                app.diff.diff_wrap = !app.diff.diff_wrap;
-                app.prefs.diff_wrap = app.diff.diff_wrap;
-                save_prefs(&app.prefs);
-                app.diff.diff_preview_cache_key = None;
-                true
-            }
-            KeyCode::Char('u') => {
-                app.diff.diff_show_untracked = !app.diff.diff_show_untracked;
-                app.diff.diff_preview_cache_key = None;
-                app.diff.diff_preview_cache_hash = 0;
-
-                let rows = crate::diff::diff_rows_with_all_filtered(
-                    &app.diff.diff_store,
-                    app.diff.diff_show_untracked,
-                );
-                if rows.is_empty() {
-                    app.diff.selected_diff_index = 0;
-                } else {
-                    app.diff.selected_diff_index = app.diff.selected_diff_index.min(rows.len() - 1);
-                }
-                crate::ui::sync_selected_repo_from_diff_selection(app);
-                crate::diff_preview::schedule_diff_preview_refresh(
-                    app,
-                    std::time::Duration::from_millis(0),
-                );
-                true
-            }
-            KeyCode::Char('t') => {
-                app.diff.diff_theme = app.diff.diff_theme.cycle_next();
-                app.prefs.diff_theme = app.diff.diff_theme;
-                save_prefs(&app.prefs);
-                app.diff.diff_preview_cache_key = None;
-                true
-            }
-            KeyCode::Char('d') => {
-                app.diff.diff_stats_only = !app.diff.diff_stats_only;
-                let _ = app.diff_stats_tx.send(app.diff.diff_stats_only);
-                app.diff.diff_scroll_offset = 0;
-                true
-            }
-            KeyCode::Char('K') => {
-                crate::commands::request_stack_status_refresh(app);
-                true
-            }
-            KeyCode::Char('E') => {
-                if app.diff.repo_statuses.is_empty() {
-                    let _ = <DiffRepoBar as UiComponent>::on_event(
-                        app,
-                        DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
-                    );
-                    app.ui.last_error = Some("Stack: load repo status first (press S)".to_string());
-                    return true;
-                }
-                let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
-                    return false;
-                };
-                let Some(attempt_id) = app.board.selected_attempt_id else {
-                    return false;
-                };
-                crate::commands::trigger_stack_enable(app, attempt_id, repo.repo_id);
-                true
-            }
-            KeyCode::Char('B') => {
-                if app.diff.repo_statuses.is_empty() {
-                    let _ = <DiffRepoBar as UiComponent>::on_event(
-                        app,
-                        DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
-                    );
-                    app.ui.last_error =
-                        Some("Branches: load repo status first (press S)".to_string());
-                    return true;
-                }
-                let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
-                    return false;
-                };
-
-                app.ui.branch_picker = Some(crate::state::BranchPickerState {
-                    mode: crate::state::BranchPickerMode::Checkout,
-                    repo_id: repo.repo_id,
-                    repo_name: repo.repo_name.clone(),
-                    filter: Default::default(),
-                    selected_index: 0,
-                    branches: vec![],
-                    busy: true,
-                    error: None,
-                });
-                let base_url = app.backend_url.clone();
-                let net_tx = app.net_tx.clone();
-                let repo_id = repo.repo_id;
-                tokio::spawn(async move {
-                    match crate::net::ops::repo_branches_http(&base_url, repo_id).await {
-                        Ok(branches) => {
-                            let _ = net_tx
-                                .send(crate::events::NetEvent::RepoBranchesLoaded {
-                                    repo_id,
-                                    branches,
-                                })
-                                .await;
-                        }
-                        Err(e) => {
-                            let _ = net_tx
-                                .send(crate::events::NetEvent::RepoBranchesFailed {
-                                    repo_id,
-                                    message: format!("failed to load branches: {e}"),
-                                })
-                                .await;
-                        }
-                    }
-                });
-
-                true
-            }
-            KeyCode::Char('T') => {
-                if app.diff.repo_statuses.is_empty() {
-                    let _ = <DiffRepoBar as UiComponent>::on_event(
-                        app,
-                        DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
-                    );
-                    app.ui.last_error =
-                        Some("Target branch: load repo status first (press S)".to_string());
-                    return true;
-                }
-                let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
-                    return false;
-                };
-
-                app.ui.branch_picker = Some(crate::state::BranchPickerState {
-                    mode: crate::state::BranchPickerMode::ChangeTarget,
-                    repo_id: repo.repo_id,
-                    repo_name: repo.repo_name.clone(),
-                    filter: Default::default(),
-                    selected_index: 0,
-                    branches: vec![],
-                    busy: true,
-                    error: None,
-                });
-                let base_url = app.backend_url.clone();
-                let net_tx = app.net_tx.clone();
-                let repo_id = repo.repo_id;
-                tokio::spawn(async move {
-                    match crate::net::ops::repo_branches_http(&base_url, repo_id).await {
-                        Ok(branches) => {
-                            let _ = net_tx
-                                .send(crate::events::NetEvent::RepoBranchesLoaded {
-                                    repo_id,
-                                    branches,
-                                })
-                                .await;
-                        }
-                        Err(e) => {
-                            let _ = net_tx
-                                .send(crate::events::NetEvent::RepoBranchesFailed {
-                                    repo_id,
-                                    message: format!("failed to load branches: {e}"),
-                                })
-                                .await;
-                        }
-                    }
-                });
-
-                true
-            }
-            _ => false,
+            false
         }
+        MouseEventKind::ScrollDown => {
+            if crate::layout::rect_contains(preview, col, row) {
+                app.ui.focus = FocusPane::Diff;
+                app.ui.diff_focus = DiffFocus::Preview;
+                let _ = <DiffPreview as UiComponent>::on_event(
+                    app,
+                    DiffPreviewEvent::WheelDelta(DIFF_WHEEL_STEP as i32),
+                );
+                return true;
+            }
+            if crate::layout::rect_contains(files, col, row) {
+                app.ui.focus = FocusPane::Diff;
+                app.ui.diff_focus = DiffFocus::Files;
+                let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(1));
+                return true;
+            }
+            false
+        }
+        MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+            if crate::layout::rect_contains(repo_bar, col, row) {
+                app.ui.focus = FocusPane::Diff;
+                if let Some(evt) = <DiffRepoBar as UiComponent>::hit_test(app, repo_bar, col, row) {
+                    let _ = <DiffRepoBar as UiComponent>::on_event(app, evt);
+                }
+                return true;
+            }
+            if crate::layout::rect_contains(files, col, row) {
+                app.ui.focus = FocusPane::Diff;
+                app.ui.diff_focus = DiffFocus::Files;
+                if let Some(evt) = <DiffList as UiComponent>::hit_test(app, files, col, row) {
+                    let _ = <DiffList as UiComponent>::on_event(app, evt);
+                }
+                return true;
+            }
+            if crate::layout::rect_contains(preview, col, row) {
+                app.ui.focus = FocusPane::Diff;
+                app.ui.diff_focus = DiffFocus::Preview;
+                return true;
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
+fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
+    if app.ui.focus != FocusPane::Diff {
+        return false;
+    }
+
+    if <DiffRepoBar as UiComponent>::on_event(app, DiffRepoBarEvent::Key(key)) {
+        return true;
+    }
+
+    if <DiffList as UiComponent>::on_event(app, DiffListEvent::Key(key)) {
+        return true;
+    }
+    if <DiffPreview as UiComponent>::on_event(app, DiffPreviewEvent::Key(key)) {
+        return true;
+    }
+
+    match key.code {
+        KeyCode::Char('h') => {
+            app.ui.focus = FocusPane::Diff;
+            app.ui.diff_focus = DiffFocus::Files;
+            return true;
+        }
+        KeyCode::Char('l') => {
+            app.ui.focus = FocusPane::Diff;
+            app.ui.diff_focus = DiffFocus::Preview;
+            return true;
+        }
+        KeyCode::Char('f') => {
+            crate::commands::select_files_mode(app);
+            crate::diff_preview::schedule_diff_preview_refresh(
+                app,
+                std::time::Duration::from_millis(0),
+            );
+            return true;
+        }
+        KeyCode::Char('c') => {
+            // Only show commits when stack mode is not enabled for this repo.
+            if let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) {
+                if app
+                    .diff
+                    .stack_status_by_repo
+                    .get(&repo.repo_id)
+                    .is_some_and(|s| s.available && s.enabled)
+                {
+                    app.ui.last_error =
+                        Some("Commits view unavailable while stack mode is enabled.".to_string());
+                    return true;
+                }
+            }
+            crate::commands::select_commits_mode(app);
+            true
+        }
+        KeyCode::Char('w') => {
+            app.diff.diff_wrap = !app.diff.diff_wrap;
+            app.prefs.diff_wrap = app.diff.diff_wrap;
+            save_prefs(&app.prefs);
+            app.diff.diff_preview_cache_key = None;
+            true
+        }
+        KeyCode::Char('u') => {
+            app.diff.diff_show_untracked = !app.diff.diff_show_untracked;
+            app.diff.diff_preview_cache_key = None;
+            app.diff.diff_preview_cache_hash = 0;
+
+            let rows = crate::diff::diff_rows_with_all_filtered(
+                &app.diff.diff_store,
+                app.diff.diff_show_untracked,
+            );
+            if rows.is_empty() {
+                app.diff.selected_diff_index = 0;
+            } else {
+                app.diff.selected_diff_index = app.diff.selected_diff_index.min(rows.len() - 1);
+            }
+            crate::ui::sync_selected_repo_from_diff_selection(app);
+            crate::diff_preview::schedule_diff_preview_refresh(
+                app,
+                std::time::Duration::from_millis(0),
+            );
+            true
+        }
+        KeyCode::Char('t') => {
+            app.diff.diff_theme = app.diff.diff_theme.cycle_next();
+            app.prefs.diff_theme = app.diff.diff_theme;
+            save_prefs(&app.prefs);
+            app.diff.diff_preview_cache_key = None;
+            true
+        }
+        KeyCode::Char('d') => {
+            app.diff.diff_stats_only = !app.diff.diff_stats_only;
+            let _ = app.diff_stats_tx.send(app.diff.diff_stats_only);
+            app.diff.diff_scroll_offset = 0;
+            true
+        }
+        KeyCode::Char('K') => {
+            crate::commands::request_stack_status_refresh(app);
+            true
+        }
+        KeyCode::Char('E') => {
+            if app.diff.repo_statuses.is_empty() {
+                let _ = <DiffRepoBar as UiComponent>::on_event(
+                    app,
+                    DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
+                );
+                app.ui.last_error = Some("Stack: load repo status first (press S)".to_string());
+                return true;
+            }
+            let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+                return false;
+            };
+            let Some(attempt_id) = app.board.selected_attempt_id else {
+                return false;
+            };
+            crate::commands::trigger_stack_enable(app, attempt_id, repo.repo_id);
+            true
+        }
+        KeyCode::Char('B') => {
+            if app.diff.repo_statuses.is_empty() {
+                let _ = <DiffRepoBar as UiComponent>::on_event(
+                    app,
+                    DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
+                );
+                app.ui.last_error = Some("Branches: load repo status first (press S)".to_string());
+                return true;
+            }
+            let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+                return false;
+            };
+
+            app.ui.branch_picker = Some(crate::state::BranchPickerState {
+                mode: crate::state::BranchPickerMode::Checkout,
+                repo_id: repo.repo_id,
+                repo_name: repo.repo_name.clone(),
+                filter: Default::default(),
+                selected_index: 0,
+                branches: vec![],
+                busy: true,
+                error: None,
+            });
+            let base_url = app.backend_url.clone();
+            let net_tx = app.net_tx.clone();
+            let repo_id = repo.repo_id;
+            tokio::spawn(async move {
+                match crate::net::ops::repo_branches_http(&base_url, repo_id).await {
+                    Ok(branches) => {
+                        let _ = net_tx
+                            .send(crate::events::NetEvent::RepoBranchesLoaded { repo_id, branches })
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = net_tx
+                            .send(crate::events::NetEvent::RepoBranchesFailed {
+                                repo_id,
+                                message: format!("failed to load branches: {e}"),
+                            })
+                            .await;
+                    }
+                }
+            });
+
+            true
+        }
+        KeyCode::Char('T') => {
+            if app.diff.repo_statuses.is_empty() {
+                let _ = <DiffRepoBar as UiComponent>::on_event(
+                    app,
+                    DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
+                );
+                app.ui.last_error =
+                    Some("Target branch: load repo status first (press S)".to_string());
+                return true;
+            }
+            let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+                return false;
+            };
+
+            app.ui.branch_picker = Some(crate::state::BranchPickerState {
+                mode: crate::state::BranchPickerMode::ChangeTarget,
+                repo_id: repo.repo_id,
+                repo_name: repo.repo_name.clone(),
+                filter: Default::default(),
+                selected_index: 0,
+                branches: vec![],
+                busy: true,
+                error: None,
+            });
+            let base_url = app.backend_url.clone();
+            let net_tx = app.net_tx.clone();
+            let repo_id = repo.repo_id;
+            tokio::spawn(async move {
+                match crate::net::ops::repo_branches_http(&base_url, repo_id).await {
+                    Ok(branches) => {
+                        let _ = net_tx
+                            .send(crate::events::NetEvent::RepoBranchesLoaded { repo_id, branches })
+                            .await;
+                    }
+                    Err(e) => {
+                        let _ = net_tx
+                            .send(crate::events::NetEvent::RepoBranchesFailed {
+                                repo_id,
+                                message: format!("failed to load branches: {e}"),
+                            })
+                            .await;
+                    }
+                }
+            });
+
+            true
+        }
+        _ => false,
     }
 }

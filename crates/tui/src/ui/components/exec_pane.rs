@@ -1,16 +1,27 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use super::{
     UiComponent,
+    exec_input::{ExecInput, ExecInputEvent},
     exec_log::{ExecLog, ExecLogEvent},
 };
 use crate::state::{AppState, FocusPane};
 
 pub(crate) enum ExecPaneEvent {
     Key(KeyEvent),
+    Mouse { mouse: MouseEvent, area: Rect },
 }
 
 pub(crate) struct ExecPane;
+
+fn split_exec_area(area: Rect) -> [Rect; 2] {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(7)])
+        .split(area);
+    [sections[0], sections[1]]
+}
 
 impl UiComponent for ExecPane {
     type Event = ExecPaneEvent;
@@ -29,18 +40,122 @@ impl UiComponent for ExecPane {
     }
 
     fn on_event(app: &mut AppState, event: Self::Event) -> bool {
-        let ExecPaneEvent::Key(key) = event;
-
-        if app.ui.focus != FocusPane::Execution {
-            return false;
+        match event {
+            ExecPaneEvent::Key(key) => handle_exec_key(app, key),
+            ExecPaneEvent::Mouse { mouse, area } => handle_exec_mouse(app, mouse, area),
         }
+    }
+}
 
-        match (key.code, key.modifiers) {
-            (KeyCode::Char('i'), _) => {
-                crate::ui::open_composer(app);
-                true
+fn handle_exec_key(app: &mut AppState, key: KeyEvent) -> bool {
+    if app.ui.focus != FocusPane::Execution {
+        return false;
+    }
+
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('i'), _) => {
+            crate::ui::open_composer(app);
+            true
+        }
+        _ => <ExecLog as UiComponent>::on_event(app, ExecLogEvent::Key(key)),
+    }
+}
+
+fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool {
+    let col = mouse.column;
+    let row = mouse.row;
+    let [logs, input] = split_exec_area(area);
+
+    const LOG_WHEEL_STEP: usize = 3;
+
+    match mouse.kind {
+        MouseEventKind::ScrollUp => {
+            if crate::layout::rect_contains(logs, col, row) {
+                app.ui.focus = FocusPane::Execution;
+                let _ = <ExecLog as UiComponent>::on_event(
+                    app,
+                    ExecLogEvent::WheelDelta(-(LOG_WHEEL_STEP as i32)),
+                );
+                return true;
             }
-            _ => <ExecLog as UiComponent>::on_event(app, ExecLogEvent::Key(key)),
+            false
         }
+        MouseEventKind::ScrollDown => {
+            if crate::layout::rect_contains(logs, col, row) {
+                app.ui.focus = FocusPane::Execution;
+                let _ = <ExecLog as UiComponent>::on_event(
+                    app,
+                    ExecLogEvent::WheelDelta(LOG_WHEEL_STEP as i32),
+                );
+                return true;
+            }
+            false
+        }
+        MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+            if crate::layout::rect_contains(input, col, row) {
+                app.ui.focus = FocusPane::Execution;
+                if let Some(ExecInputEvent::ClickTo {
+                    cursor,
+                    content_w,
+                    inner_h,
+                }) = <ExecInput as UiComponent>::hit_test(app, input, col, row)
+                {
+                    return <ExecInput as UiComponent>::on_event(
+                        app,
+                        ExecInputEvent::ClickTo {
+                            cursor,
+                            content_w,
+                            inner_h,
+                        },
+                    );
+                }
+                return true;
+            }
+            if crate::layout::rect_contains(logs, col, row) {
+                app.ui.focus = FocusPane::Execution;
+                if let Some(evt) = <ExecLog as UiComponent>::hit_test(app, logs, col, row) {
+                    return <ExecLog as UiComponent>::on_event(app, evt);
+                }
+                return true;
+            }
+            false
+        }
+        MouseEventKind::Drag(crossterm::event::MouseButton::Left) => {
+            if crate::layout::rect_contains(logs, col, row) {
+                app.ui.focus = FocusPane::Execution;
+                let Some(ExecLogEvent::Hit(_, hit)) =
+                    <ExecLog as UiComponent>::hit_test(app, logs, col, row)
+                else {
+                    return false;
+                };
+                let Some(line_idx) = hit.line_idx else {
+                    return false;
+                };
+                return <ExecLog as UiComponent>::on_event(app, ExecLogEvent::DragTo(line_idx));
+            }
+            false
+        }
+        MouseEventKind::Up(crossterm::event::MouseButton::Left) => {
+            if app.exec.log_mouse_selecting {
+                return <ExecLog as UiComponent>::on_event(app, ExecLogEvent::DragEnd);
+            }
+            false
+        }
+        MouseEventKind::Down(crossterm::event::MouseButton::Right) => {
+            if crate::layout::rect_contains(logs, col, row) {
+                app.ui.focus = FocusPane::Execution;
+                let Some(ExecLogEvent::Hit(_, hit)) =
+                    <ExecLog as UiComponent>::hit_test(app, logs, col, row)
+                else {
+                    return false;
+                };
+                return <ExecLog as UiComponent>::on_event(
+                    app,
+                    ExecLogEvent::Hit(crate::ui::components::exec_log::ExecLogHitKind::Right, hit),
+                );
+            }
+            false
+        }
+        _ => false,
     }
 }
