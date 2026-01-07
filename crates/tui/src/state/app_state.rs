@@ -1,9 +1,6 @@
-use std::{
-    collections::HashMap,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, time::Instant};
 
-use ratatui::{style::Color, text::Line};
+use ratatui::text::Line;
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
@@ -11,7 +8,7 @@ use super::types::{
     AttemptRow, BranchPickerState, CommitEntry, ConfirmState, CreateTaskState, DiffFocus,
     DiffListMode, DiffTheme, ExecutorProfileSelection, FocusPane, GitOpState, InputState, JobKey,
     LogMode, LogRenderMode, LogViewMode, PendingExecHook, RepoBranchStatus, TaskStatus,
-    TextFieldState, ToastState, TuiPrefs, UiMessage, UiMessageKey, UiMessageKind,
+    TextFieldState, ToastState, TuiPrefs, UiMessage,
 };
 use crate::{
     events::{NetEvent, StreamStatus},
@@ -119,58 +116,6 @@ pub(crate) struct DiffState {
     pub(crate) commit_preview_loading: super::types::LoadingState,
 }
 
-impl ExecState {
-    pub(crate) fn clear_log_selection(&mut self) -> bool {
-        let mut dirty = false;
-        dirty |= self.log_selected.take().is_some();
-        dirty |= self.log_mouse_selecting;
-        dirty |= self.log_mouse_select_anchor.take().is_some();
-        dirty |= self.log_mouse_select_range.take().is_some();
-        self.log_mouse_selecting = false;
-        dirty
-    }
-
-    pub(crate) fn start_log_mouse_selection(&mut self, line_idx: usize) {
-        self.log_mouse_selecting = true;
-        self.log_mouse_select_anchor = Some(line_idx);
-        self.log_mouse_select_range = Some((line_idx, line_idx));
-    }
-
-    pub(crate) fn update_log_mouse_selection(&mut self, cur: usize) -> bool {
-        let Some(anchor) = self.log_mouse_select_anchor else {
-            return false;
-        };
-        let (a, b) = if anchor <= cur {
-            (anchor, cur)
-        } else {
-            (cur, anchor)
-        };
-        self.log_mouse_select_range = Some((a, b));
-        true
-    }
-
-    pub(crate) fn finish_log_mouse_selection(&mut self) -> bool {
-        let dirty = self.log_mouse_selecting;
-        self.log_mouse_selecting = false;
-        dirty
-    }
-}
-
-impl DiffState {
-    pub(crate) fn invalidate_diff_preview_cache(&mut self) {
-        self.diff_preview_cache_key = None;
-        self.diff_preview_cache_hash = 0;
-    }
-
-    pub(crate) fn clamp_selected_diff_index(&mut self, len: usize) {
-        self.selected_diff_index = if len == 0 {
-            0
-        } else {
-            self.selected_diff_index.min(len.saturating_sub(1))
-        };
-    }
-}
-
 pub(crate) struct UiState {
     pub(crate) focus: FocusPane,
     pub(crate) diff_focus: DiffFocus,
@@ -204,99 +149,6 @@ pub(crate) struct UiState {
     pub(crate) available_executors: Vec<String>,
     pub(crate) selected_executor_profile: Option<ExecutorProfileSelection>,
     pub(crate) executor_profiles: serde_json::Value,
-}
-
-impl UiState {
-    pub(crate) fn focus_board(&mut self) {
-        self.focus = FocusPane::Board;
-    }
-
-    pub(crate) fn focus_execution(&mut self) {
-        self.focus = FocusPane::Execution;
-    }
-
-    pub(crate) fn focus_diff(&mut self) {
-        self.focus = FocusPane::Diff;
-    }
-
-    pub(crate) fn focus_diff_files(&mut self) {
-        self.focus = FocusPane::Diff;
-        self.diff_focus = DiffFocus::Files;
-    }
-
-    pub(crate) fn focus_diff_preview(&mut self) {
-        self.focus = FocusPane::Diff;
-        self.diff_focus = DiffFocus::Preview;
-    }
-
-    pub(crate) fn cycle_focus(&mut self) {
-        self.focus = match self.focus {
-            FocusPane::Board => FocusPane::Execution,
-            FocusPane::Execution => FocusPane::Diff,
-            FocusPane::Diff => FocusPane::Board,
-        };
-    }
-
-    pub(crate) fn set_notice(&mut self, msg: impl Into<String>) {
-        self.last_notice = Some(UiMessage {
-            kind: UiMessageKind::Notice,
-            scope: None,
-            text: msg.into(),
-            created_at: Instant::now(),
-        });
-    }
-
-    pub(crate) fn set_error(&mut self, msg: impl Into<String>) {
-        self.last_error = Some(UiMessage {
-            kind: UiMessageKind::Error,
-            scope: None,
-            text: msg.into(),
-            created_at: Instant::now(),
-        });
-        if let Some(state) = self.project_setup.as_mut() {
-            state.busy = false;
-        }
-    }
-
-    pub(crate) fn set_error_key(&mut self, key: UiMessageKey, msg: impl Into<String>) {
-        self.last_error = Some(UiMessage {
-            kind: UiMessageKind::Error,
-            scope: Some(key),
-            text: msg.into(),
-            created_at: Instant::now(),
-        });
-        if let Some(state) = self.project_setup.as_mut() {
-            state.busy = false;
-        }
-    }
-
-    pub(crate) fn clear_messages(&mut self) {
-        self.last_error = None;
-        self.last_notice = None;
-    }
-
-    pub(crate) fn clear_error_scope(&mut self, scope: UiMessageKey) -> bool {
-        if let Some(err) = self.last_error.as_ref()
-            && err.scope == Some(scope)
-        {
-            self.last_error = None;
-            return true;
-        }
-        false
-    }
-
-    pub(crate) fn set_toast(
-        &mut self,
-        message: impl Into<String>,
-        color: Color,
-        expires_in: Option<Duration>,
-    ) {
-        self.toast = Some(ToastState {
-            message: message.into(),
-            color,
-            expires_at: expires_in.map(|d| Instant::now() + d),
-        });
-    }
 }
 
 pub(crate) struct AppState {
