@@ -9,6 +9,7 @@ use db::models::{
     workspace::Workspace,
 };
 use deployment::Deployment;
+use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::DeploymentImpl;
@@ -69,7 +70,7 @@ pub async fn load_task_middleware(
 
 pub async fn load_workspace_middleware(
     State(deployment): State<DeploymentImpl>,
-    Path(workspace_id): Path<Uuid>,
+    Path(WorkspacePathParams { id: workspace_id }): Path<WorkspacePathParams>,
     mut request: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {
@@ -91,6 +92,13 @@ pub async fn load_workspace_middleware(
 
     // Continue on
     Ok(next.run(request).await)
+}
+
+// Allows this middleware to run under nested routers that add additional path params (e.g.
+// `/task-attempts/{id}/commits/{oid}`), while still extracting just the workspace id.
+#[derive(Debug, Deserialize)]
+pub struct WorkspacePathParams {
+    id: Uuid,
 }
 
 pub async fn load_execution_process_middleware(
