@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::{commands::request_branch_status_refresh, selection_hooks, state::AppState};
+use crate::{commands::request_branch_status_refresh, state::AppState};
 
 pub(crate) fn require_selected_attempt_id(app: &AppState) -> Result<Uuid, String> {
     app.board
@@ -46,7 +46,7 @@ pub(crate) fn resolve_repo_for_command(
                     .position(|r| r.repo_name.to_ascii_lowercase().contains(&needle))
             })
             .ok_or_else(|| format!("unknown repo: {arg}"))?;
-        selection_hooks::set_selected_repo_index(app, idx);
+        crate::selection::change::set_selected_repo_index(app, idx);
     }
 
     let repo = app

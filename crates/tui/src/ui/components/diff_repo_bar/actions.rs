@@ -76,7 +76,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             };
-            crate::selection_hooks::set_selected_repo_index(app, idx);
+            crate::selection::change::set_selected_repo_index(app, idx);
             let repo = match app.diff.repo_statuses.get(idx) {
                 Some(r) => r,
                 None => return,
@@ -133,7 +133,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             };
-            crate::selection_hooks::set_selected_repo_index(app, idx);
+            crate::selection::change::set_selected_repo_index(app, idx);
             let Some(repo) = app.diff.repo_statuses.get(idx) else {
                 return;
             };
@@ -222,7 +222,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             };
-            crate::selection_hooks::set_selected_repo_index(app, idx);
+            crate::selection::change::set_selected_repo_index(app, idx);
             let Some(repo) = app.diff.repo_statuses.get(idx) else {
                 return;
             };

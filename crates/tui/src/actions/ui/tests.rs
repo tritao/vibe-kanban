@@ -42,7 +42,7 @@ fn copy_diff_files_emits_copy_effect() {
         }
     });
     app.diff.selected_diff_index = 1; // 0 is ALL
-    crate::selection_hooks::on_diff_file_selected(&mut app);
+    crate::selection::change::on_diff_file_selected(&mut app);
 
     let (quit, _dirty, effects) = super::reduce_ui(
         &mut app,

@@ -9,7 +9,7 @@ pub(super) fn select_diff_file(app: &mut AppState, idx: usize) -> bool {
     if !list_nav::select_index(&mut app.diff.selected_diff_index, idx, rows.len()) {
         return false;
     }
-    crate::selection_hooks::on_diff_file_selected(app);
+    crate::selection::change::on_diff_file_selected(app);
     true
 }
 
@@ -19,7 +19,7 @@ pub(super) fn select_adjacent_diff_file(app: &mut AppState, delta: i32) -> bool 
     if !list_nav::select_delta(&mut app.diff.selected_diff_index, delta, rows.len()) {
         return false;
     }
-    crate::selection_hooks::on_diff_file_selected(app);
+    crate::selection::change::on_diff_file_selected(app);
     true
 }
 
@@ -40,7 +40,7 @@ pub(super) fn select_commit(app: &mut AppState, idx: usize) -> bool {
     if !list_nav::select_index(&mut app.diff.selected_commit_index, idx, len) {
         return false;
     }
-    crate::selection_hooks::on_commit_selected(app);
+    crate::selection::change::on_commit_selected(app);
     true
 }
 
@@ -49,6 +49,6 @@ pub(super) fn select_adjacent_commit(app: &mut AppState, delta: i32) -> bool {
     if !list_nav::select_delta(&mut app.diff.selected_commit_index, delta, len) {
         return false;
     }
-    crate::selection_hooks::on_commit_selected(app);
+    crate::selection::change::on_commit_selected(app);
     true
 }

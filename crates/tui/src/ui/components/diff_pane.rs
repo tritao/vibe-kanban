@@ -285,6 +285,6 @@ fn selected_repo_status_from_diff(app: &AppState) -> Option<usize> {
 
 pub(crate) fn sync_selected_repo_from_diff_selection(app: &mut AppState) {
     if let Some(idx) = selected_repo_status_from_diff(app) {
-        crate::selection_hooks::set_selected_repo_index(app, idx);
+        crate::selection::change::set_selected_repo_index(app, idx);
     }
 }

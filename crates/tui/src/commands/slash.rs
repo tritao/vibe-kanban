@@ -384,7 +384,7 @@ fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), Stri
     if idx >= app.diff.repo_statuses.len() {
         return Err(format!("repo index out of range: {arg}"));
     }
-    crate::selection_hooks::set_selected_repo_index(app, idx);
+    crate::selection::change::set_selected_repo_index(app, idx);
     app.ui.set_notice(format!(
         "Selected repo: {}",
         app.diff.repo_statuses[idx].repo_name
