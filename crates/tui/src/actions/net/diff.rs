@@ -57,8 +57,7 @@ pub(super) fn diff_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
         diff_patch_touches_key(&patch, sel_key)
     };
     if should_refresh {
-        app.diff.diff_preview_cache_key = None;
-        app.diff.diff_preview_cache_hash = 0;
+        app.diff.invalidate_diff_preview_cache();
         // The diff stream can send many patches during initial load (one per file).
         // Rebuilding the combined "__ALL__" preview on every patch is very expensive and
         // looks like the view is “growing” line-by-line. Debounce in ALL mode.

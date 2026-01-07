@@ -117,7 +117,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         .is_some_and(|o| !o.is_empty());
     if diff_width_changed {
         app.diff.diff_preview_cache_width = diff_inner_width_u16;
-        app.diff.diff_preview_cache_key = None;
+        app.diff.invalidate_diff_preview_cache();
         if has_diffs {
             schedule_diff_preview_refresh(app, crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY);
         }
