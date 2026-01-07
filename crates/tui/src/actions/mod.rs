@@ -1,5 +1,5 @@
 mod net;
-mod selection;
+pub(crate) mod selection;
 mod tick;
 mod ui;
 

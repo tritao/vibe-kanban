@@ -1,6 +1,6 @@
 use crossterm::event::MouseEvent;
 
-use super::{focus, modals, sel};
+use super::{focus, sel};
 use crate::{
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     state::AppState,
@@ -18,21 +18,15 @@ use crate::{
 
 mod board;
 mod diff;
-mod hit_test;
 
 pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
     let col = mouse.column;
     let row = mouse.row;
 
-    // Search modal caret placement.
-    if hit_test::handle_search_caret_click(app, mouse) {
+    if crate::ui::modals::handle_modal_mouse(app, mouse) {
         return true;
     }
-    if app.ui.input.is_some() {
-        return false;
-    }
-
-    if modals::modal_blocks_mouse(app) {
+    if crate::ui::modals::modal_blocks_mouse(app) {
         return false;
     }
 

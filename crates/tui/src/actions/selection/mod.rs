@@ -9,7 +9,7 @@ pub(in crate::actions) use board::{
 };
 pub(in crate::actions) use diff::reset_diff_stream_state;
 pub(in crate::actions) use ids::{select_exec, select_project, select_task};
+pub(crate) use reconcile::ensure_selection_visible;
 pub(in crate::actions) use reconcile::{
-    ensure_exec_selection, ensure_selection_visible, reconcile_projects_selection,
-    reconcile_tasks_selection, set_attempts,
+    ensure_exec_selection, reconcile_projects_selection, reconcile_tasks_selection, set_attempts,
 };

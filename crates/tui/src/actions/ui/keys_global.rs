@@ -10,7 +10,7 @@ pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bo
     match (key.code, key.modifiers) {
         (KeyCode::Char('q'), _) => return Some((true, false)),
         (KeyCode::Char('?'), _) => {
-            modals::open_help(app);
+            crate::ui::modals::open_help(app);
             return Some((false, true));
         }
         (KeyCode::Tab, KeyModifiers::NONE) => {
@@ -18,7 +18,7 @@ pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bo
             return Some((false, true));
         }
         (KeyCode::Char('/'), _) => {
-            modals::open_search(app);
+            crate::ui::modals::open_search(app);
             return Some((false, true));
         }
         (KeyCode::Char('r'), _) => {

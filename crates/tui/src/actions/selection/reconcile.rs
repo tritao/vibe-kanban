@@ -95,7 +95,7 @@ pub(in crate::actions) fn set_attempts(app: &mut AppState, attempts: Vec<Attempt
     );
 }
 
-pub(in crate::actions) fn ensure_selection_visible(app: &mut AppState) {
+pub(crate) fn ensure_selection_visible(app: &mut AppState) {
     ensure_project_selection(app);
     ensure_task_selection(app);
     ensure_attempt_selection(app);

@@ -16,7 +16,6 @@ use crate::{
 mod composer;
 mod confirm;
 mod copy;
-mod create_task;
 mod focus;
 mod keys;
 mod keys_board;
@@ -26,7 +25,6 @@ mod keys_global;
 mod modals;
 mod mouse;
 mod slash;
-mod text_edit;
 
 pub(super) enum Effect {
     CopyOsc52(String),

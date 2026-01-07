@@ -10,10 +10,8 @@ use crate::{
     selection::BoardTaskItem,
     state::{AppState, TaskRow},
     ui::{
-        render_board_pane, render_bottom_bar, render_branch_picker_modal,
-        render_composer_autocomplete, render_confirm_modal, render_create_task_modal,
-        render_diff_pane, render_execution_pane, render_help_modal, render_input_modal,
-        render_project_setup_modal, render_top_bar,
+        render_board_pane, render_bottom_bar, render_composer_autocomplete, render_diff_pane,
+        render_execution_pane, render_top_bar,
     },
 };
 
@@ -42,29 +40,7 @@ pub(crate) fn render(f: &mut Frame, app: &AppState) {
 
     render_composer_autocomplete(f, app, layout.exec_input);
 
-    if app.ui.show_help {
-        render_help_modal(f);
-    }
-
-    if let Some(state) = app.ui.create_task.as_ref() {
-        render_create_task_modal(f, app, state);
-    }
-
-    if let Some(confirm) = app.ui.confirm.as_ref() {
-        render_confirm_modal(f, confirm);
-    }
-
-    if let Some(input) = app.ui.input.as_ref() {
-        render_input_modal(f, input);
-    }
-
-    if let Some(state) = app.ui.project_setup.as_ref() {
-        render_project_setup_modal(f, state);
-    }
-
-    if let Some(state) = app.ui.branch_picker.as_ref() {
-        render_branch_picker_modal(f, state);
-    }
+    crate::ui::modals::render_overlays(f, app);
 }
 
 pub(crate) fn render_task_line(task: &TaskRow) -> Line<'static> {

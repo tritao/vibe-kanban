@@ -1,4 +1,5 @@
 pub(crate) mod edit;
+pub(crate) mod field_edit;
 pub(crate) mod sanitize;
 pub(crate) mod wrap;
 

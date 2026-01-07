@@ -1,45 +1,14 @@
-use super::modals;
 use crate::{
     selection::find_task,
     state::{AppState, ConfirmAction, ConfirmAltAction, ConfirmState, DeleteTaskMode},
 };
-
-pub(super) fn handle_confirm_key(app: &mut AppState, key: crossterm::event::KeyEvent) -> bool {
-    let Some(confirm) = app.ui.confirm.as_ref() else {
-        return false;
-    };
-
-    match key.code {
-        crossterm::event::KeyCode::Char('y') | crossterm::event::KeyCode::Enter => {
-            let action = confirm.action;
-            modals::close_confirm(app);
-            crate::handle_confirm_action(app, action);
-            true
-        }
-        crossterm::event::KeyCode::Char('n') | crossterm::event::KeyCode::Esc => {
-            modals::close_confirm(app);
-            true
-        }
-        crossterm::event::KeyCode::Char(c) => {
-            if let Some(alt) = confirm.alt_action.as_ref().filter(|alt| alt.key == c) {
-                let action = alt.action;
-                modals::close_confirm(app);
-                crate::handle_confirm_action(app, action);
-                true
-            } else {
-                false
-            }
-        }
-        _ => false,
-    }
-}
 
 pub(super) fn open_stop_exec_confirm(app: &mut AppState) -> bool {
     let Some(exec_id) = app.exec.selected_exec_id else {
         return false;
     };
 
-    modals::open_confirm(
+    super::modals::open_confirm(
         app,
         ConfirmState {
             title: "Stop execution?".to_string(),
@@ -89,7 +58,7 @@ pub(super) fn open_delete_task_confirm(app: &mut AppState) -> bool {
         format!("Delete task '{title}'?")
     };
 
-    modals::open_confirm(
+    super::modals::open_confirm(
         app,
         ConfirmState {
             title: "Delete task?".to_string(),

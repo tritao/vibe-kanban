@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use crate::state::TextFieldState;
 
-pub(super) fn apply_text_field_key(
+pub(crate) fn apply_text_field_key(
     field: &mut TextFieldState,
     key: KeyEvent,
     multiline: bool,

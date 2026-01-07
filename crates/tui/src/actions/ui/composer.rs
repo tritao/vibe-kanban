@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{slash, text_edit};
+use super::slash;
 use crate::{
     layout::{compute_main_layout, current_terminal_rect},
     state::AppState,
@@ -36,7 +36,7 @@ pub(super) fn handle_composer_key(app: &mut AppState, key: KeyEvent) -> bool {
             slash::apply_autocomplete(app);
         }
         _ => {
-            if !text_edit::apply_text_field_key(&mut app.ui.composer, key, true) {
+            if !crate::text::field_edit::apply_text_field_key(&mut app.ui.composer, key, true) {
                 return false;
             }
         }
