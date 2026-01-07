@@ -762,10 +762,27 @@ pub(crate) struct AttemptRow {
 pub(crate) struct ExecRow {
     pub(crate) id: Uuid,
     pub(crate) session_id: Option<Uuid>,
-    pub(crate) run_reason: Option<String>,
+    pub(crate) run_reason: Option<RunReason>,
     pub(crate) status: Option<ExecStatus>,
     pub(crate) created_at: Option<String>,
     pub(crate) dropped: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RunReason {
+    CodingAgent,
+    DevServer,
+    Other,
+}
+
+impl RunReason {
+    pub(crate) fn parse(s: &str) -> Self {
+        match s {
+            "coding_agent" => Self::CodingAgent,
+            "dev_server" => Self::DevServer,
+            _ => Self::Other,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

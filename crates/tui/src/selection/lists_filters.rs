@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    state::{AppState, ExecRow, ExecStatus, TaskRow, TaskStatus},
+    state::{AppState, ExecRow, ExecStatus, RunReason, TaskRow, TaskStatus},
     store::{exec::ExecStore, projects::ProjectsStore, tasks::TasksStore},
 };
 
@@ -74,7 +74,7 @@ pub(crate) fn active_exec_id(execs: &[ExecRow]) -> Option<Uuid> {
         if let Some(non_dev) = running
             .iter()
             .copied()
-            .find(|e| e.run_reason.as_deref() != Some("dev_server"))
+            .find(|e| e.run_reason != Some(RunReason::DevServer))
         {
             return Some(non_dev.id);
         }
@@ -85,7 +85,7 @@ pub(crate) fn active_exec_id(execs: &[ExecRow]) -> Option<Uuid> {
         .iter()
         .rev()
         .copied()
-        .find(|e| e.run_reason.as_deref() == Some("coding_agent"))
+        .find(|e| e.run_reason == Some(RunReason::CodingAgent))
     {
         return Some(agent.id);
     }
