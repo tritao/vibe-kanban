@@ -1,7 +1,5 @@
 use std::time::{Duration, Instant};
 
-use ratatui::style::Color;
-
 use super::{DiffRepoAction, shared};
 use crate::{
     commands::{
@@ -25,7 +23,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Conflicts: no attempt selected".to_string(),
-                    Color::Red,
+                    crate::ui::palette::toast_err(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -35,7 +33,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Conflicts: loading repo status…".to_string(),
-                    Color::Yellow,
+                    crate::ui::palette::toast_warn(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -45,7 +43,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Conflicts: none detected".to_string(),
-                    Color::Green,
+                    crate::ui::palette::toast_ok(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -83,7 +81,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             set_toast(
                 app,
                 format!("Conflicts: drafted resolution request ({})", repo.repo_name),
-                Color::Cyan,
+                crate::ui::palette::toast_info(),
                 Some(Instant::now() + Duration::from_secs(2)),
             );
         }
@@ -92,7 +90,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Open: no attempt selected".to_string(),
-                    Color::Red,
+                    crate::ui::palette::toast_err(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -102,7 +100,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Open: loading repo status…".to_string(),
-                    Color::Yellow,
+                    crate::ui::palette::toast_warn(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -112,7 +110,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Open: no conflicts detected".to_string(),
-                    Color::Green,
+                    crate::ui::palette::toast_ok(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -125,7 +123,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Open: no conflicted files listed".to_string(),
-                    Color::Yellow,
+                    crate::ui::palette::toast_warn(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -156,7 +154,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "PR: no repo selected".to_string(),
-                    Color::Yellow,
+                    crate::ui::palette::toast_warn(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -168,7 +166,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "PR: none attached".to_string(),
-                    Color::Yellow,
+                    crate::ui::palette::toast_warn(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -179,7 +177,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                     set_toast(
                         app,
                         format!("PR: opened (PR#{})", pr.number),
-                        Color::Green,
+                        crate::ui::palette::toast_ok(),
                         Some(Instant::now() + Duration::from_secs(2)),
                     );
                 }
@@ -188,7 +186,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                     set_toast(
                         app,
                         format!("PR: failed to open ({e})"),
-                        Color::Red,
+                        crate::ui::palette::toast_err(),
                         Some(Instant::now() + Duration::from_secs(3)),
                     );
                 }
@@ -199,7 +197,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Abort: no attempt selected".to_string(),
-                    Color::Red,
+                    crate::ui::palette::toast_err(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -209,7 +207,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Abort: loading repo status…".to_string(),
-                    Color::Yellow,
+                    crate::ui::palette::toast_warn(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -219,7 +217,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Abort: no conflicts detected".to_string(),
-                    Color::Green,
+                    crate::ui::palette::toast_ok(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -323,7 +321,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Merge: conflicts in progress (resolve/abort first)".to_string(),
-                    Color::Yellow,
+                    crate::ui::palette::toast_warn(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -332,7 +330,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Merge: nothing to merge (up to date)".to_string(),
-                    Color::Green,
+                    crate::ui::palette::toast_ok(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -369,7 +367,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Rebase: conflicts in progress (resolve/abort first)".to_string(),
-                    Color::Yellow,
+                    crate::ui::palette::toast_warn(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -378,7 +376,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "Rebase: already up to date".to_string(),
-                    Color::Green,
+                    crate::ui::palette::toast_ok(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -415,7 +413,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "PR: conflicts in progress (resolve/abort first)".to_string(),
-                    Color::Yellow,
+                    crate::ui::palette::toast_warn(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -424,7 +422,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     "PR: no changes to open (up to date)".to_string(),
-                    Color::Green,
+                    crate::ui::palette::toast_ok(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;
@@ -437,7 +435,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 set_toast(
                     app,
                     format!("PR: already exists (PR#{n})"),
-                    Color::Green,
+                    crate::ui::palette::toast_ok(),
                     Some(Instant::now() + Duration::from_secs(2)),
                 );
                 return;

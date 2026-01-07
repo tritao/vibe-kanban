@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, List, ListItem},
 };
@@ -238,7 +238,7 @@ impl UiComponent for DiffList {
 
 fn files_border_style(app: &AppState) -> Style {
     if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Files {
-        Style::default().fg(Color::Cyan)
+        crate::ui::palette::border_active()
     } else if app.ui.focus == FocusPane::Diff {
         Style::default()
     } else {

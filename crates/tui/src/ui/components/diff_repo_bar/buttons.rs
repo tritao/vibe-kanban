@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::style::{Modifier, Style};
 
 use super::{DiffRepoAction, shared};
 use crate::{
@@ -123,21 +123,53 @@ pub(super) fn repo_bar_button_specs(
         }
     };
 
-    let mut base: Vec<(DiffRepoAction, &'static str, Color)> = vec![];
+    let mut base: Vec<(DiffRepoAction, &'static str, ratatui::style::Color)> = vec![];
     if has_conflicts {
-        base.push((DiffRepoAction::ResolveConflicts, "[C]Resolve", Color::Cyan));
-        base.push((DiffRepoAction::OpenConflict, "[O]pen", Color::Blue));
-        base.push((DiffRepoAction::AbortConflicts, "[A]bort", Color::Red));
+        base.push((
+            DiffRepoAction::ResolveConflicts,
+            "[C]Resolve",
+            crate::ui::palette::diff_repo_action_color(DiffRepoAction::ResolveConflicts),
+        ));
+        base.push((
+            DiffRepoAction::OpenConflict,
+            "[O]pen",
+            crate::ui::palette::diff_repo_action_color(DiffRepoAction::OpenConflict),
+        ));
+        base.push((
+            DiffRepoAction::AbortConflicts,
+            "[A]bort",
+            crate::ui::palette::diff_repo_action_color(DiffRepoAction::AbortConflicts),
+        ));
     }
     base.extend([
-        (DiffRepoAction::Merge, "[M]erge", Color::Green),
+        (
+            DiffRepoAction::Merge,
+            "[M]erge",
+            crate::ui::palette::diff_repo_action_color(DiffRepoAction::Merge),
+        ),
         if pr_open.is_some() {
-            (DiffRepoAction::OpenPr, "[U]OpenPR", Color::Blue)
+            (
+                DiffRepoAction::OpenPr,
+                "[U]OpenPR",
+                crate::ui::palette::diff_repo_action_color(DiffRepoAction::OpenPr),
+            )
         } else {
-            (DiffRepoAction::CreatePr, "[P]R", Color::Blue)
+            (
+                DiffRepoAction::CreatePr,
+                "[P]R",
+                crate::ui::palette::diff_repo_action_color(DiffRepoAction::CreatePr),
+            )
         },
-        (DiffRepoAction::Rebase, "[R]ebase", Color::Yellow),
-        (DiffRepoAction::RefreshStatus, "[S]tatus", Color::Cyan),
+        (
+            DiffRepoAction::Rebase,
+            "[R]ebase",
+            crate::ui::palette::diff_repo_action_color(DiffRepoAction::Rebase),
+        ),
+        (
+            DiffRepoAction::RefreshStatus,
+            "[S]tatus",
+            crate::ui::palette::diff_repo_action_color(DiffRepoAction::RefreshStatus),
+        ),
     ]);
 
     base.into_iter()
@@ -190,7 +222,9 @@ pub(super) fn repo_bar_button_specs(
             }
             let done_ok = done.map(|(_, ok, _)| ok).unwrap_or(true);
             if recently_done && kind.is_some() && !done_ok {
-                style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
+                style = Style::default()
+                    .fg(ratatui::style::Color::Red)
+                    .add_modifier(Modifier::BOLD);
             }
 
             ButtonSpec {

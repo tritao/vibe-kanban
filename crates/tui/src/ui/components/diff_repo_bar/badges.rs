@@ -7,12 +7,7 @@ fn badge(text: impl Into<String>, fg: Color, bg: Color) -> Span<'static> {
 }
 
 pub(super) fn pr_badge_style(status: MergeStatus) -> (Color, Color) {
-    match status {
-        MergeStatus::Open => (Color::Black, Color::LightBlue),
-        MergeStatus::Merged => (Color::Black, Color::LightGreen),
-        MergeStatus::Closed => (Color::White, Color::Red),
-        MergeStatus::Unknown => (Color::Black, Color::LightYellow),
-    }
+    crate::ui::palette::pr_merge_status_style(status)
 }
 
 pub(super) fn selected_stack_badge(
@@ -22,16 +17,15 @@ pub(super) fn selected_stack_badge(
     let repo_id = repo?.repo_id;
     let status = app.diff.stack_status_by_repo.get(&repo_id)?;
     if !status.available {
+        let (fg, bg) = crate::ui::palette::stack_badge_missing();
         return Some((
             " Stack: missing ".to_string(),
-            badge("Stack: missing", Color::White, Color::Red),
+            badge("Stack: missing", fg, bg),
         ));
     }
     if !status.enabled {
-        return Some((
-            " Stack: off ".to_string(),
-            badge("Stack: off", Color::Black, Color::LightYellow),
-        ));
+        let (fg, bg) = crate::ui::palette::stack_badge_off();
+        return Some((" Stack: off ".to_string(), badge("Stack: off", fg, bg)));
     }
     let current = status
         .patches
@@ -46,8 +40,6 @@ pub(super) fn selected_stack_badge(
         .count();
     let total = status.patches.len();
     let label = format!("Stack: {applied}/{total} [{current}]");
-    Some((
-        format!(" {label} "),
-        badge(label, Color::Black, Color::LightGreen),
-    ))
+    let (fg, bg) = crate::ui::palette::stack_badge_on();
+    Some((format!(" {label} "), badge(label, fg, bg)))
 }

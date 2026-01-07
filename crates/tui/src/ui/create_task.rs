@@ -457,7 +457,7 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
     crate::commands::set_toast(
         app,
         "Creating task…".to_string(),
-        Color::Cyan,
+        crate::ui::palette::toast_info(),
         Some(Instant::now() + std::time::Duration::from_secs(2)),
     );
 

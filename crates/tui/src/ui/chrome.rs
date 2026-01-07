@@ -1,5 +1,5 @@
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
@@ -20,14 +20,8 @@ pub(crate) fn render_top_bar(app: &AppState) -> Paragraph<'static> {
             StreamStatus::Disconnected => format!("{label}:off"),
             StreamStatus::Error => format!("{label}:err"),
         };
-        let color = match status {
-            StreamStatus::Connecting => Color::Yellow,
-            StreamStatus::Connected => Color::Green,
-            StreamStatus::Completed => Color::Green,
-            StreamStatus::Disconnected => Color::DarkGray,
-            StreamStatus::Error => Color::Red,
-        };
-        Span::styled(text, Style::default().fg(color))
+        let color = crate::ui::palette::stream_status_color(status);
+        Span::styled(text, ratatui::style::Style::default().fg(color))
     }
 
     let focus = match app.ui.focus {
@@ -64,18 +58,21 @@ pub(crate) fn render_top_bar(app: &AppState) -> Paragraph<'static> {
         .unwrap_or_else(|| "—".to_string());
 
     let line = Line::from(vec![
-        Span::styled("vk-tui", Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "vk-tui",
+            ratatui::style::Style::default().add_modifier(Modifier::BOLD),
+        ),
         Span::raw("  "),
         Span::styled(
             truncate(&project_name, 18),
-            Style::default().fg(Color::Cyan),
+            crate::ui::palette::top_bar_project(),
         ),
         Span::raw("  "),
-        Span::styled(truncate(&task_title, 28), Style::default()),
+        Span::styled(truncate(&task_title, 28), ratatui::style::Style::default()),
         Span::raw("  "),
         Span::styled(
             truncate(&attempt_branch, 18),
-            Style::default().fg(Color::Magenta),
+            crate::ui::palette::top_bar_branch(),
         ),
         Span::raw("  "),
         status_badge("tasks", app.board.tasks_status),
@@ -88,15 +85,18 @@ pub(crate) fn render_top_bar(app: &AppState) -> Paragraph<'static> {
         Span::raw("  "),
         Span::styled(
             format!("mode:{}", app.exec.log_mode.label()),
-            Style::default().fg(Color::Gray),
+            crate::ui::palette::chrome_meta(),
         ),
         Span::raw(" "),
         Span::styled(
             format!("view:{}", app.exec.log_render_mode.label()),
-            Style::default().fg(Color::Gray),
+            crate::ui::palette::chrome_meta(),
         ),
         Span::raw("  "),
-        Span::styled(focus, Style::default().add_modifier(Modifier::DIM)),
+        Span::styled(
+            focus,
+            ratatui::style::Style::default().add_modifier(Modifier::DIM),
+        ),
     ]);
 
     Paragraph::new(line)

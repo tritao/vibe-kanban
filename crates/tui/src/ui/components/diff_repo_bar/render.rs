@@ -21,7 +21,7 @@ fn badge(text: impl Into<String>, fg: Color, bg: Color) -> Span<'static> {
 
 pub(super) fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
     let border_style = if app.ui.focus == FocusPane::Diff {
-        Style::default().fg(Color::Cyan)
+        crate::ui::palette::border_active()
     } else {
         Style::default()
     };
@@ -171,61 +171,56 @@ pub(super) fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
         spans.push(Span::raw("  "));
         let mut first = true;
         if dirty > 0 {
-            spans.push(badge(format!("Δ{dirty}"), Color::Black, Color::LightYellow));
+            let (fg, bg) = crate::ui::palette::diff_repo_bar_dirty_badge();
+            spans.push(badge(format!("Δ{dirty}"), fg, bg));
             first = false;
         }
         if untracked > 0 {
             if !first {
                 spans.push(Span::raw(" "));
             }
-            spans.push(badge(
-                format!("?{untracked}"),
-                Color::Black,
-                Color::LightCyan,
-            ));
+            let (fg, bg) = crate::ui::palette::diff_repo_bar_untracked_badge();
+            spans.push(badge(format!("?{untracked}"), fg, bg));
             first = false;
         }
         if ahead > 0 {
             if !first {
                 spans.push(Span::raw(" "));
             }
-            spans.push(badge(format!("+{ahead}"), Color::Black, Color::LightGreen));
+            let (fg, bg) = crate::ui::palette::diff_repo_bar_ahead_badge();
+            spans.push(badge(format!("+{ahead}"), fg, bg));
             first = false;
         }
         if behind > 0 {
             if !first {
                 spans.push(Span::raw(" "));
             }
-            spans.push(badge(format!("{behind}"), Color::Black, Color::LightYellow));
+            let (fg, bg) = crate::ui::palette::diff_repo_bar_behind_badge();
+            spans.push(badge(format!("{behind}"), fg, bg));
             first = false;
         }
         if remote_ahead > 0 {
             if !first {
                 spans.push(Span::raw(" "));
             }
-            spans.push(badge(
-                format!("r+{remote_ahead}"),
-                Color::Black,
-                Color::LightBlue,
-            ));
+            let (fg, bg) = crate::ui::palette::diff_repo_bar_remote_ahead_badge();
+            spans.push(badge(format!("r+{remote_ahead}"), fg, bg));
             first = false;
         }
         if remote_behind > 0 {
             if !first {
                 spans.push(Span::raw(" "));
             }
-            spans.push(badge(
-                format!("r-{remote_behind}"),
-                Color::Black,
-                Color::LightYellow,
-            ));
+            let (fg, bg) = crate::ui::palette::diff_repo_bar_remote_behind_badge();
+            spans.push(badge(format!("r-{remote_behind}"), fg, bg));
             first = false;
         }
         if conflicts > 0 {
             if !first {
                 spans.push(Span::raw(" "));
             }
-            spans.push(badge(format!("!{conflicts}"), Color::White, Color::Red));
+            let (fg, bg) = crate::ui::palette::diff_repo_bar_conflicts_badge();
+            spans.push(badge(format!("!{conflicts}"), fg, bg));
             first = false;
         }
         if let Some((n, status)) = pr_open {
