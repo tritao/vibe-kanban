@@ -42,13 +42,14 @@ pub(crate) fn append_log_entry(
             .all(|s| s.content.as_ref().trim().is_empty())
     }
 
-    let Some(ty) = entry.get("type").and_then(|v| v.as_str()) else {
+    let entry_ref = crate::store::logs::LogEntryRef::new(entry);
+    let Some(ty) = entry_ref.ty() else {
         return;
     };
 
     match ty {
         "STDOUT" => {
-            let Some(text) = entry.get("content").and_then(|v| v.as_str()) else {
+            let Some(text) = entry_ref.stream_text() else {
                 return;
             };
             let target_idx = state.attach_to_entry.unwrap_or(entry_idx);
@@ -69,7 +70,7 @@ pub(crate) fn append_log_entry(
             );
         }
         "STDERR" => {
-            let Some(text) = entry.get("content").and_then(|v| v.as_str()) else {
+            let Some(text) = entry_ref.stream_text() else {
                 return;
             };
             let target_idx = state.attach_to_entry.unwrap_or(entry_idx);
@@ -90,7 +91,7 @@ pub(crate) fn append_log_entry(
             );
         }
         "NORMALIZED_ENTRY" => {
-            let Some(content) = entry.get("content") else {
+            let Some(content) = entry_ref.normalized_content().map(|c| c.raw()) else {
                 return;
             };
 
@@ -104,10 +105,9 @@ pub(crate) fn append_log_entry(
                 return;
             }
 
-            let entry_type_tag = content
-                .get("entry_type")
-                .and_then(|v| v.get("type"))
-                .and_then(|v| v.as_str())
+            let entry_type_tag = crate::store::logs::NormalizedContentRef::new(content)
+                .entry_type()
+                .map(|t| t.tag())
                 .unwrap_or("unknown");
             let is_progress = matches!(entry_type_tag, "thinking" | "loading");
 

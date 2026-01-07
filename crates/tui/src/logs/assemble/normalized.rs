@@ -17,19 +17,12 @@ use crate::{
         types::{NormalizedEntryType, ToolStatus, ToolUseAction},
     },
     state::{DiffTheme, LogRenderMode},
+    store::logs::{EntryTypeRef, NormalizedContentRef},
     text::{sanitize_tui_text, truncate_to_width},
 };
 
-fn tool_status_str(entry_type: &serde_json::Value) -> Option<&str> {
-    let status = entry_type.get("status")?;
-    if let Some(s) = status.as_str() {
-        return Some(s);
-    }
-    status.get("status").and_then(|v| v.as_str())
-}
-
-fn tool_status(entry_type: &serde_json::Value) -> ToolStatus {
-    let s = tool_status_str(entry_type).unwrap_or("created");
+fn tool_status(entry_type: &EntryTypeRef<'_>) -> ToolStatus {
+    let s = entry_type.tool_status_str().unwrap_or("created");
     ToolStatus::parse(s)
 }
 
@@ -120,8 +113,8 @@ pub(super) fn append_normalized_entry(
         }
     }
 
-    let entry_type = entry.get("entry_type");
-    let entry_type = match entry_type {
+    let content = NormalizedContentRef::new(entry);
+    let entry_type_ref = match content.entry_type() {
         Some(v) => v,
         None => {
             let fallback = entry.to_string();
@@ -130,11 +123,9 @@ pub(super) fn append_normalized_entry(
         }
     };
 
-    let entry_type_tag = entry_type
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("unknown");
-    let content_text = entry.get("content").and_then(|v| v.as_str()).unwrap_or("");
+    let entry_type_tag = entry_type_ref.tag();
+    let entry_type = entry_type_ref.raw();
+    let content_text = content.content_text();
 
     match NormalizedEntryType::parse(entry_type_tag) {
         NormalizedEntryType::UserMessage => {
@@ -202,10 +193,7 @@ pub(super) fn append_normalized_entry(
             );
         }
         NormalizedEntryType::UserFeedback => {
-            let denied_tool = entry_type
-                .get("denied_tool")
-                .and_then(|v| v.as_str())
-                .unwrap_or("tool");
+            let denied_tool = entry_type_ref.denied_tool().unwrap_or("tool");
             append_text_block(
                 lines,
                 map,
@@ -280,7 +268,7 @@ pub(super) fn append_normalized_entry(
             );
         }
         NormalizedEntryType::ToolUse => {
-            let status = tool_status(entry_type);
+            let status = tool_status(&entry_type_ref);
             let (status_badge, _status_style) = crate::ui::palette::log_tool_status_badge(status);
 
             let action_type = entry_type.get("action_type");
