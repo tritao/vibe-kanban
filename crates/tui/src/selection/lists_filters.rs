@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::{
-    state::{AppState, ExecRow, TaskRow, TaskStatus},
+    state::{AppState, ExecRow, ExecStatus, TaskRow, TaskStatus},
     store::{exec::ExecStore, projects::ProjectsStore, tasks::TasksStore},
 };
 
@@ -68,7 +68,7 @@ pub(crate) fn active_exec_id(execs: &[ExecRow]) -> Option<Uuid> {
     let running: Vec<&ExecRow> = filtered
         .iter()
         .copied()
-        .filter(|e| e.status.as_deref() == Some("running"))
+        .filter(|e| e.status == Some(ExecStatus::Running))
         .collect();
     if !running.is_empty() {
         if let Some(non_dev) = running

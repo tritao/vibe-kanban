@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::state::ExecRow;
+use crate::state::{ExecRow, ExecStatus};
 
 pub(crate) struct ExecStore<'a> {
     root: &'a serde_json::Value,
@@ -36,7 +36,7 @@ impl<'a> ExecStore<'a> {
             let status = exec
                 .get("status")
                 .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
+                .map(ExecStatus::parse);
             let created_at = exec
                 .get("created_at")
                 .and_then(|v| v.as_str())

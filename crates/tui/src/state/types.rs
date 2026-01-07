@@ -763,9 +763,37 @@ pub(crate) struct ExecRow {
     pub(crate) id: Uuid,
     pub(crate) session_id: Option<Uuid>,
     pub(crate) run_reason: Option<String>,
-    pub(crate) status: Option<String>,
+    pub(crate) status: Option<ExecStatus>,
     pub(crate) created_at: Option<String>,
     pub(crate) dropped: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExecStatus {
+    Running,
+    Completed,
+    Failed,
+    Unknown,
+}
+
+impl ExecStatus {
+    pub(crate) fn parse(s: &str) -> Self {
+        match s {
+            "running" => Self::Running,
+            "completed" | "done" | "success" => Self::Completed,
+            "failed" | "error" => Self::Failed,
+            _ => Self::Unknown,
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

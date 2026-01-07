@@ -7,7 +7,7 @@ use crate::{
     events::{GitOpKind, NetEvent},
     net::ops::branch_status_http,
     selection::exec_list,
-    state::{AppState, GitOpState, JobKey, PendingExecHook},
+    state::{AppState, ExecStatus, GitOpState, JobKey, PendingExecHook},
 };
 
 pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
@@ -125,12 +125,11 @@ pub(crate) fn on_exec_store_updated_for_branch_refresh(app: &mut AppState) {
     };
 
     let execs = exec_list(&app.exec.exec_store);
-    let status = execs
+    let is_running = execs
         .iter()
         .find(|e| e.id == exec_id)
-        .and_then(|e| e.status.as_deref())
-        .unwrap_or("unknown");
-    if status == "running" {
+        .is_some_and(|e| e.status == Some(ExecStatus::Running));
+    if is_running {
         app.exec.pending_branch_refresh = Some(pending);
         return;
     }

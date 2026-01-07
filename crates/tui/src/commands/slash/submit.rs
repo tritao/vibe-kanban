@@ -67,7 +67,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
         .selected_exec_id
         .and_then(|id| execs.iter().find(|e| e.id == id));
     let session_id = active.and_then(|e| e.session_id);
-    let is_running = active.and_then(|e| e.status.as_deref()) == Some("running");
+    let is_running = active.is_some_and(|e| e.status == Some(crate::state::ExecStatus::Running));
 
     if session_id.is_none() && attempt_id.is_none() && task_id.is_none() {
         app.ui.set_error(

@@ -708,7 +708,10 @@ fn rebuild_log_view_cache(app: &mut AppState) {
     let mut last_params: Option<ModelParams> = None;
     for (idx, exec_id) in include.iter().copied().enumerate() {
         let meta = exec_by_id.get(&exec_id);
-        let status = meta.and_then(|e| e.status.as_deref()).unwrap_or("unknown");
+        let status = meta
+            .and_then(|e| e.status)
+            .map(|s| s.label())
+            .unwrap_or("unknown");
         let when = meta
             .and_then(|e| e.created_at.as_deref())
             .and_then(short_time)
