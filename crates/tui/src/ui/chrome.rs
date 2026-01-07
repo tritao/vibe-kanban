@@ -9,6 +9,7 @@ use crate::{
     fmt::truncate,
     selection::find_task,
     state::{AppState, FocusPane},
+    store::projects::ProjectsStore,
 };
 
 pub(crate) fn render_top_bar(app: &AppState) -> Paragraph<'static> {
@@ -32,15 +33,7 @@ pub(crate) fn render_top_bar(app: &AppState) -> Paragraph<'static> {
     let project_name = app
         .board
         .selected_project_id
-        .and_then(|id| {
-            app.board
-                .projects_store
-                .get("projects")?
-                .get(id.to_string())?
-                .get("name")?
-                .as_str()
-                .map(|s| s.to_string())
-        })
+        .and_then(|id| ProjectsStore::new(&app.board.projects_store).project_name(id))
         .unwrap_or_else(|| "(no project)".to_string());
 
     let task_title = app

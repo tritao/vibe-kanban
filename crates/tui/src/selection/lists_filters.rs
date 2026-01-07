@@ -2,7 +2,10 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use crate::state::{AppState, ExecRow, TaskRow, TaskStatus};
+use crate::{
+    state::{AppState, ExecRow, TaskRow, TaskStatus},
+    store::{exec::ExecStore, projects::ProjectsStore, tasks::TasksStore},
+};
 
 fn contains_ci(haystack: &str, needle: &str) -> bool {
     let needle = needle.trim();
@@ -28,8 +31,7 @@ pub(crate) fn filtered_projects(app: &AppState) -> Vec<ProjectRow> {
 }
 
 pub(crate) fn projects_list(store: &serde_json::Value) -> Vec<ProjectRow> {
-    let projects_obj = store.get("projects").and_then(|v| v.as_object());
-    let Some(projects_obj) = projects_obj else {
+    let Some(projects_obj) = ProjectsStore::new(store).projects_object() else {
         return vec![];
     };
 
@@ -52,49 +54,7 @@ pub(crate) fn projects_list(store: &serde_json::Value) -> Vec<ProjectRow> {
 }
 
 pub(crate) fn exec_list(store: &serde_json::Value) -> Vec<ExecRow> {
-    let exec_obj = store.get("execution_processes").and_then(|v| v.as_object());
-    let Some(exec_obj) = exec_obj else {
-        return vec![];
-    };
-
-    let mut rows = Vec::with_capacity(exec_obj.len());
-    for (id_str, exec) in exec_obj.iter() {
-        let Ok(id) = Uuid::parse_str(id_str) else {
-            continue;
-        };
-        let session_id = exec
-            .get("session_id")
-            .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok());
-        let run_reason = exec
-            .get("run_reason")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let status = exec
-            .get("status")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let created_at = exec
-            .get("created_at")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let dropped = exec
-            .get("dropped")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        rows.push(ExecRow {
-            id,
-            session_id,
-            run_reason,
-            status,
-            created_at,
-            dropped,
-        });
-    }
-
-    rows.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-    rows
+    ExecStore::new(store).execs()
 }
 
 pub(crate) fn active_exec_id(execs: &[ExecRow]) -> Option<Uuid> {
@@ -244,65 +204,7 @@ pub(crate) fn board_tasks_by_status(app: &AppState) -> BoardTasksByStatus {
 }
 
 fn tasks_list(store: &serde_json::Value) -> Vec<TaskRow> {
-    let tasks_obj = store.get("tasks").and_then(|v| v.as_object());
-    let Some(tasks_obj) = tasks_obj else {
-        return vec![];
-    };
-
-    let mut rows = Vec::with_capacity(tasks_obj.len());
-    for (id_str, task_val) in tasks_obj.iter() {
-        let Ok(id) = Uuid::parse_str(id_str) else {
-            continue;
-        };
-        let status_str = task_val.get("status").and_then(|v| v.as_str());
-        let Some(status) = status_str.and_then(TaskStatus::from_str) else {
-            continue;
-        };
-        let title = task_val
-            .get("title")
-            .and_then(|v| v.as_str())
-            .unwrap_or("(untitled)")
-            .to_string();
-        let updated_at = task_val
-            .get("updated_at")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let parent_task_id = task_val
-            .get("parent_task_id")
-            .and_then(|v| v.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok());
-
-        let has_in_progress_attempt = task_val
-            .get("has_in_progress_attempt")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let last_attempt_failed = task_val
-            .get("last_attempt_failed")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        let executor = task_val
-            .get("executor")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-        let description = task_val
-            .get("description")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        rows.push(TaskRow {
-            id,
-            title,
-            status,
-            parent_task_id,
-            updated_at,
-            has_in_progress_attempt,
-            last_attempt_failed,
-            executor,
-            description,
-        });
-    }
-
-    rows
+    TasksStore::new(store).tasks()
 }
 
 pub(crate) fn tasks_filtered_base(app: &AppState) -> Vec<TaskRow> {
@@ -319,53 +221,5 @@ pub(crate) fn tasks_all(store: &serde_json::Value) -> Vec<TaskRow> {
 }
 
 pub(crate) fn find_task(store: &serde_json::Value, task_id: Uuid) -> Option<TaskRow> {
-    let task_val = store
-        .get("tasks")
-        .and_then(|v| v.as_object())?
-        .get(&task_id.to_string())?;
-
-    let status_str = task_val.get("status").and_then(|v| v.as_str())?;
-    let status = TaskStatus::from_str(status_str)?;
-    let title = task_val
-        .get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or("(untitled)")
-        .to_string();
-
-    let updated_at = task_val
-        .get("updated_at")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let parent_task_id = task_val
-        .get("parent_task_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| Uuid::parse_str(s).ok());
-    let has_in_progress_attempt = task_val
-        .get("has_in_progress_attempt")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let last_attempt_failed = task_val
-        .get("last_attempt_failed")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let executor = task_val
-        .get("executor")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-    let description = task_val
-        .get("description")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    Some(TaskRow {
-        id: task_id,
-        title,
-        status,
-        parent_task_id,
-        updated_at,
-        has_in_progress_attempt,
-        last_attempt_failed,
-        executor,
-        description,
-    })
+    TasksStore::new(store).task(task_id)
 }

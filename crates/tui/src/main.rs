@@ -19,6 +19,7 @@ mod slash;
 #[cfg(test)]
 mod slash_tests;
 mod state;
+mod store;
 mod text;
 mod ui;
 mod util;
