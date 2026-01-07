@@ -55,15 +55,11 @@ impl ExecLog {
         layout.exec_logs.height.saturating_sub(2) as usize
     }
 
-    fn clamp_to_max(offset: usize, len: usize, visible: usize) -> usize {
-        let max_off = len.saturating_sub(visible.max(1));
-        offset.min(max_off)
-    }
-
     fn normalize_scroll(app: &mut AppState) {
         let len = app.exec.log_lines.len();
         let visible = Self::exec_visible_lines();
-        app.exec.log_scroll_offset = Self::clamp_to_max(app.exec.log_scroll_offset, len, visible);
+        app.exec.log_scroll_offset =
+            crate::ui::scroll::clamp_offset(app.exec.log_scroll_offset, len, visible);
         if app.exec.log_scroll_offset == 0 {
             app.exec.log_autoscroll = true;
         }
@@ -95,13 +91,13 @@ impl ExecLog {
         }
 
         let visible = visible.min(len);
-        let mut offset = if app.exec.log_autoscroll {
+        let offset = if app.exec.log_autoscroll {
             0
         } else {
             app.exec.log_scroll_offset
         };
-        offset = offset.min(len.saturating_sub(visible));
-        len.saturating_sub(visible + offset)
+        let (start, _) = crate::ui::scroll::visible_window_from_end(offset, len, visible);
+        start
     }
 
     fn hit_line_index(app: &AppState, area: Rect, row: u16) -> Option<usize> {
@@ -181,14 +177,12 @@ impl UiComponent for ExecLog {
         let max_render = area.height.saturating_sub(2) as usize;
         let visible = max_render.min(len);
 
-        let mut offset = if app.exec.log_autoscroll {
+        let offset = if app.exec.log_autoscroll {
             0
         } else {
             app.exec.log_scroll_offset
         };
-        offset = offset.min(len.saturating_sub(visible));
-        let start = len.saturating_sub(visible + offset);
-        let end = len.saturating_sub(offset);
+        let (start, end) = crate::ui::scroll::visible_window_from_end(offset, len, visible);
 
         let mut text: Vec<Line<'static>> = app
             .exec

@@ -19,11 +19,6 @@ pub(crate) enum DiffPreviewEvent {
 
 pub(crate) struct DiffPreview;
 
-fn clamp_to_max(offset: usize, len: usize, visible: usize) -> usize {
-    let max_off = len.saturating_sub(visible.max(1));
-    offset.min(max_off)
-}
-
 impl DiffPreview {
     pub(crate) fn render(f: &mut Frame, app: &AppState, area: Rect) {
         let border_style = crate::ui::widgets::focused_border(
@@ -53,9 +48,12 @@ impl DiffPreview {
             }),
         };
 
-        let start = app.diff.diff_scroll_offset.min(lines.len());
         let height = area.height.saturating_sub(2) as usize;
-        let end = (start + height).min(lines.len());
+        let (start, end) = crate::ui::scroll::visible_window_from_top(
+            app.diff.diff_scroll_offset,
+            lines.len(),
+            height,
+        );
         let visible = lines.get(start..end).unwrap_or(&[]);
 
         crate::ui::viewport::render_cleared_padded_paragraph(
@@ -84,7 +82,8 @@ impl DiffPreview {
             crate::state::DiffListMode::Files => app.diff.diff_preview_lines.len(),
             crate::state::DiffListMode::Commits => app.diff.commit_preview_lines.len(),
         };
-        app.diff.diff_scroll_offset = clamp_to_max(app.diff.diff_scroll_offset, len, visible);
+        app.diff.diff_scroll_offset =
+            crate::ui::scroll::clamp_offset(app.diff.diff_scroll_offset, len, visible);
     }
 
     fn scroll_up(app: &mut AppState, lines: usize) -> bool {
