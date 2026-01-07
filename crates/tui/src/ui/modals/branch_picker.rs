@@ -11,6 +11,44 @@ use crate::{
     ui::layout::centered_rect,
 };
 
+pub(crate) fn open_branch_picker(
+    app: &mut AppState,
+    mode: BranchPickerMode,
+    repo_id: uuid::Uuid,
+    repo_name: String,
+) {
+    app.ui.branch_picker = Some(BranchPickerState {
+        mode,
+        repo_id,
+        repo_name: repo_name.clone(),
+        filter: Default::default(),
+        selected_index: 0,
+        branches: vec![],
+        busy: true,
+        error: None,
+    });
+
+    let base_url = app.backend_url.clone();
+    let net_tx = app.net_tx.clone();
+    tokio::spawn(async move {
+        match crate::net::ops::repo_branches_http(&base_url, repo_id).await {
+            Ok(branches) => {
+                let _ = net_tx
+                    .send(crate::events::NetEvent::RepoBranchesLoaded { repo_id, branches })
+                    .await;
+            }
+            Err(e) => {
+                let _ = net_tx
+                    .send(crate::events::NetEvent::RepoBranchesFailed {
+                        repo_id,
+                        message: format!("failed to load branches: {e}"),
+                    })
+                    .await;
+            }
+        }
+    });
+}
+
 pub(crate) fn render_branch_picker_modal(f: &mut Frame, state: &BranchPickerState) {
     let area = centered_rect(80, 70, f.area());
     f.render_widget(Clear, area);

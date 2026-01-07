@@ -153,6 +153,15 @@ pub(crate) fn open_search(app: &mut AppState) {
     input::open_search(app);
 }
 
+pub(crate) fn open_branch_picker(
+    app: &mut AppState,
+    mode: crate::state::BranchPickerMode,
+    repo_id: uuid::Uuid,
+    repo_name: String,
+) {
+    branch_picker::open_branch_picker(app, mode, repo_id, repo_name);
+}
+
 pub(crate) fn modal_blocks_mouse(app: &AppState) -> bool {
     KEY_ORDER.iter().any(|m| m.blocks_mouse(app))
 }
