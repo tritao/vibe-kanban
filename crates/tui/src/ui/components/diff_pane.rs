@@ -8,7 +8,6 @@ use super::{
     diff_repo_bar::{DiffRepoAction, DiffRepoBar, DiffRepoBarEvent},
 };
 use crate::{
-    diff::diff_rows_with_all_filtered,
     prefs::save_prefs,
     state::{AppState, FocusPane},
 };
@@ -165,10 +164,8 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
             app.diff.diff_show_untracked = !app.diff.diff_show_untracked;
             app.diff.invalidate_diff_preview_cache();
 
-            let rows = crate::diff::diff_rows_with_all_filtered(
-                &app.diff.diff_store,
-                app.diff.diff_show_untracked,
-            );
+            let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+                .rows_with_all_filtered(app.diff.diff_show_untracked);
             app.diff.clamp_selected_diff_index(rows.len());
             sync_selected_repo_from_diff_selection(app);
             crate::diff_preview::schedule_diff_preview_refresh(
@@ -271,7 +268,8 @@ fn selected_repo_status_from_diff(app: &AppState) -> Option<usize> {
     if app.diff.repo_statuses.is_empty() {
         return None;
     }
-    let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
+    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+        .rows_with_all_filtered(app.diff.diff_show_untracked);
     let selected = rows.get(app.diff.selected_diff_index)?;
     let path = selected
         .new_path

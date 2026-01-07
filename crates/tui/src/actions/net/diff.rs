@@ -3,7 +3,7 @@ use std::time::Instant;
 use crate::{
     actions::selection as sel,
     commands::request_diff_reconnect,
-    diff::{DIFF_ALL_KEY, diff_rows_with_all_filtered},
+    diff::DIFF_ALL_KEY,
     diff_preview::{
         diff_patch_touches_key, schedule_diff_preview_refresh,
         schedule_diff_preview_refresh_debounced,
@@ -38,7 +38,8 @@ pub(super) fn diff_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
         return true;
     }
 
-    let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
+    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+        .rows_with_all_filtered(app.diff.diff_show_untracked);
     if rows.is_empty() {
         return true;
     }

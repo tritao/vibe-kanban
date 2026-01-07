@@ -1,9 +1,10 @@
 use ratatui::layout::Rect;
 
-use crate::{diff::diff_rows_with_all_filtered, state::AppState, ui::list_nav};
+use crate::{state::AppState, ui::list_nav};
 
 pub(super) fn diff_file_index(app: &AppState, area: Rect, row: u16) -> Option<usize> {
-    let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
+    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+        .rows_with_all_filtered(app.diff.diff_show_untracked);
     list_nav::index_at_row(area, row, app.diff.selected_diff_index, rows.len(), 0)
 }
 

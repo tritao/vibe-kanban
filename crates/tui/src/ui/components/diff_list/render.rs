@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use crate::{
-    diff::{DIFF_ALL_KEY, diff_rows_with_all_filtered},
+    diff::DIFF_ALL_KEY,
     events::StreamStatus,
     state::{AppState, DiffFocus, FocusPane},
     text::display_width,
@@ -23,7 +23,8 @@ fn files_border_style(app: &AppState) -> Style {
 }
 
 pub(super) fn render_files_list(f: &mut Frame, app: &AppState, area: Rect) {
-    let rows = diff_rows_with_all_filtered(&app.diff.diff_store, app.diff.diff_show_untracked);
+    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+        .rows_with_all_filtered(app.diff.diff_show_untracked);
     let file_count = rows.len().saturating_sub(1);
     let border_style = files_border_style(app);
 

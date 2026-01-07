@@ -37,10 +37,8 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
             crate::util::lines_plain_text(app.exec.log_lines.get(start..end).unwrap_or(&[]))
         }),
         CopyTarget::DiffFiles => {
-            let rows = crate::diff::diff_rows_with_all_filtered(
-                &app.diff.diff_store,
-                app.diff.diff_show_untracked,
-            );
+            let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+                .rows_with_all_filtered(app.diff.diff_show_untracked);
             rows.get(app.diff.selected_diff_index)
                 .map(|d| d.key.clone())
                 .unwrap_or_default()
