@@ -4,92 +4,18 @@ use ratatui::{
 };
 
 use super::{
-    buffer::{LogAssemblerState, LogKind, ProgressKind},
-    markdown::{MdSoftBreakMode, render_markdown},
+    super::{
+        buffer::{LogAssemblerState, ProgressKind},
+        markdown::{MdSoftBreakMode, render_markdown},
+    },
+    push_line,
 };
 use crate::{
     diff::highlight_unified_diff,
     logs::model_params::is_model_params_system_message,
-    state::{DiffTheme, LogMode, LogRenderMode},
-    text::{line_display_width, sanitize_tui_text, truncate_to_width, wrap_line_wordwise},
+    state::{DiffTheme, LogRenderMode},
+    text::{sanitize_tui_text, truncate_to_width},
 };
-
-pub(crate) fn default_collapsed_for_log_entry(entry: &serde_json::Value) -> bool {
-    const THRESHOLD_LINES: usize = 24;
-
-    let Some(ty) = entry.get("type").and_then(|v| v.as_str()) else {
-        return false;
-    };
-    if ty != "NORMALIZED_ENTRY" {
-        return false;
-    }
-
-    let Some(content) = entry.get("content") else {
-        return false;
-    };
-    let Some(entry_type) = content.get("entry_type") else {
-        return false;
-    };
-    let Some(entry_type_tag) = entry_type.get("type").and_then(|v| v.as_str()) else {
-        return false;
-    };
-    if entry_type_tag != "tool_use" {
-        return false;
-    }
-
-    let Some(action_type) = entry_type.get("action_type") else {
-        return false;
-    };
-    let Some(action) = action_type.get("action").and_then(|v| v.as_str()) else {
-        return false;
-    };
-
-    match action {
-        "command_run" => {
-            let output = action_type
-                .get("result")
-                .and_then(|v| v.get("output"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            output.lines().count() > THRESHOLD_LINES
-        }
-        "file_edit" => {
-            let mut lines = 0usize;
-            let changes = action_type.get("changes").and_then(|v| v.as_array());
-            for c in changes.into_iter().flatten() {
-                if c.get("action").and_then(|v| v.as_str()) == Some("edit") {
-                    let diff = c.get("unified_diff").and_then(|v| v.as_str()).unwrap_or("");
-                    lines = lines.saturating_add(diff.lines().count());
-                    if lines > THRESHOLD_LINES {
-                        return true;
-                    }
-                }
-            }
-            false
-        }
-        "tool" => {
-            let result_type = action_type
-                .get("result")
-                .and_then(|v| v.get("type"))
-                .and_then(|v| v.as_str());
-            let value = action_type.get("result").and_then(|v| v.get("value"));
-            match (result_type, value) {
-                (Some("markdown"), Some(v)) => v
-                    .as_str()
-                    .unwrap_or("")
-                    .lines()
-                    .count()
-                    .gt(&THRESHOLD_LINES),
-                (Some("json"), Some(v)) => serde_json::to_string_pretty(v)
-                    .ok()
-                    .map(|s| s.lines().count() > THRESHOLD_LINES)
-                    .unwrap_or(false),
-                _ => false,
-            }
-        }
-        _ => false,
-    }
-}
 
 fn tool_status_str(entry_type: &serde_json::Value) -> Option<&str> {
     let status = entry_type.get("status")?;
@@ -99,217 +25,7 @@ fn tool_status_str(entry_type: &serde_json::Value) -> Option<&str> {
     status.get("status").and_then(|v| v.as_str())
 }
 
-fn push_line(
-    lines: &mut Vec<Line<'static>>,
-    map: &mut Vec<usize>,
-    entry_idx: usize,
-    line: Line<'static>,
-    width: usize,
-) {
-    for wrapped in wrap_line_wordwise(&line, width) {
-        lines.push(wrapped);
-        map.push(entry_idx);
-    }
-}
-
-pub(crate) fn append_log_entry(
-    lines: &mut Vec<Line<'static>>,
-    map: &mut Vec<usize>,
-    state: &mut LogAssemblerState,
-    entry_idx: usize,
-    entry: &serde_json::Value,
-    width: usize,
-    log_mode: LogMode,
-    render_mode: LogRenderMode,
-    diff_theme: DiffTheme,
-    collapsed: &[bool],
-) {
-    fn line_is_blank(line: &Line<'static>) -> bool {
-        line.spans
-            .iter()
-            .all(|s| s.content.as_ref().trim().is_empty())
-    }
-
-    let Some(ty) = entry.get("type").and_then(|v| v.as_str()) else {
-        return;
-    };
-
-    match ty {
-        "STDOUT" => {
-            let Some(text) = entry.get("content").and_then(|v| v.as_str()) else {
-                return;
-            };
-            let target_idx = state.attach_to_entry.unwrap_or(entry_idx);
-            if collapsed.get(target_idx).copied().unwrap_or(false) {
-                return;
-            }
-            append_stream_text(
-                lines,
-                map,
-                state,
-                LogKind::Stdout,
-                text,
-                Style::default(),
-                true,
-                target_idx,
-                "  ",
-                width,
-            );
-        }
-        "STDERR" => {
-            let Some(text) = entry.get("content").and_then(|v| v.as_str()) else {
-                return;
-            };
-            let target_idx = state.attach_to_entry.unwrap_or(entry_idx);
-            if collapsed.get(target_idx).copied().unwrap_or(false) {
-                return;
-            }
-            append_stream_text(
-                lines,
-                map,
-                state,
-                LogKind::Stderr,
-                text,
-                Style::default().fg(crate::ui::palette::log_accent_error()),
-                true,
-                target_idx,
-                "  ",
-                width,
-            );
-        }
-        "NORMALIZED_ENTRY" => {
-            let Some(content) = entry.get("content") else {
-                return;
-            };
-
-            // Don't join stdout/stderr across normalized entries.
-            state.open = false;
-            state.open_kind = None;
-            state.attach_to_entry = None;
-
-            if log_mode == LogMode::Raw {
-                // Raw mode intentionally focuses on stdout/stderr.
-                return;
-            }
-
-            let entry_type_tag = content
-                .get("entry_type")
-                .and_then(|v| v.get("type"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            let is_progress = matches!(entry_type_tag, "thinking" | "loading");
-
-            // Visual separation between "cards"/blocks, but don't spam blank lines for
-            // ephemeral progress entries (thinking/loading).
-            if is_progress {
-                // If we're starting a new progress sequence (i.e. previous block wasn't a progress
-                // update), add the same separation we use for other blocks.
-                if state.progress_kind.is_none() {
-                    if let Some(last) = lines.last() {
-                        if !line_is_blank(last) {
-                            let sep_owner = map.last().copied().unwrap_or(entry_idx);
-                            push_line(lines, map, sep_owner, Line::from(""), width);
-                        }
-                    }
-                }
-            } else {
-                // When a "real" entry arrives, stop coalescing progress.
-                state.progress_kind = None;
-                state.progress_count = 0;
-                state.progress_line_pos = None;
-
-                if let Some(last) = lines.last() {
-                    if !line_is_blank(last) {
-                        let sep_owner = map.last().copied().unwrap_or(entry_idx);
-                        push_line(lines, map, sep_owner, Line::from(""), width);
-                    }
-                }
-            }
-
-            append_normalized_entry(
-                lines,
-                map,
-                state,
-                entry_idx,
-                content,
-                width,
-                render_mode,
-                diff_theme,
-                collapsed.get(entry_idx).copied().unwrap_or(false),
-            );
-        }
-        _ => {}
-    }
-}
-
-fn append_stream_text(
-    lines: &mut Vec<Line<'static>>,
-    map: &mut Vec<usize>,
-    state: &mut LogAssemblerState,
-    kind: LogKind,
-    text: &str,
-    style: Style,
-    allow_join: bool,
-    entry_idx: usize,
-    prefix: &str,
-    width: usize,
-) {
-    if text.is_empty() {
-        return;
-    }
-
-    let ends_with_newline = text.ends_with('\n');
-    let mut is_first = true;
-    for raw in text.split_terminator('\n') {
-        let seg = raw.strip_suffix('\r').unwrap_or(raw);
-        let seg = sanitize_tui_text(seg);
-
-        if allow_join
-            && is_first
-            && state.open
-            && state.open_kind == Some(kind)
-            && map.last().copied() == Some(entry_idx)
-            && lines
-                .last()
-                .is_some_and(|l| l.spans.len() == 1 && l.spans[0].style == style)
-        {
-            if let Some(last) = lines.last_mut() {
-                if let Some(span) = last.spans.first_mut() {
-                    span.content.to_mut().push_str(seg.as_ref());
-                }
-            }
-            // If joining caused the line to overflow, re-wrap it.
-            if lines
-                .last()
-                .is_some_and(|l| line_display_width(l) > width.max(1))
-            {
-                let line = lines.pop().unwrap();
-                let _ = map.pop();
-                push_line(lines, map, entry_idx, line, width);
-            }
-        } else {
-            push_line(
-                lines,
-                map,
-                entry_idx,
-                Line::from(Span::styled(format!("{prefix}{}", seg), style)),
-                width,
-            );
-        }
-
-        is_first = false;
-    }
-
-    if allow_join && !ends_with_newline {
-        state.open = true;
-        state.open_kind = Some(kind);
-    } else {
-        state.open = false;
-        state.open_kind = None;
-    }
-}
-
-fn append_normalized_entry(
+pub(super) fn append_normalized_entry(
     lines: &mut Vec<Line<'static>>,
     map: &mut Vec<usize>,
     state: &mut LogAssemblerState,
@@ -1182,7 +898,7 @@ fn append_normalized_entry(
     }
 }
 
-fn normalized_entry_text(entry: &serde_json::Value) -> Option<String> {
+pub(super) fn normalized_entry_text(entry: &serde_json::Value) -> Option<String> {
     let content = entry
         .get("content")
         .and_then(|v| v.as_str())
