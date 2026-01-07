@@ -11,6 +11,7 @@ pub(crate) mod palette;
 pub(crate) mod scroll;
 pub(crate) mod scroll_model;
 pub(crate) mod viewport;
+pub(crate) mod vm;
 pub(crate) mod widgets;
 
 pub(crate) use chrome::{render_bottom_bar, render_top_bar};
