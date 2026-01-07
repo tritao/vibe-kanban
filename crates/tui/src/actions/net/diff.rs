@@ -25,7 +25,7 @@ pub(super) fn diff_reset(app: &mut AppState) -> bool {
 
 pub(super) fn diff_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
     if let Err(e) = json_patch::patch(&mut app.diff.diff_store, &patch) {
-        app.ui.last_error = Some(format!("failed to apply diff patch: {e}"));
+        app.ui.set_error(format!("failed to apply diff patch: {e}"));
         app.diff.diff_status = StreamStatus::Error;
         return true;
     }

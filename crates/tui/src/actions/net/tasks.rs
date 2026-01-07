@@ -18,7 +18,8 @@ pub(super) fn tasks_reset(app: &mut AppState) -> bool {
 
 pub(super) fn tasks_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
     if let Err(e) = json_patch::patch(&mut app.board.tasks_store, &patch) {
-        app.ui.last_error = Some(format!("failed to apply tasks patch: {e}"));
+        app.ui
+            .set_error(format!("failed to apply tasks patch: {e}"));
         app.board.tasks_status = StreamStatus::Error;
         return true;
     }

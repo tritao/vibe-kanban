@@ -320,7 +320,7 @@ pub(crate) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
 impl BoardPane {
     fn open_delete_task_confirm(app: &mut AppState) {
         let Some(task_id) = app.board.selected_task_id else {
-            app.ui.last_error = Some("No task selected.".to_string());
+            app.ui.set_error("No task selected.");
             return;
         };
         let title = find_task(&app.board.tasks_store, task_id)

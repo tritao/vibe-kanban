@@ -47,14 +47,11 @@ pub(super) fn repo_branches_failed(
 }
 
 pub(super) fn notice(app: &mut AppState, msg: String) -> bool {
-    app.ui.last_notice = Some(msg);
+    app.ui.set_notice(msg);
     true
 }
 
 pub(super) fn error(app: &mut AppState, msg: String) -> bool {
-    app.ui.last_error = Some(msg);
-    if let Some(state) = app.ui.project_setup.as_mut() {
-        state.busy = false;
-    }
+    app.ui.set_error(msg);
     true
 }

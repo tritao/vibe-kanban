@@ -182,7 +182,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                     );
                 }
                 Err(e) => {
-                    app.ui.last_notice = Some(format!("PR URL: {}", pr.url));
+                    app.ui.set_notice(format!("PR URL: {}", pr.url));
                     set_toast(
                         app,
                         format!("PR: failed to open ({e})"),

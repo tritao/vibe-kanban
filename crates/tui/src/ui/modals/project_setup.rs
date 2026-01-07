@@ -76,9 +76,8 @@ pub(crate) fn handle_project_setup_key(app: &mut AppState, key: KeyEvent) -> boo
                 return false;
             }
             let Some(repo_path) = state.repo_path.clone() else {
-                app.ui.last_error = Some(
-                    "current directory is not a git repository (cd into a repo to create a project)"
-                        .to_string(),
+                app.ui.set_error(
+                    "current directory is not a git repository (cd into a repo to create a project)",
                 );
                 return true;
             };
@@ -127,13 +126,12 @@ pub(crate) fn handle_project_setup_key(app: &mut AppState, key: KeyEvent) -> boo
                 return false;
             }
             let Some(project_id) = app.board.selected_project_id else {
-                app.ui.last_error = Some("no project selected".to_string());
+                app.ui.set_error("no project selected");
                 return true;
             };
             let Some(repo_path) = state.repo_path.clone() else {
-                app.ui.last_error = Some(
-                    "current directory is not a git repository (cd into a repo to add it)"
-                        .to_string(),
+                app.ui.set_error(
+                    "current directory is not a git repository (cd into a repo to add it)",
                 );
                 return true;
             };

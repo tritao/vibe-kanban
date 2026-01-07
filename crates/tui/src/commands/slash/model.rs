@@ -54,7 +54,7 @@ pub(super) fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Res
         let (model, effort) = current_model_and_effort(&app.ui.executor_profiles, &selection);
         let model = model.unwrap_or_else(|| "unset".to_string());
         let effort = effort.unwrap_or_else(|| "unset".to_string());
-        app.ui.last_notice = Some(format!(
+        app.ui.set_notice(format!(
             "Model: {model}\nReasoning effort: {effort}\n\nSet: /model <MODEL> [--effort E]"
         ));
         return Ok(());
@@ -97,7 +97,7 @@ pub(super) fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Res
         (None, Some(e)) => format!("(effort {e})"),
         (None, None) => "unknown".to_string(),
     };
-    app.ui.last_notice = Some(format!(
+    app.ui.set_notice(format!(
         "Updating model settings for {}{}: {desc}",
         selection.executor,
         selection

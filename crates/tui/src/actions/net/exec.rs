@@ -19,7 +19,7 @@ pub(super) fn exec_reset(app: &mut AppState) -> bool {
 
 pub(super) fn exec_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
     if let Err(e) = json_patch::patch(&mut app.exec.exec_store, &patch) {
-        app.ui.last_error = Some(format!("failed to apply exec patch: {e}"));
+        app.ui.set_error(format!("failed to apply exec patch: {e}"));
         app.exec.exec_status = StreamStatus::Error;
         return true;
     }

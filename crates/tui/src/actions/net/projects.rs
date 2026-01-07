@@ -94,7 +94,7 @@ pub(super) fn projects_patch(app: &mut AppState, patch: json_patch::Patch) -> bo
         // insert patch but still receive a replace for that ID.
         let patched = patch_with_projects_upserts(&patch);
         if let Err(e2) = json_patch::patch(&mut app.board.projects_store, &patched) {
-            app.ui.last_error = Some(format!(
+            app.ui.set_error(format!(
                 "failed to apply projects patch: {e} (fallback also failed: {e2})"
             ));
             app.board.projects_status = StreamStatus::Error;

@@ -176,8 +176,8 @@ pub(crate) fn handle_branch_picker_key(app: &mut AppState, key: KeyEvent) -> boo
             let attempt_id = match app.board.selected_attempt_id {
                 Some(id) => id,
                 None => {
-                    app.ui.last_error =
-                        Some("No attempt selected (select a task/attempt first).".to_string());
+                    app.ui
+                        .set_error("No attempt selected (select a task/attempt first).");
                     return true;
                 }
             };
@@ -196,7 +196,7 @@ pub(crate) fn handle_branch_picker_key(app: &mut AppState, key: KeyEvent) -> boo
                 .collect();
 
             if visible.is_empty() {
-                app.ui.last_error = Some("No matching branches.".to_string());
+                app.ui.set_error("No matching branches.");
                 return true;
             }
             let idx = state.selected_index.min(visible.len().saturating_sub(1));

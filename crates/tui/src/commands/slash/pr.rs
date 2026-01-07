@@ -70,7 +70,7 @@ fn handle_pr_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
             Ok(())
         }
         Err(e) => {
-            app.ui.last_notice = Some(format!("PR URL: {}", pr.url));
+            app.ui.set_notice(format!("PR URL: {}", pr.url));
             Err(format!("failed to open PR URL: {e}"))
         }
     }

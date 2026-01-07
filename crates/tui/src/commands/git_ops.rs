@@ -8,7 +8,7 @@ use crate::{
     events::{GitOpKind, NetEvent},
     net::ops::branch_status_http,
     selection::exec_list,
-    state::{AppState, GitOpState, JobKey, PendingExecHook, ToastState},
+    state::{AppState, GitOpState, JobKey, PendingExecHook},
 };
 
 pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
@@ -151,11 +151,8 @@ pub(crate) fn set_toast(
     color: Color,
     expires_at: Option<Instant>,
 ) {
-    app.ui.toast = Some(ToastState {
-        message,
-        color,
-        expires_at,
-    });
+    let expires_in = expires_at.and_then(|t| t.checked_duration_since(Instant::now()));
+    app.ui.set_toast(message, color, expires_in);
 }
 
 pub(crate) fn begin_git_op(
@@ -179,7 +176,8 @@ pub(crate) fn begin_git_op(
             .is_some_and(|s| s.finished_at.is_none()),
     };
     if already_running {
-        app.ui.last_notice = Some(format!("Git: {} already running.", kind.label()));
+        app.ui
+            .set_notice(format!("Git: {} already running.", kind.label()));
         return false;
     }
 

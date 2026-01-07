@@ -1,6 +1,9 @@
-use std::{collections::HashMap, time::Instant};
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
-use ratatui::text::Line;
+use ratatui::{style::Color, text::Line};
 use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
@@ -180,6 +183,45 @@ impl UiState {
             FocusPane::Execution => FocusPane::Diff,
             FocusPane::Diff => FocusPane::Board,
         };
+    }
+
+    pub(crate) fn set_notice(&mut self, msg: impl Into<String>) {
+        self.last_notice = Some(msg.into());
+    }
+
+    pub(crate) fn set_error(&mut self, msg: impl Into<String>) {
+        self.last_error = Some(msg.into());
+        if let Some(state) = self.project_setup.as_mut() {
+            state.busy = false;
+        }
+    }
+
+    pub(crate) fn clear_messages(&mut self) {
+        self.last_error = None;
+        self.last_notice = None;
+    }
+
+    pub(crate) fn clear_error_with_prefix(&mut self, prefix: &str) -> bool {
+        if let Some(err) = self.last_error.as_deref()
+            && err.starts_with(prefix)
+        {
+            self.last_error = None;
+            return true;
+        }
+        false
+    }
+
+    pub(crate) fn set_toast(
+        &mut self,
+        message: impl Into<String>,
+        color: Color,
+        expires_in: Option<Duration>,
+    ) {
+        self.toast = Some(ToastState {
+            message: message.into(),
+            color,
+            expires_at: expires_in.map(|d| Instant::now() + d),
+        });
     }
 }
 

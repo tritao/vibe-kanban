@@ -152,8 +152,8 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     .get(&repo.repo_id)
                     .is_some_and(|s| s.available && s.enabled)
                 {
-                    app.ui.last_error =
-                        Some("Commits view unavailable while stack mode is enabled.".to_string());
+                    app.ui
+                        .set_error("Commits view unavailable while stack mode is enabled.");
                     return true;
                 }
             }
@@ -211,7 +211,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     app,
                     DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
                 );
-                app.ui.last_error = Some("Stack: load repo status first (press S)".to_string());
+                app.ui.set_error("Stack: load repo status first (press S)");
                 return true;
             }
             let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
@@ -229,7 +229,8 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     app,
                     DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
                 );
-                app.ui.last_error = Some("Branches: load repo status first (press S)".to_string());
+                app.ui
+                    .set_error("Branches: load repo status first (press S)");
                 return true;
             }
             let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
@@ -251,8 +252,8 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     app,
                     DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
                 );
-                app.ui.last_error =
-                    Some("Target branch: load repo status first (press S)".to_string());
+                app.ui
+                    .set_error("Target branch: load repo status first (press S)");
                 return true;
             }
             let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {

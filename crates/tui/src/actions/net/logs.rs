@@ -7,11 +7,7 @@ use crate::{
 pub(super) fn log_stream_status(app: &mut AppState, status: StreamStatus) -> bool {
     app.exec.log_status = status;
     if matches!(status, StreamStatus::Connected | StreamStatus::Completed) {
-        if let Some(err) = app.ui.last_error.as_deref()
-            && err.starts_with("log stream connect:")
-        {
-            app.ui.last_error = None;
-        }
+        app.ui.clear_error_with_prefix("log stream connect:");
     }
     true
 }

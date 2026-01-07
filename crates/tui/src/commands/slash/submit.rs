@@ -70,7 +70,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     let is_running = active.and_then(|e| e.status.as_deref()) == Some("running");
 
     if session_id.is_none() && attempt_id.is_none() && task_id.is_none() {
-        app.ui.last_error = Some(
+        app.ui.set_error(
             "No task/attempt selected. Create/select a task first (press `n` to create a task)."
                 .to_string(),
         );
@@ -138,20 +138,20 @@ fn submit_slash_command(app: &mut AppState, raw: &str) -> bool {
     let tokens = match crate::cli_parse::tokenize_command_line(cmdline) {
         Ok(t) => t,
         Err(e) => {
-            app.ui.last_error = Some(format!("invalid command: {e}"));
+            app.ui.set_error(format!("invalid command: {e}"));
             return false;
         }
     };
 
     if tokens.is_empty() {
-        app.ui.last_error = Some("invalid command: empty".to_string());
+        app.ui.set_error("invalid command: empty");
         return false;
     }
 
     match super::parse_slash_command(app, &tokens) {
         Ok(quit) => return quit,
         Err(e) => {
-            app.ui.last_error = Some(e);
+            app.ui.set_error(e);
         }
     }
     false

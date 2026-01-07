@@ -22,7 +22,8 @@ pub(super) fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> 
             );
         }
         let list = app.ui.available_executors.join(", ");
-        app.ui.last_notice = Some(format!("Executor: {current}\nAvailable: {list}"));
+        app.ui
+            .set_notice(format!("Executor: {current}\nAvailable: {list}"));
         return Ok(());
     }
 
@@ -52,7 +53,7 @@ pub(super) fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> 
         variant: variant.clone().filter(|s| !s.trim().is_empty()),
     };
     app.ui.selected_executor_profile = Some(selection.clone());
-    app.ui.last_notice = Some(format!(
+    app.ui.set_notice(format!(
         "Setting executor profile: {}{}",
         selection.executor,
         selection

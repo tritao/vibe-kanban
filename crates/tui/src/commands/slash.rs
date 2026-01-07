@@ -23,7 +23,7 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
     match cmd {
         "help" => {
             app.ui.show_help = true;
-            app.ui.last_notice = Some("Opened help. (Press Esc to close)".to_string());
+            app.ui.set_notice("Opened help. (Press Esc to close)");
             Ok(false)
         }
         "quit" => Ok(true),
@@ -107,14 +107,15 @@ fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
             let parsed = parse_stack_kv_flags(tokens, &["--repo"])?;
             let _ = resolve_repo_for_command(app, parsed.values.get("--repo").map(|s| s.as_str()))?;
             crate::commands::request_stack_status_refresh(app);
-            app.ui.last_notice = Some("Stack: refreshing…".to_string());
+            app.ui.set_notice("Stack: refreshing…");
             Ok(())
         }
         "enable" => {
             let (repo_id, repo_name) =
                 resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_enable(app, attempt_id, repo_id);
-            app.ui.last_notice = Some(format!("Stack: enabling for {repo_name}…"));
+            app.ui
+                .set_notice(format!("Stack: enabling for {repo_name}…"));
             Ok(())
         }
         "disable" => {
@@ -123,7 +124,7 @@ fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
                 resolve_repo_for_command(app, parsed.values.get("--repo").map(|s| s.as_str()))?;
             let force = parsed.bools.contains("--force");
             crate::commands::trigger_stack_disable(app, attempt_id, repo_id, force);
-            app.ui.last_notice = Some(format!(
+            app.ui.set_notice(format!(
                 "Stack: disabling for {repo_name}{}…",
                 if force { " (force)" } else { "" }
             ));
@@ -139,7 +140,7 @@ fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
                 resolve_repo_for_command(app, parsed.values.get("--repo").map(|s| s.as_str()))?;
             let name = parsed.values.get("--name").cloned();
             crate::commands::trigger_stack_new(app, attempt_id, repo_id, name, message);
-            app.ui.last_notice = Some(format!("Stack: new ({repo_name})…"));
+            app.ui.set_notice(format!("Stack: new ({repo_name})…"));
             Ok(())
         }
         "refresh" => {
@@ -164,35 +165,35 @@ fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
                 paths,
                 allow_dirty_index,
             );
-            app.ui.last_notice = Some(format!("Stack: refresh ({repo_name})…"));
+            app.ui.set_notice(format!("Stack: refresh ({repo_name})…"));
             Ok(())
         }
         "push" => {
             let (repo_id, repo_name) =
                 resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_push(app, attempt_id, repo_id);
-            app.ui.last_notice = Some(format!("Stack: push ({repo_name})…"));
+            app.ui.set_notice(format!("Stack: push ({repo_name})…"));
             Ok(())
         }
         "pop" => {
             let (repo_id, repo_name) =
                 resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_pop(app, attempt_id, repo_id);
-            app.ui.last_notice = Some(format!("Stack: pop ({repo_name})…"));
+            app.ui.set_notice(format!("Stack: pop ({repo_name})…"));
             Ok(())
         }
         "undo" => {
             let (repo_id, repo_name) =
                 resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_undo(app, attempt_id, repo_id);
-            app.ui.last_notice = Some(format!("Stack: undo ({repo_name})…"));
+            app.ui.set_notice(format!("Stack: undo ({repo_name})…"));
             Ok(())
         }
         "redo" => {
             let (repo_id, repo_name) =
                 resolve_repo_for_command(app, parse_stack_flag_value(tokens, "--repo").as_deref())?;
             crate::commands::trigger_stack_redo(app, attempt_id, repo_id);
-            app.ui.last_notice = Some(format!("Stack: redo ({repo_name})…"));
+            app.ui.set_notice(format!("Stack: redo ({repo_name})…"));
             Ok(())
         }
         other => Err(format!("unknown stack subcommand: {other}")),
@@ -292,12 +293,12 @@ fn handle_commits_command(app: &mut AppState) -> Result<(), String> {
 
     if app.diff.list_mode == crate::state::DiffListMode::Commits {
         crate::commands::request_commit_list_refresh(app);
-        app.ui.last_notice = Some("Commits: refreshing…".to_string());
+        app.ui.set_notice("Commits: refreshing…");
         return Ok(());
     }
 
     crate::commands::select_commits_mode(app);
-    app.ui.last_notice = Some("Commits: loaded.".to_string());
+    app.ui.set_notice("Commits: loaded.");
     Ok(())
 }
 
@@ -336,7 +337,7 @@ fn handle_delete_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
 fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), String> {
     if app.diff.repo_statuses.is_empty() {
         request_branch_status_refresh(app);
-        app.ui.last_notice = Some("Loading repos…".to_string());
+        app.ui.set_notice("Loading repos…");
         return Ok(());
     }
 
@@ -351,7 +352,7 @@ fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), Stri
             };
             msg.push_str(&format!("  {marker} {}. {}\n", idx + 1, repo.repo_name));
         }
-        app.ui.last_notice = Some(msg.trim_end().to_string());
+        app.ui.set_notice(msg.trim_end().to_string());
         return Ok(());
     };
 
@@ -376,7 +377,7 @@ fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), Stri
         return Err(format!("repo index out of range: {arg}"));
     }
     crate::selection_hooks::set_selected_repo_index(app, idx);
-    app.ui.last_notice = Some(format!(
+    app.ui.set_notice(format!(
         "Selected repo: {}",
         app.diff.repo_statuses[idx].repo_name
     ));

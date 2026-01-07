@@ -49,8 +49,7 @@ pub(in crate::actions) fn select_attempt(app: &mut AppState, attempt_id: Option<
         }
     }
 
-    app.ui.last_error = None;
-    app.ui.last_notice = None;
+    app.ui.clear_messages();
 
     app.exec.exec_store = serde_json::json!({ "execution_processes": {} });
     select_exec(app, None);
@@ -73,8 +72,7 @@ pub(in crate::actions) fn select_exec(app: &mut AppState, exec_id: Option<Uuid>)
     }
 
     app.exec.selected_exec_id = exec_id;
-    app.ui.last_error = None;
-    app.ui.last_notice = None;
+    app.ui.clear_messages();
     if let Some(exec_id) = exec_id {
         app.exec
             .log_buffers

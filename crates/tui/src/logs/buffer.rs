@@ -802,7 +802,7 @@ pub(crate) fn flush_log_buffers(app: &mut AppState, width: usize) -> bool {
                 }
             }
             Err(e) => {
-                app.ui.last_error = Some(format!("failed to apply log patch: {e}"));
+                app.ui.set_error(format!("failed to apply log patch: {e}"));
                 app.exec.log_status = StreamStatus::Error;
                 any = true;
             }
