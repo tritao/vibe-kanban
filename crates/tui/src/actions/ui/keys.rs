@@ -1,8 +1,8 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
 use super::{
-    CopyTarget, Effect, composer, confirm, copy::reduce_copy, keys_board, keys_diff, keys_exec,
-    keys_global, modals, sel,
+    CopyTarget, Effect, composer, confirm, copy::reduce_copy, keys_diff, keys_exec, keys_global,
+    modals, sel,
 };
 use crate::{
     commands::submit_composer,
@@ -99,8 +99,11 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
         }
     }
 
-    if let Some(dirty) = keys_board::handle_board_key(app, key) {
-        return (false, dirty, vec![]);
+    if <crate::ui::components::board_pane::BoardPane as crate::ui::components::UiComponent>::on_event(
+        app,
+        crate::ui::components::board_pane::BoardPaneEvent::Key(key),
+    ) {
+        return (false, true, vec![]);
     }
     if let Some(dirty) = keys_diff::handle_diff_key(app, key) {
         return (false, dirty, vec![]);

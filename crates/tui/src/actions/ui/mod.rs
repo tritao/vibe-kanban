@@ -18,7 +18,6 @@ mod confirm;
 mod copy;
 mod focus;
 mod keys;
-mod keys_board;
 mod keys_diff;
 mod keys_exec;
 mod keys_global;

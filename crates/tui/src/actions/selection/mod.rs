@@ -3,10 +3,11 @@ pub(super) mod diff;
 pub(super) mod ids;
 pub(super) mod reconcile;
 
-pub(in crate::actions) use board::{
+pub(crate) use board::{
     apply_board_hit, focus_board_section, move_active_status, normalize_after_cancelled_toggle,
-    note_task_created, request_move_selected_task, select_adjacent_attempt, select_adjacent_task,
+    request_move_selected_task, select_adjacent_task,
 };
+pub(in crate::actions) use board::{note_task_created, select_adjacent_attempt};
 pub(in crate::actions) use diff::reset_diff_stream_state;
 pub(in crate::actions) use ids::{select_exec, select_project, select_task};
 pub(crate) use reconcile::ensure_selection_visible;

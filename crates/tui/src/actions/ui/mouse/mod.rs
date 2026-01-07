@@ -1,22 +1,19 @@
 use crossterm::event::MouseEvent;
 
-use super::{focus, sel};
+use super::focus;
 use crate::{
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     state::AppState,
-    ui::{
-        board_hit_at,
-        components::{
-            UiComponent,
-            diff_list::{DiffList, DiffListEvent},
-            diff_preview::{DiffPreview, DiffPreviewEvent},
-            exec_input::ExecInput,
-            exec_log::{ExecLog, ExecLogEvent, ExecLogHitKind},
-        },
+    ui::components::{
+        UiComponent,
+        board_pane::{BoardPane, BoardPaneEvent},
+        diff_list::{DiffList, DiffListEvent},
+        diff_preview::{DiffPreview, DiffPreviewEvent},
+        exec_input::ExecInput,
+        exec_log::{ExecLog, ExecLogEvent, ExecLogHitKind},
     },
 };
 
-mod board;
 mod diff;
 
 pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
@@ -58,10 +55,17 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
                 let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(-1));
                 return true;
             }
-            if let Some(hit) = board_hit_at(app, layout.board, col, row) {
+            if let Some(hit) =
+                crate::ui::components::board_pane::board_hit_at(app, layout.board, col, row)
+            {
                 focus::focus_board(app);
-                sel::focus_board_section(app, hit.status);
-                sel::select_adjacent_task(app, -1);
+                let _ = <BoardPane as UiComponent>::on_event(
+                    app,
+                    BoardPaneEvent::Wheel {
+                        status: hit.status,
+                        delta: -1,
+                    },
+                );
                 return true;
             }
         }
@@ -87,16 +91,28 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
                 let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(1));
                 return true;
             }
-            if let Some(hit) = board_hit_at(app, layout.board, col, row) {
+            if let Some(hit) =
+                crate::ui::components::board_pane::board_hit_at(app, layout.board, col, row)
+            {
                 focus::focus_board(app);
-                sel::focus_board_section(app, hit.status);
-                sel::select_adjacent_task(app, 1);
+                let _ = <BoardPane as UiComponent>::on_event(
+                    app,
+                    BoardPaneEvent::Wheel {
+                        status: hit.status,
+                        delta: 1,
+                    },
+                );
                 return true;
             }
         }
         crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
             if rect_contains(layout.board, col, row) {
-                return board::handle_board_left_click(app, mouse, layout.board);
+                focus::focus_board(app);
+                if let Some(evt) = <BoardPane as UiComponent>::hit_test(app, layout.board, col, row)
+                {
+                    return <BoardPane as UiComponent>::on_event(app, evt);
+                }
+                return true;
             }
             if rect_contains(layout.exec_input, col, row) {
                 focus::focus_execution(app);

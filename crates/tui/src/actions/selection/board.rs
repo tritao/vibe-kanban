@@ -5,7 +5,7 @@ use crate::{
     events::NetEvent,
     selection::{board_tasks_by_status, find_task},
     state::{AppState, TaskStatus},
-    ui::board::BoardHit,
+    ui::components::board_pane::BoardHit,
 };
 pub(in crate::actions) fn ensure_selected_task_in_active_column(app: &mut AppState) {
     let by_status = board_tasks_by_status(app);
@@ -59,7 +59,7 @@ pub(in crate::actions) fn select_adjacent_attempt(app: &mut AppState, delta: i32
     select_attempt(app, id);
 }
 
-pub(in crate::actions) fn move_active_status(app: &mut AppState, delta: i32) {
+pub(crate) fn move_active_status(app: &mut AppState, delta: i32) {
     let statuses = crate::util::board_statuses(app);
     if statuses.is_empty() {
         return;
@@ -74,7 +74,7 @@ pub(in crate::actions) fn move_active_status(app: &mut AppState, delta: i32) {
     ensure_selected_task_in_active_column(app);
 }
 
-pub(in crate::actions) fn select_adjacent_task(app: &mut AppState, delta: i32) {
+pub(crate) fn select_adjacent_task(app: &mut AppState, delta: i32) {
     let by_status = board_tasks_by_status(app);
     if by_status.todo.is_empty()
         && by_status.inprogress.is_empty()
@@ -185,14 +185,14 @@ pub(in crate::actions) fn select_adjacent_task(app: &mut AppState, delta: i32) {
     select_task(app, Some(next_list[next_idx].task.id));
 }
 
-pub(in crate::actions) fn focus_board_section(app: &mut AppState, status: TaskStatus) {
+pub(crate) fn focus_board_section(app: &mut AppState, status: TaskStatus) {
     if app.board.tasks_active_column != status {
         app.board.tasks_active_column = status;
     }
     ensure_selected_task_in_active_column(app);
 }
 
-pub(in crate::actions) fn apply_board_hit(app: &mut AppState, hit: BoardHit) {
+pub(crate) fn apply_board_hit(app: &mut AppState, hit: BoardHit) {
     focus_board_section(app, hit.status);
 
     if let Some(idx) = hit.clicked_index {
@@ -206,7 +206,7 @@ pub(in crate::actions) fn apply_board_hit(app: &mut AppState, hit: BoardHit) {
     }
 }
 
-pub(in crate::actions) fn normalize_after_cancelled_toggle(app: &mut AppState) {
+pub(crate) fn normalize_after_cancelled_toggle(app: &mut AppState) {
     if !app.board.show_cancelled && app.board.tasks_active_column == TaskStatus::Cancelled {
         app.board.tasks_active_column = TaskStatus::Done;
     }
@@ -218,7 +218,7 @@ pub(in crate::actions) fn note_task_created(app: &mut AppState, task_id: Uuid, s
     focus_board_section(app, status);
 }
 
-pub(in crate::actions) fn request_move_selected_task(app: &mut AppState, direction: i32) {
+pub(crate) fn request_move_selected_task(app: &mut AppState, direction: i32) {
     let Some(task_id) = app.board.selected_task_id else {
         return;
     };

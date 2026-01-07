@@ -1,3 +1,4 @@
+pub(crate) mod board_pane;
 pub(crate) mod diff_list;
 pub(crate) mod diff_preview;
 pub(crate) mod diff_repo_bar;
