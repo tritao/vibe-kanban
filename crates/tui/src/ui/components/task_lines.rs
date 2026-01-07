@@ -1,5 +1,5 @@
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
 };
 
@@ -8,7 +8,10 @@ use crate::{selection::BoardTaskItem, state::TaskRow};
 pub(crate) fn render_task_line(task: &TaskRow) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = vec![];
     if task.has_in_progress_attempt {
-        spans.push(Span::styled("RUN ", Style::default().fg(Color::Green)));
+        spans.push(Span::styled(
+            "RUN ",
+            Style::default().fg(crate::ui::palette::notice_fg()),
+        ));
     } else if task.last_attempt_failed {
         spans.push(Span::styled("FAIL", crate::ui::palette::badge_fail()));
         spans.push(Span::raw(" "));
@@ -38,7 +41,10 @@ pub(crate) fn render_board_task_line(item: &BoardTaskItem) -> Line<'static> {
     }
 
     if item.task.has_in_progress_attempt {
-        spans.push(Span::styled("RUN ", Style::default().fg(Color::Green)));
+        spans.push(Span::styled(
+            "RUN ",
+            Style::default().fg(crate::ui::palette::notice_fg()),
+        ));
     } else if item.task.last_attempt_failed {
         spans.push(Span::styled("FAIL", crate::ui::palette::badge_fail()));
         spans.push(Span::raw(" "));

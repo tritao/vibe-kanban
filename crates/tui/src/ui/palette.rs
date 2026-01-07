@@ -47,6 +47,14 @@ pub(crate) fn toast_err() -> Color {
     Color::Red
 }
 
+pub(crate) fn error_fg() -> Color {
+    Color::Red
+}
+
+pub(crate) fn notice_fg() -> Color {
+    Color::Green
+}
+
 pub(crate) fn badge_fail() -> Style {
     Style::default()
         .fg(Color::White)

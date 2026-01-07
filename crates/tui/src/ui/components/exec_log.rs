@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
 };
@@ -156,7 +156,7 @@ impl UiComponent for ExecLog {
                     wrap_line_wordwise(
                         &Line::from(vec![Span::styled(
                             line.to_string(),
-                            Style::default().fg(Color::Red),
+                            Style::default().fg(crate::ui::palette::error_fg()),
                         )]),
                         inner_width,
                     )
@@ -169,7 +169,7 @@ impl UiComponent for ExecLog {
                     wrap_line_wordwise(
                         &Line::from(vec![Span::styled(
                             line.to_string(),
-                            Style::default().fg(Color::Green),
+                            Style::default().fg(crate::ui::palette::notice_fg()),
                         )]),
                         inner_width,
                     )

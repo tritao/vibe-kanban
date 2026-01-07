@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
@@ -275,7 +275,10 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
     ];
     if let Some(err) = state.error.as_ref().filter(|s| !s.trim().is_empty()) {
         btn_line.push(Span::raw("  "));
-        btn_line.push(Span::styled(err.clone(), Style::default().fg(Color::Red)));
+        btn_line.push(Span::styled(
+            err.clone(),
+            Style::default().fg(crate::ui::palette::error_fg()),
+        ));
     } else if app.board.selected_project_id.is_none() {
         btn_line.push(Span::raw("  "));
         btn_line.push(Span::styled(

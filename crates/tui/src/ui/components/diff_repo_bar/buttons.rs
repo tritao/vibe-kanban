@@ -223,7 +223,7 @@ pub(super) fn repo_bar_button_specs(
             let done_ok = done.map(|(_, ok, _)| ok).unwrap_or(true);
             if recently_done && kind.is_some() && !done_ok {
                 style = Style::default()
-                    .fg(ratatui::style::Color::Red)
+                    .fg(crate::ui::palette::error_fg())
                     .add_modifier(Modifier::BOLD);
             }
 

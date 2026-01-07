@@ -1,7 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     Frame,
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
@@ -92,7 +92,7 @@ pub(crate) fn render_branch_picker_modal(f: &mut Frame, state: &BranchPickerStat
     } else if let Some(err) = state.error.as_deref() {
         lines.push(Line::from(Span::styled(
             err.to_string(),
-            Style::default().fg(Color::Red),
+            Style::default().fg(crate::ui::palette::error_fg()),
         )));
     } else if visible.is_empty() {
         lines.push(Line::from(Span::styled(
