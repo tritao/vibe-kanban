@@ -21,7 +21,10 @@ pub(crate) fn request_stack_status_refresh(app: &mut AppState) {
         app,
         JobKey::StackStatus,
         move |app| {
-            crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id)
+            crate::jobs::latest::next_generation_for(
+                &mut app.diff.stack_status_gen_by_repo,
+                repo_id,
+            )
         },
         move |base_url, net_tx, generation| async move {
             match stack_status_http(&base_url, attempt_id, repo_id).await {
@@ -49,7 +52,10 @@ pub(crate) fn trigger_stack_enable(app: &mut AppState, attempt_id: Uuid, repo_id
         app,
         JobKey::StackStatus,
         move |app| {
-            crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id)
+            crate::jobs::latest::next_generation_for(
+                &mut app.diff.stack_status_gen_by_repo,
+                repo_id,
+            )
         },
         move |base_url, net_tx, generation| async move {
             match stack_enable_http(&base_url, attempt_id, repo_id).await {
@@ -85,7 +91,10 @@ pub(crate) fn trigger_stack_disable(
         app,
         JobKey::StackStatus,
         move |app| {
-            crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id)
+            crate::jobs::latest::next_generation_for(
+                &mut app.diff.stack_status_gen_by_repo,
+                repo_id,
+            )
         },
         move |base_url, net_tx, generation| async move {
             match stack_disable_http(&base_url, attempt_id, repo_id, force).await {
@@ -116,7 +125,10 @@ pub(crate) fn trigger_stack_push(app: &mut AppState, attempt_id: Uuid, repo_id: 
         app,
         JobKey::StackStatus,
         move |app| {
-            crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id)
+            crate::jobs::latest::next_generation_for(
+                &mut app.diff.stack_status_gen_by_repo,
+                repo_id,
+            )
         },
         move |base_url, net_tx, generation| async move {
             match stack_push_http(&base_url, attempt_id, repo_id).await {
@@ -147,7 +159,10 @@ pub(crate) fn trigger_stack_pop(app: &mut AppState, attempt_id: Uuid, repo_id: U
         app,
         JobKey::StackStatus,
         move |app| {
-            crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id)
+            crate::jobs::latest::next_generation_for(
+                &mut app.diff.stack_status_gen_by_repo,
+                repo_id,
+            )
         },
         move |base_url, net_tx, generation| async move {
             match stack_pop_http(&base_url, attempt_id, repo_id).await {
@@ -178,7 +193,10 @@ pub(crate) fn trigger_stack_undo(app: &mut AppState, attempt_id: Uuid, repo_id: 
         app,
         JobKey::StackStatus,
         move |app| {
-            crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id)
+            crate::jobs::latest::next_generation_for(
+                &mut app.diff.stack_status_gen_by_repo,
+                repo_id,
+            )
         },
         move |base_url, net_tx, generation| async move {
             match stack_undo_http(&base_url, attempt_id, repo_id).await {
@@ -209,7 +227,10 @@ pub(crate) fn trigger_stack_redo(app: &mut AppState, attempt_id: Uuid, repo_id: 
         app,
         JobKey::StackStatus,
         move |app| {
-            crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id)
+            crate::jobs::latest::next_generation_for(
+                &mut app.diff.stack_status_gen_by_repo,
+                repo_id,
+            )
         },
         move |base_url, net_tx, generation| async move {
             match stack_redo_http(&base_url, attempt_id, repo_id).await {
@@ -246,7 +267,10 @@ pub(crate) fn trigger_stack_new(
         app,
         JobKey::StackStatus,
         move |app| {
-            crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id)
+            crate::jobs::latest::next_generation_for(
+                &mut app.diff.stack_status_gen_by_repo,
+                repo_id,
+            )
         },
         move |base_url, net_tx, generation| async move {
             match stack_new_http(&base_url, attempt_id, repo_id, name, message).await {
@@ -283,7 +307,10 @@ pub(crate) fn trigger_stack_refresh(
         app,
         JobKey::StackStatus,
         move |app| {
-            crate::async_jobs::next_generation_for(&mut app.diff.stack_status_gen_by_repo, repo_id)
+            crate::jobs::latest::next_generation_for(
+                &mut app.diff.stack_status_gen_by_repo,
+                repo_id,
+            )
         },
         move |base_url, net_tx, generation| async move {
             match stack_refresh_http(&base_url, attempt_id, repo_id, paths, allow_dirty_index).await

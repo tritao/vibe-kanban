@@ -1,6 +1,5 @@
 mod actions;
 mod app;
-mod async_jobs;
 mod cli_parse;
 mod commands;
 mod diff;

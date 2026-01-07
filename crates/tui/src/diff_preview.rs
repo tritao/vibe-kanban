@@ -56,7 +56,7 @@ pub(crate) fn diff_preview_refresh_ready(app: &AppState, now: Instant) -> bool {
 }
 
 pub(crate) fn cancel_diff_preview_job(app: &mut AppState) {
-    app.diff.diff_preview_gen = app.diff.diff_preview_gen.wrapping_add(1);
+    crate::jobs::latest::next_generation(&mut app.diff.diff_preview_gen);
     cancel_job(app, JobKey::DiffPreview);
     app.diff.diff_preview_loading.stop();
 }

@@ -1,5 +1,7 @@
 use crate::state::{AppState, JobKey};
 
+pub(crate) mod latest;
+
 pub(crate) fn cancel_job(app: &mut AppState, key: JobKey) {
     if let Some(job) = app.jobs.remove(&key) {
         job.abort();

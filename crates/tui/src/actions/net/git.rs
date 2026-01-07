@@ -31,7 +31,8 @@ pub(super) fn stack_status_loaded(
     status: StackStatusResponse,
     generation: u64,
 ) -> bool {
-    if !crate::async_jobs::is_latest_for(&app.diff.stack_status_gen_by_repo, repo_id, generation) {
+    if !crate::jobs::latest::is_latest_for(&app.diff.stack_status_gen_by_repo, repo_id, generation)
+    {
         return true;
     }
     app.diff.stack_status_by_repo.insert(repo_id, status);

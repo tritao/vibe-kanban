@@ -255,7 +255,7 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     run_net_job_latest(
         app,
         JobKey::CommitPreview,
-        |app| crate::async_jobs::next_generation(&mut app.diff.commit_preview_gen),
+        |app| crate::jobs::latest::next_generation(&mut app.diff.commit_preview_gen),
         move |base_url, net_tx, generation| async move {
             match commit_show_http(&base_url, attempt_id, repo_id, &oid).await {
                 Ok(text) => {
