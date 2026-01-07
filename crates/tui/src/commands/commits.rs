@@ -245,10 +245,11 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     let idx = app.diff.selected_commit_index.min(commits.len() - 1);
     let oid = commits[idx].oid.clone();
 
-    app.diff
-        .commit_preview_loading
-        .start(Instant::now(), std::time::Duration::from_millis(120));
-    app.diff.commit_preview_loading_placeholder_pending = true;
+    app.diff.commit_preview_loading.start(
+        Instant::now(),
+        std::time::Duration::from_millis(120),
+        true,
+    );
     app.diff.commit_preview_text = None;
     app.diff.commit_preview_render_width = 0;
     run_net_job(

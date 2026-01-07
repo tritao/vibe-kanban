@@ -1,12 +1,8 @@
-use std::time::Duration;
-
 use ratatui::text::Line;
 
 use crate::{
-    diff::diff_rows_with_all_filtered,
-    diff_preview::{cancel_diff_preview_job, schedule_diff_preview_refresh},
+    diff::diff_rows_with_all_filtered, diff_preview::cancel_diff_preview_job, selection_hooks,
     state::AppState,
-    ui::sync_selected_repo_from_diff_selection,
 };
 
 pub(in crate::actions) fn reset_diff_stream_state(app: &mut AppState) {
@@ -26,7 +22,6 @@ pub(in crate::actions) fn reset_diff_stream_state(app: &mut AppState) {
     app.diff.commit_preview_text = None;
     app.diff.commit_preview_lines = vec![Line::from("No commit selected")];
     app.diff.commit_preview_render_width = 0;
-    app.diff.commit_preview_loading_placeholder_pending = false;
     app.diff.commit_preview_loading.stop();
 }
 
@@ -44,11 +39,7 @@ pub(in crate::actions) fn select_adjacent_diff_file(app: &mut AppState, delta: i
     }
 
     app.diff.selected_diff_index = next;
-    app.diff.diff_scroll_offset = 0;
-    sync_selected_repo_from_diff_selection(app);
-    crate::commands::request_stack_status_refresh(app);
-    crate::commands::request_commit_list_refresh(app);
-    schedule_diff_preview_refresh(app, Duration::from_millis(0));
+    selection_hooks::on_diff_file_selected(app);
 }
 
 pub(in crate::actions) fn select_adjacent_commit(app: &mut AppState, delta: i32) {
@@ -73,8 +64,7 @@ pub(in crate::actions) fn select_adjacent_commit(app: &mut AppState, delta: i32)
         return;
     }
     app.diff.selected_commit_index = next;
-    app.diff.diff_scroll_offset = 0;
-    crate::commands::request_commit_preview_refresh(app);
+    selection_hooks::on_commit_selected(app);
 }
 
 pub(in crate::actions) fn select_commit(app: &mut AppState, idx: usize) {
@@ -98,8 +88,7 @@ pub(in crate::actions) fn select_commit(app: &mut AppState, idx: usize) {
         return;
     }
     app.diff.selected_commit_index = next;
-    app.diff.diff_scroll_offset = 0;
-    crate::commands::request_commit_preview_refresh(app);
+    selection_hooks::on_commit_selected(app);
 }
 
 pub(in crate::actions) fn select_diff_file(app: &mut AppState, idx: usize) {
@@ -115,9 +104,5 @@ pub(in crate::actions) fn select_diff_file(app: &mut AppState, idx: usize) {
     }
 
     app.diff.selected_diff_index = next;
-    app.diff.diff_scroll_offset = 0;
-    sync_selected_repo_from_diff_selection(app);
-    crate::commands::request_stack_status_refresh(app);
-    crate::commands::request_commit_list_refresh(app);
-    schedule_diff_preview_refresh(app, Duration::from_millis(0));
+    selection_hooks::on_diff_file_selected(app);
 }

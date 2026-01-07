@@ -14,6 +14,7 @@ mod net;
 mod prefs;
 mod render;
 mod selection;
+mod selection_hooks;
 mod slash;
 #[cfg(test)]
 mod slash_tests;

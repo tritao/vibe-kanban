@@ -137,7 +137,6 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
             dirty = true;
         } else if app.diff.diff_preview_lines != vec![Line::from("No diffs")] {
             app.diff.diff_preview_lines = vec![Line::from("No diffs")];
-            app.diff.diff_preview_loading_placeholder_pending = false;
             app.diff.diff_preview_loading.stop();
             dirty = true;
         }
@@ -153,12 +152,12 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     {
         dirty = true;
     }
-    if app.diff.diff_preview_loading.visible
-        && app.diff.diff_preview_loading_placeholder_pending
+    if app.diff.diff_preview_loading.visible()
+        && app.diff.diff_preview_loading.placeholder_pending
         && (app.diff.diff_preview_lines.is_empty()
             || app.diff.diff_preview_lines == vec![Line::from("No diffs")])
     {
-        app.diff.diff_preview_loading_placeholder_pending = false;
+        app.diff.diff_preview_loading.placeholder_pending = false;
         app.diff.diff_preview_lines = vec![Line::from(ratatui::text::Span::styled(
             "Loading diff…".to_string(),
             ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::DIM),
@@ -201,10 +200,10 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     {
         dirty = true;
     }
-    if app.diff.commit_preview_loading.visible
-        && app.diff.commit_preview_loading_placeholder_pending
+    if app.diff.commit_preview_loading.visible()
+        && app.diff.commit_preview_loading.placeholder_pending
     {
-        app.diff.commit_preview_loading_placeholder_pending = false;
+        app.diff.commit_preview_loading.placeholder_pending = false;
         if app.diff.commit_preview_text.is_none()
             && (app.diff.commit_preview_lines.is_empty()
                 || app.diff.commit_preview_lines == vec![Line::from("No commit selected")])

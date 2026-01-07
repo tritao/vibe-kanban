@@ -78,7 +78,7 @@ fn selected_repo_status_from_diff(app: &AppState) -> Option<usize> {
 
 pub(crate) fn sync_selected_repo_from_diff_selection(app: &mut AppState) {
     if let Some(idx) = selected_repo_status_from_diff(app) {
-        app.diff.selected_repo_index = idx;
+        crate::selection_hooks::set_selected_repo_index(app, idx);
     }
 }
 
@@ -560,7 +560,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             };
-            app.diff.selected_repo_index = idx;
+            crate::selection_hooks::set_selected_repo_index(app, idx);
             let repo = match app.diff.repo_statuses.get(idx) {
                 Some(r) => r,
                 None => return,
@@ -629,7 +629,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             };
-            app.diff.selected_repo_index = idx;
+            crate::selection_hooks::set_selected_repo_index(app, idx);
             let Some(repo) = app.diff.repo_statuses.get(idx) else {
                 return;
             };
@@ -742,7 +742,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             };
-            app.diff.selected_repo_index = idx;
+            crate::selection_hooks::set_selected_repo_index(app, idx);
             let Some(repo) = app.diff.repo_statuses.get(idx) else {
                 return;
             };
@@ -1897,7 +1897,7 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
                 "Diff ({}){}{}",
                 app.diff.diff_theme.label(),
                 if app.diff.diff_wrap { ", wrap" } else { "" },
-                if app.diff.diff_preview_loading.visible {
+                if app.diff.diff_preview_loading.visible() {
                     ", loading"
                 } else {
                     ""
@@ -1907,7 +1907,7 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
         crate::state::DiffListMode::Commits => (&app.diff.commit_preview_lines, {
             format!(
                 "Commit{}",
-                if app.diff.commit_preview_loading.visible {
+                if app.diff.commit_preview_loading.visible() {
                     " (loading)"
                 } else {
                     ""

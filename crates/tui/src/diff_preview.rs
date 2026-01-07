@@ -58,7 +58,6 @@ pub(crate) fn diff_preview_refresh_ready(app: &AppState, now: Instant) -> bool {
 pub(crate) fn cancel_diff_preview_job(app: &mut AppState) {
     app.diff.diff_preview_gen = app.diff.diff_preview_gen.wrapping_add(1);
     cancel_job(app, JobKey::DiffPreview);
-    app.diff.diff_preview_loading_placeholder_pending = false;
     app.diff.diff_preview_loading.stop();
 }
 
@@ -79,11 +78,12 @@ pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
     // Avoid flicker: keep the previous preview content rendered while the async
     // rebuild runs, and only swap in the new content once ready. If there is no
     // existing content, show a single-line placeholder.
-    app.diff
-        .diff_preview_loading
-        .start(Instant::now(), Duration::from_millis(120));
-    app.diff.diff_preview_loading_placeholder_pending = app.diff.diff_preview_lines.is_empty()
-        || app.diff.diff_preview_lines == vec![Line::from("No diffs")];
+    app.diff.diff_preview_loading.start(
+        Instant::now(),
+        Duration::from_millis(120),
+        app.diff.diff_preview_lines.is_empty()
+            || app.diff.diff_preview_lines == vec![Line::from("No diffs")],
+    );
 
     replace_blocking_job(app, JobKey::DiffPreview, move || {
         let (cache_key, cache_hash, lines) = compute_diff_preview(req, width, theme, wrap);

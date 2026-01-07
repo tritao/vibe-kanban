@@ -91,8 +91,7 @@ pub(crate) struct DiffState {
     pub(crate) diff_preview_pending: bool,
     pub(crate) diff_preview_next_refresh_at: Option<Instant>,
     pub(crate) diff_preview_gen: u64,
-    pub(crate) diff_preview_loading_placeholder_pending: bool,
-    pub(crate) diff_preview_loading: DelayedLoadingIndicator,
+    pub(crate) diff_preview_loading: super::types::LoadingState,
 
     pub(crate) repo_statuses: Vec<RepoBranchStatus>,
     pub(crate) branch_status_loaded_attempt_id: Option<Uuid>,
@@ -112,8 +111,7 @@ pub(crate) struct DiffState {
     pub(crate) commit_preview_text: Option<String>,
     pub(crate) commit_preview_lines: Vec<Line<'static>>,
     pub(crate) commit_preview_render_width: u16,
-    pub(crate) commit_preview_loading_placeholder_pending: bool,
-    pub(crate) commit_preview_loading: DelayedLoadingIndicator,
+    pub(crate) commit_preview_loading: super::types::LoadingState,
 }
 
 pub(crate) struct UiState {
@@ -337,8 +335,7 @@ impl AppState {
                 diff_preview_pending: false,
                 diff_preview_next_refresh_at: None,
                 diff_preview_gen: 0,
-                diff_preview_loading_placeholder_pending: false,
-                diff_preview_loading: DelayedLoadingIndicator::default(),
+                diff_preview_loading: super::types::LoadingState::default(),
 
                 repo_statuses: vec![],
                 branch_status_loaded_attempt_id: None,
@@ -358,8 +355,7 @@ impl AppState {
                 commit_preview_text: None,
                 commit_preview_lines: vec![Line::from("No commit selected")],
                 commit_preview_render_width: 0,
-                commit_preview_loading_placeholder_pending: false,
-                commit_preview_loading: DelayedLoadingIndicator::default(),
+                commit_preview_loading: super::types::LoadingState::default(),
             },
 
             jobs: HashMap::new(),

@@ -1021,7 +1021,7 @@ fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), Stri
     if idx >= app.diff.repo_statuses.len() {
         return Err(format!("repo index out of range: {arg}"));
     }
-    app.diff.selected_repo_index = idx;
+    crate::selection_hooks::set_selected_repo_index(app, idx);
     app.ui.last_notice = Some(format!(
         "Selected repo: {}",
         app.diff.repo_statuses[idx].repo_name
@@ -1647,7 +1647,7 @@ pub(crate) fn resolve_repo_for_command(
                     .position(|r| r.repo_name.to_ascii_lowercase().contains(&needle))
             })
             .ok_or_else(|| format!("unknown repo: {arg}"))?;
-        app.diff.selected_repo_index = idx;
+        crate::selection_hooks::set_selected_repo_index(app, idx);
     }
 
     let repo = app

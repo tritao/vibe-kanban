@@ -97,6 +97,32 @@ impl DelayedLoadingIndicator {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct LoadingState {
+    pub(crate) indicator: DelayedLoadingIndicator,
+    pub(crate) placeholder_pending: bool,
+}
+
+impl LoadingState {
+    pub(crate) fn start(&mut self, now: Instant, delay: Duration, placeholder_pending: bool) {
+        self.placeholder_pending = placeholder_pending;
+        self.indicator.start(now, delay);
+    }
+
+    pub(crate) fn stop(&mut self) {
+        self.placeholder_pending = false;
+        self.indicator.stop();
+    }
+
+    pub(crate) fn tick(&mut self, now: Instant, is_running: bool) -> bool {
+        self.indicator.tick(now, is_running)
+    }
+
+    pub(crate) fn visible(&self) -> bool {
+        self.indicator.visible
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct GitOpState {
     pub(crate) kind: GitOpKind,
