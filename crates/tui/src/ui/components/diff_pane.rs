@@ -26,15 +26,6 @@ impl UiComponent for DiffPane {
         crate::ui::render_diff_pane(f, app, area);
     }
 
-    fn hit_test(
-        _app: &AppState,
-        _area: ratatui::layout::Rect,
-        _col: u16,
-        _row: u16,
-    ) -> Option<Self::Event> {
-        None
-    }
-
     fn on_event(app: &mut AppState, event: Self::Event) -> bool {
         match event {
             DiffPaneEvent::Key(key) => handle_diff_key(app, key),

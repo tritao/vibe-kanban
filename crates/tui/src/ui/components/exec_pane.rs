@@ -25,15 +25,6 @@ impl UiComponent for ExecPane {
         crate::ui::render_execution_pane(f, app, area);
     }
 
-    fn hit_test(
-        _app: &AppState,
-        _area: ratatui::layout::Rect,
-        _col: u16,
-        _row: u16,
-    ) -> Option<Self::Event> {
-        None
-    }
-
     fn on_event(app: &mut AppState, event: Self::Event) -> bool {
         match event {
             ExecPaneEvent::Key(key) => handle_exec_key(app, key),

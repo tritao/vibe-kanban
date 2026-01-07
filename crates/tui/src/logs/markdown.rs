@@ -3,7 +3,7 @@ use pulldown_cmark::{
     TagEnd as MdTagEnd,
 };
 use ratatui::{
-    style::{Color, Modifier, Style},
+    style::{Modifier, Style},
     text::{Line, Span},
 };
 
@@ -168,7 +168,7 @@ pub(crate) fn render_markdown(
     let mut in_code_block = false;
     let mut code_buf = String::new();
 
-    let prefix_style = Style::default().fg(Color::Gray);
+    let prefix_style = Style::default().fg(crate::ui::palette::log_markdown_prefix_fg());
 
     fn base_prefix(quote_depth: usize, list_depth: usize) -> String {
         let mut p = String::new();
@@ -229,7 +229,8 @@ pub(crate) fn render_markdown(
         if in_code_block {
             match event {
                 MdEvent::End(MdTagEnd::CodeBlock) => {
-                    let code_style = Style::default().bg(Color::DarkGray);
+                    let code_style =
+                        Style::default().bg(crate::ui::palette::log_markdown_code_bg());
                     for l in code_buf.lines() {
                         out.push(Line::from(Span::styled(
                             truncate_to_width(l, width),
@@ -282,7 +283,7 @@ pub(crate) fn render_markdown(
                 });
                 let h_style = Style::default()
                     .add_modifier(Modifier::BOLD)
-                    .fg(Color::Cyan);
+                    .fg(crate::ui::palette::log_markdown_heading_fg());
                 style_stack.push(h_style);
             }
             MdEvent::End(MdTagEnd::Heading(_)) => {
@@ -379,7 +380,7 @@ pub(crate) fn render_markdown(
                     .last()
                     .copied()
                     .unwrap_or_default()
-                    .fg(Color::Yellow);
+                    .fg(crate::ui::palette::log_markdown_inline_code_fg());
                 if block.is_none() {
                     let base = base_prefix(quote_depth, lists.len());
                     block = Some(Block {

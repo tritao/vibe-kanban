@@ -99,35 +99,6 @@ fn tool_status_str(entry_type: &serde_json::Value) -> Option<&str> {
     status.get("status").and_then(|v| v.as_str())
 }
 
-fn tool_status_badge(status: Option<&str>) -> (Span<'static>, Style) {
-    match status.unwrap_or("created") {
-        "success" => (
-            Span::styled("ok", Style::default().fg(Color::Green)),
-            Style::default().fg(Color::Green),
-        ),
-        "failed" => (
-            Span::styled("fail", Style::default().fg(Color::Red)),
-            Style::default().fg(Color::Red),
-        ),
-        "denied" => (
-            Span::styled("denied", Style::default().fg(Color::Yellow)),
-            Style::default().fg(Color::Yellow),
-        ),
-        "pending_approval" => (
-            Span::styled("approval", Style::default().fg(Color::Magenta)),
-            Style::default().fg(Color::Magenta),
-        ),
-        "timed_out" => (
-            Span::styled("timeout", Style::default().fg(Color::Yellow)),
-            Style::default().fg(Color::Yellow),
-        ),
-        _ => (
-            Span::styled("…", Style::default().add_modifier(Modifier::DIM)),
-            Style::default().add_modifier(Modifier::DIM),
-        ),
-    }
-}
-
 fn push_line(
     lines: &mut Vec<Line<'static>>,
     map: &mut Vec<usize>,
@@ -199,7 +170,7 @@ pub(crate) fn append_log_entry(
                 state,
                 LogKind::Stderr,
                 text,
-                Style::default().fg(Color::Red),
+                Style::default().fg(crate::ui::palette::log_accent_error()),
                 true,
                 target_idx,
                 "  ",
@@ -448,7 +419,7 @@ fn append_normalized_entry(
                 map,
                 entry_idx,
                 "You",
-                Color::Yellow,
+                crate::ui::palette::log_accent_user(),
                 content_text,
                 width,
                 render_mode,
@@ -460,7 +431,7 @@ fn append_normalized_entry(
                 map,
                 entry_idx,
                 "Assistant",
-                Color::Cyan,
+                crate::ui::palette::log_accent_assistant(),
                 content_text,
                 width,
                 render_mode,
@@ -488,7 +459,7 @@ fn append_normalized_entry(
                 map,
                 entry_idx,
                 "System",
-                Color::Gray,
+                crate::ui::palette::log_accent_system(),
                 trimmed,
                 width,
                 render_mode,
@@ -500,7 +471,7 @@ fn append_normalized_entry(
                 map,
                 entry_idx,
                 "Error",
-                Color::Red,
+                crate::ui::palette::log_accent_error(),
                 content_text,
                 width,
                 render_mode,
@@ -516,7 +487,7 @@ fn append_normalized_entry(
                 map,
                 entry_idx,
                 &format!("Feedback (denied {denied_tool})"),
-                Color::Yellow,
+                crate::ui::palette::log_accent_feedback(),
                 content_text,
                 width,
                 render_mode,
@@ -586,7 +557,7 @@ fn append_normalized_entry(
         }
         "tool_use" => {
             let status = tool_status_str(entry_type);
-            let (status_badge, _status_style) = tool_status_badge(status);
+            let (status_badge, _status_style) = crate::ui::palette::log_tool_status_badge(status);
 
             let action_type = entry_type.get("action_type");
             let action_type = match action_type {
@@ -597,7 +568,7 @@ fn append_normalized_entry(
                         map,
                         entry_idx,
                         "Tool",
-                        Color::Blue,
+                        crate::ui::palette::log_tool_kind("tool").1,
                         content_text,
                         width,
                         render_mode,
@@ -610,17 +581,7 @@ fn append_normalized_entry(
                 .and_then(|v| v.as_str())
                 .unwrap_or("other");
 
-            let (label, accent) = match action {
-                "file_read" | "search" => ("Explored", Color::Cyan),
-                "file_edit" => ("Edited", Color::Green),
-                "command_run" => ("Ran", Color::Cyan),
-                "web_fetch" => ("Fetched", Color::Cyan),
-                "task_create" => ("Created", Color::Green),
-                "plan_presentation" => ("Plan", Color::Magenta),
-                "todo_management" => ("Todos", Color::Magenta),
-                "tool" => ("Tool", Color::Blue),
-                _ => ("Tool", Color::Blue),
-            };
+            let (label, accent) = crate::ui::palette::log_tool_kind(action);
 
             let arrow = if collapsed { "▸" } else { "▾" };
 
@@ -726,7 +687,7 @@ fn append_normalized_entry(
                                     ),
                                     Span::styled(
                                         format!("exit {code}"),
-                                        Style::default().fg(Color::Red),
+                                        Style::default().fg(crate::ui::palette::log_accent_error()),
                                     ),
                                 ]),
                                 width,
@@ -1197,7 +1158,7 @@ fn append_normalized_entry(
                     map,
                     entry_idx,
                     &fallback,
-                    Color::Gray,
+                    crate::ui::palette::log_accent_system(),
                     content_text,
                     width,
                     render_mode,

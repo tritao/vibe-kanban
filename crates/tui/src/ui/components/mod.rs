@@ -16,6 +16,8 @@ pub(crate) trait UiComponent {
     type Event;
 
     fn render(f: &mut Frame, app: &AppState, area: Rect);
-    fn hit_test(app: &AppState, area: Rect, col: u16, row: u16) -> Option<Self::Event>;
+    fn hit_test(_app: &AppState, _area: Rect, _col: u16, _row: u16) -> Option<Self::Event> {
+        None
+    }
     fn on_event(app: &mut AppState, event: Self::Event) -> bool;
 }

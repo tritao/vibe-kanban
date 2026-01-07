@@ -1,7 +1,5 @@
 use std::time::Instant;
 
-use ratatui::style::Color;
-
 use super::{CopyTarget, Effect};
 use crate::{
     layout::{compute_main_layout, current_terminal_rect},
@@ -60,7 +58,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
     if text.trim().is_empty() {
         return vec![Effect::Toast {
             message: "Copy: nothing to copy".to_string(),
-            color: Color::Yellow,
+            color: crate::ui::palette::toast_warn(),
             expires_at: Some(Instant::now() + std::time::Duration::from_secs(2)),
         }];
     }
@@ -77,7 +75,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
         Effect::CopyOsc52(text),
         Effect::Toast {
             message: label.to_string(),
-            color: Color::Green,
+            color: crate::ui::palette::toast_ok(),
             expires_at: Some(Instant::now() + std::time::Duration::from_secs(2)),
         },
     ]

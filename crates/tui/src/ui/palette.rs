@@ -1,4 +1,7 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::{
+    style::{Color, Modifier, Style},
+    text::Span,
+};
 
 use crate::{events::StreamStatus, state::MergeStatus};
 
@@ -53,6 +56,85 @@ pub(crate) fn error_fg() -> Color {
 
 pub(crate) fn notice_fg() -> Color {
     Color::Green
+}
+
+pub(crate) fn log_accent_user() -> Color {
+    Color::Yellow
+}
+
+pub(crate) fn log_accent_assistant() -> Color {
+    Color::Cyan
+}
+
+pub(crate) fn log_accent_system() -> Color {
+    Color::Gray
+}
+
+pub(crate) fn log_accent_error() -> Color {
+    Color::Red
+}
+
+pub(crate) fn log_accent_feedback() -> Color {
+    Color::Yellow
+}
+
+pub(crate) fn log_tool_status_badge(status: Option<&str>) -> (Span<'static>, Style) {
+    match status.unwrap_or("created") {
+        "success" => (
+            Span::styled("ok", Style::default().fg(Color::Green)),
+            Style::default().fg(Color::Green),
+        ),
+        "failed" => (
+            Span::styled("fail", Style::default().fg(Color::Red)),
+            Style::default().fg(Color::Red),
+        ),
+        "denied" => (
+            Span::styled("denied", Style::default().fg(Color::Yellow)),
+            Style::default().fg(Color::Yellow),
+        ),
+        "pending_approval" => (
+            Span::styled("approval", Style::default().fg(Color::Magenta)),
+            Style::default().fg(Color::Magenta),
+        ),
+        "timed_out" => (
+            Span::styled("timeout", Style::default().fg(Color::Yellow)),
+            Style::default().fg(Color::Yellow),
+        ),
+        _ => (
+            Span::styled("…", Style::default().add_modifier(Modifier::DIM)),
+            Style::default().add_modifier(Modifier::DIM),
+        ),
+    }
+}
+
+pub(crate) fn log_tool_kind(kind: &str) -> (&'static str, Color) {
+    match kind {
+        "file_read" | "search" => ("Explored", Color::Cyan),
+        "file_edit" => ("Edited", Color::Green),
+        "command_run" => ("Ran", Color::Cyan),
+        "web_fetch" => ("Fetched", Color::Cyan),
+        "task_create" => ("Created", Color::Green),
+        "plan_presentation" => ("Plan", Color::Magenta),
+        "todo_management" => ("Todos", Color::Magenta),
+        "tool" => ("Tool", Color::Blue),
+        _ => ("Tool", Color::Blue),
+    }
+}
+
+pub(crate) fn log_markdown_prefix_fg() -> Color {
+    Color::Gray
+}
+
+pub(crate) fn log_markdown_heading_fg() -> Color {
+    Color::Cyan
+}
+
+pub(crate) fn log_markdown_inline_code_fg() -> Color {
+    Color::Yellow
+}
+
+pub(crate) fn log_markdown_code_bg() -> Color {
+    Color::DarkGray
 }
 
 pub(crate) fn badge_fail() -> Style {
