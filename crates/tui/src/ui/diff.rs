@@ -1799,13 +1799,8 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
         app.diff.selected_commit_index.min(commits.len() - 1)
     };
 
-    let selected_short = commits
-        .get(selected)
-        .map(|c| c.short_oid.as_str())
-        .unwrap_or("—");
-
     let title = format!(
-        "{selected_short} Commits ({}){}",
+        "Commits ({}){}",
         commits.len(),
         if loading { ", loading" } else { "" }
     );
@@ -1822,13 +1817,13 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
             .map(|c| {
                 let mut spans: Vec<Span<'static>> = vec![];
                 spans.push(Span::styled(
-                    c.subject.clone(),
-                    Style::default().add_modifier(Modifier::BOLD),
+                    c.short_oid.clone(),
+                    Style::default().add_modifier(Modifier::DIM),
                 ));
                 spans.push(Span::raw(" "));
                 spans.push(Span::styled(
-                    c.short_oid.clone(),
-                    Style::default().add_modifier(Modifier::DIM),
+                    c.subject.clone(),
+                    Style::default().add_modifier(Modifier::BOLD),
                 ));
                 ListItem::new(Line::from(spans))
             })
@@ -1895,23 +1890,8 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
             ),
         ),
         crate::state::DiffListMode::Commits => (&app.diff.commit_preview_lines, {
-            let short = app
-                .diff
-                .repo_statuses
-                .get(app.diff.selected_repo_index)
-                .map(|r| r.repo_id)
-                .and_then(|repo_id| app.diff.commits_by_repo.get(&repo_id))
-                .and_then(|commits| {
-                    commits.get(
-                        app.diff
-                            .selected_commit_index
-                            .min(commits.len().saturating_sub(1)),
-                    )
-                })
-                .map(|c| c.short_oid.as_str())
-                .unwrap_or("—");
             format!(
-                "Commit {short}{}",
+                "Commit{}",
                 if app.diff.commit_preview_loading {
                     " (loading)"
                 } else {
