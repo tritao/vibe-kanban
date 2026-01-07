@@ -5,7 +5,25 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
+use super::component::ModalComponent;
 use crate::ui::layout::centered_rect;
+
+pub(crate) struct HelpModal;
+pub(crate) static MODAL: HelpModal = HelpModal;
+
+impl ModalComponent for HelpModal {
+    fn is_open(&self, app: &crate::state::AppState) -> bool {
+        app.ui.show_help
+    }
+
+    fn render(&self, f: &mut Frame, _app: &crate::state::AppState) {
+        render_help_modal(f);
+    }
+
+    fn on_key(&self, app: &mut crate::state::AppState, key: crossterm::event::KeyEvent) -> bool {
+        handle_help_key(app, key)
+    }
+}
 
 pub(crate) fn render_help_modal(f: &mut Frame) {
     let area = centered_rect(70, 70, f.area());

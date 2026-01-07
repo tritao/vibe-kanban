@@ -6,10 +6,30 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
+use super::component::ModalComponent;
 use crate::{
     state::{AppState, BranchPickerMode, BranchPickerState},
     ui::layout::centered_rect,
 };
+
+pub(crate) struct BranchPickerModal;
+pub(crate) static MODAL: BranchPickerModal = BranchPickerModal;
+
+impl ModalComponent for BranchPickerModal {
+    fn is_open(&self, app: &AppState) -> bool {
+        app.ui.branch_picker.is_some()
+    }
+
+    fn render(&self, f: &mut Frame, app: &AppState) {
+        if let Some(state) = app.ui.branch_picker.as_ref() {
+            render_branch_picker_modal(f, state);
+        }
+    }
+
+    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
+        handle_branch_picker_key(app, key)
+    }
+}
 
 pub(crate) fn open_branch_picker(
     app: &mut AppState,

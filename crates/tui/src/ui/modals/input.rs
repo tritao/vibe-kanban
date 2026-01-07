@@ -6,12 +6,36 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
+use super::component::ModalComponent;
 use crate::{
     layout::current_terminal_rect,
     state::{AppState, InputMode, InputState, TextFieldState},
     text::{display_width, slice_by_display_cols},
     ui::layout::centered_rect,
 };
+
+pub(crate) struct InputModal;
+pub(crate) static MODAL: InputModal = InputModal;
+
+impl ModalComponent for InputModal {
+    fn is_open(&self, app: &AppState) -> bool {
+        app.ui.input.is_some()
+    }
+
+    fn render(&self, f: &mut Frame, app: &AppState) {
+        if let Some(input) = app.ui.input.as_ref() {
+            render_input_modal(f, input);
+        }
+    }
+
+    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
+        handle_search_key(app, key)
+    }
+
+    fn on_mouse(&self, app: &mut AppState, mouse: MouseEvent) -> bool {
+        handle_search_caret_click(app, mouse)
+    }
+}
 
 pub(crate) fn open_search(app: &mut AppState) {
     let mut field = TextFieldState::default();

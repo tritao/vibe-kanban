@@ -6,10 +6,30 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
+use super::component::ModalComponent;
 use crate::{
     state::{AppState, ProjectSetupState},
     ui::layout::centered_rect,
 };
+
+pub(crate) struct ProjectSetupModal;
+pub(crate) static MODAL: ProjectSetupModal = ProjectSetupModal;
+
+impl ModalComponent for ProjectSetupModal {
+    fn is_open(&self, app: &AppState) -> bool {
+        app.ui.project_setup.is_some()
+    }
+
+    fn render(&self, f: &mut Frame, app: &AppState) {
+        if let Some(state) = app.ui.project_setup.as_ref() {
+            render_project_setup_modal(f, state);
+        }
+    }
+
+    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
+        handle_project_setup_key(app, key)
+    }
+}
 
 pub(crate) fn render_project_setup_modal(f: &mut Frame, state: &ProjectSetupState) {
     let area = centered_rect(70, 35, f.area());

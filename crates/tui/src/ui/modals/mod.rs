@@ -4,149 +4,34 @@ use ratatui::Frame;
 use crate::state::AppState;
 
 mod branch_picker;
+mod component;
 mod confirm;
 mod create_task;
 mod help;
 mod input;
 mod project_setup;
 
-pub(crate) use branch_picker::render_branch_picker_modal;
-pub(crate) use confirm::render_confirm_modal;
-pub(crate) use create_task::{
-    handle_create_task_key, open_create_task_modal, render_create_task_modal,
-};
-pub(crate) use help::render_help_modal;
-pub(crate) use input::render_input_modal;
-pub(crate) use project_setup::render_project_setup_modal;
-
-trait ModalComponent: Sync {
-    fn is_open(&self, app: &AppState) -> bool;
-    fn blocks_mouse(&self, app: &AppState) -> bool {
-        self.is_open(app)
-    }
-    fn render(&self, f: &mut Frame, app: &AppState);
-    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool;
-    fn on_mouse(&self, _app: &mut AppState, _mouse: MouseEvent) -> bool {
-        false
-    }
-}
-
-struct ConfirmModal;
-impl ModalComponent for ConfirmModal {
-    fn is_open(&self, app: &AppState) -> bool {
-        app.ui.confirm.is_some()
-    }
-    fn render(&self, f: &mut Frame, app: &AppState) {
-        if let Some(confirm) = app.ui.confirm.as_ref() {
-            render_confirm_modal(f, confirm);
-        }
-    }
-    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
-        confirm::handle_confirm_key(app, key)
-    }
-}
-
-struct InputModal;
-impl ModalComponent for InputModal {
-    fn is_open(&self, app: &AppState) -> bool {
-        app.ui.input.is_some()
-    }
-    fn render(&self, f: &mut Frame, app: &AppState) {
-        if let Some(input) = app.ui.input.as_ref() {
-            render_input_modal(f, input);
-        }
-    }
-    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
-        input::handle_search_key(app, key)
-    }
-    fn on_mouse(&self, app: &mut AppState, mouse: MouseEvent) -> bool {
-        input::handle_search_caret_click(app, mouse)
-    }
-}
-
-struct HelpModal;
-impl ModalComponent for HelpModal {
-    fn is_open(&self, app: &AppState) -> bool {
-        app.ui.show_help
-    }
-    fn render(&self, f: &mut Frame, _app: &AppState) {
-        render_help_modal(f);
-    }
-    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
-        help::handle_help_key(app, key)
-    }
-}
-
-struct BranchPickerModal;
-impl ModalComponent for BranchPickerModal {
-    fn is_open(&self, app: &AppState) -> bool {
-        app.ui.branch_picker.is_some()
-    }
-    fn render(&self, f: &mut Frame, app: &AppState) {
-        if let Some(state) = app.ui.branch_picker.as_ref() {
-            render_branch_picker_modal(f, state);
-        }
-    }
-    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
-        branch_picker::handle_branch_picker_key(app, key)
-    }
-}
-
-struct ProjectSetupModal;
-impl ModalComponent for ProjectSetupModal {
-    fn is_open(&self, app: &AppState) -> bool {
-        app.ui.project_setup.is_some()
-    }
-    fn render(&self, f: &mut Frame, app: &AppState) {
-        if let Some(state) = app.ui.project_setup.as_ref() {
-            render_project_setup_modal(f, state);
-        }
-    }
-    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
-        project_setup::handle_project_setup_key(app, key)
-    }
-}
-
-struct CreateTaskModal;
-impl ModalComponent for CreateTaskModal {
-    fn is_open(&self, app: &AppState) -> bool {
-        app.ui.create_task.is_some()
-    }
-    fn render(&self, f: &mut Frame, app: &AppState) {
-        if let Some(state) = app.ui.create_task.as_ref() {
-            render_create_task_modal(f, app, state);
-        }
-    }
-    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
-        handle_create_task_key(app, key)
-    }
-}
-
-static CONFIRM_MODAL: ConfirmModal = ConfirmModal;
-static INPUT_MODAL: InputModal = InputModal;
-static HELP_MODAL: HelpModal = HelpModal;
-static BRANCH_PICKER_MODAL: BranchPickerModal = BranchPickerModal;
-static PROJECT_SETUP_MODAL: ProjectSetupModal = ProjectSetupModal;
-static CREATE_TASK_MODAL: CreateTaskModal = CreateTaskModal;
+use component::ModalComponent;
+pub(crate) use create_task::open_create_task_modal;
 
 // Key dispatch order (highest priority first).
 static KEY_ORDER: [&dyn ModalComponent; 6] = [
-    &CONFIRM_MODAL,
-    &INPUT_MODAL,
-    &HELP_MODAL,
-    &BRANCH_PICKER_MODAL,
-    &PROJECT_SETUP_MODAL,
-    &CREATE_TASK_MODAL,
+    &confirm::MODAL,
+    &input::MODAL,
+    &help::MODAL,
+    &branch_picker::MODAL,
+    &project_setup::MODAL,
+    &create_task::MODAL,
 ];
 
 // Render order (matches previous behavior).
 static RENDER_ORDER: [&dyn ModalComponent; 6] = [
-    &HELP_MODAL,
-    &CREATE_TASK_MODAL,
-    &CONFIRM_MODAL,
-    &INPUT_MODAL,
-    &PROJECT_SETUP_MODAL,
-    &BRANCH_PICKER_MODAL,
+    &help::MODAL,
+    &create_task::MODAL,
+    &confirm::MODAL,
+    &input::MODAL,
+    &project_setup::MODAL,
+    &branch_picker::MODAL,
 ];
 
 pub(crate) fn open_help(app: &mut AppState) {

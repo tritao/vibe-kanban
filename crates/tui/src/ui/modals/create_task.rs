@@ -6,11 +6,31 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
+use super::component::ModalComponent;
 use crate::{
     selection::{find_task, projects_list},
     state::{AppState, CreateTaskFocus, CreateTaskState, TaskStatus},
     ui::layout::centered_rect,
 };
+
+pub(crate) struct CreateTaskModal;
+pub(crate) static MODAL: CreateTaskModal = CreateTaskModal;
+
+impl ModalComponent for CreateTaskModal {
+    fn is_open(&self, app: &AppState) -> bool {
+        app.ui.create_task.is_some()
+    }
+
+    fn render(&self, f: &mut Frame, app: &AppState) {
+        if let Some(state) = app.ui.create_task.as_ref() {
+            render_create_task_modal(f, app, state);
+        }
+    }
+
+    fn on_key(&self, app: &mut AppState, key: crossterm::event::KeyEvent) -> bool {
+        handle_create_task_key(app, key)
+    }
+}
 
 pub(crate) fn open_create_task_modal(app: &mut AppState, parent_task_id: Option<uuid::Uuid>) {
     app.ui.create_task = Some(CreateTaskState {

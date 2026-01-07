@@ -6,10 +6,30 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
+use super::component::ModalComponent;
 use crate::{
     state::{AppState, ConfirmState},
     ui::layout::centered_rect,
 };
+
+pub(crate) struct ConfirmModal;
+pub(crate) static MODAL: ConfirmModal = ConfirmModal;
+
+impl ModalComponent for ConfirmModal {
+    fn is_open(&self, app: &AppState) -> bool {
+        app.ui.confirm.is_some()
+    }
+
+    fn render(&self, f: &mut Frame, app: &AppState) {
+        if let Some(confirm) = app.ui.confirm.as_ref() {
+            render_confirm_modal(f, confirm);
+        }
+    }
+
+    fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
+        handle_confirm_key(app, key)
+    }
+}
 
 pub(crate) fn render_confirm_modal(f: &mut Frame, confirm: &ConfirmState) {
     let area = centered_rect(70, 35, f.area());
