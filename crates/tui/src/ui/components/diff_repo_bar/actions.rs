@@ -63,7 +63,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 Some(&repo.repo_name),
             );
 
-            app.ui.focus = FocusPane::Execution;
+            app.ui.focus_execution();
             app.ui.composer_active = true;
             app.ui.composer_suggest_index = 0;
             app.ui.refresh_branch_status_after_send = true;

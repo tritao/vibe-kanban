@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     prefs::save_prefs,
-    state::{AppState, DiffFocus, FocusPane},
+    state::{AppState, FocusPane},
 };
 
 pub(crate) enum DiffPaneEvent {
@@ -53,8 +53,7 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
     match mouse.kind {
         MouseEventKind::ScrollUp => {
             if crate::layout::rect_contains(split.preview, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Preview;
+                app.ui.focus_diff_preview();
                 let _ = <DiffPreview as UiComponent>::on_event(
                     app,
                     DiffPreviewEvent::WheelDelta(-(DIFF_WHEEL_STEP as i32)),
@@ -62,8 +61,7 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
                 return true;
             }
             if crate::layout::rect_contains(split.files, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Files;
+                app.ui.focus_diff_files();
                 let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(-1));
                 return true;
             }
@@ -71,8 +69,7 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
         }
         MouseEventKind::ScrollDown => {
             if crate::layout::rect_contains(split.preview, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Preview;
+                app.ui.focus_diff_preview();
                 let _ = <DiffPreview as UiComponent>::on_event(
                     app,
                     DiffPreviewEvent::WheelDelta(DIFF_WHEEL_STEP as i32),
@@ -80,8 +77,7 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
                 return true;
             }
             if crate::layout::rect_contains(split.files, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Files;
+                app.ui.focus_diff_files();
                 let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(1));
                 return true;
             }
@@ -89,7 +85,7 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
         }
         MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
             if crate::layout::rect_contains(split.repo_bar, col, row) {
-                app.ui.focus = FocusPane::Diff;
+                app.ui.focus_diff();
                 if let Some(evt) =
                     <DiffRepoBar as UiComponent>::hit_test(app, split.repo_bar, col, row)
                 {
@@ -98,16 +94,14 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
                 return true;
             }
             if crate::layout::rect_contains(split.files, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Files;
+                app.ui.focus_diff_files();
                 if let Some(evt) = <DiffList as UiComponent>::hit_test(app, split.files, col, row) {
                     let _ = <DiffList as UiComponent>::on_event(app, evt);
                 }
                 return true;
             }
             if crate::layout::rect_contains(split.preview, col, row) {
-                app.ui.focus = FocusPane::Diff;
-                app.ui.diff_focus = DiffFocus::Preview;
+                app.ui.focus_diff_preview();
                 return true;
             }
             false
@@ -134,13 +128,11 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
 
     match key.code {
         KeyCode::Char('h') => {
-            app.ui.focus = FocusPane::Diff;
-            app.ui.diff_focus = DiffFocus::Files;
+            app.ui.focus_diff_files();
             return true;
         }
         KeyCode::Char('l') => {
-            app.ui.focus = FocusPane::Diff;
-            app.ui.diff_focus = DiffFocus::Preview;
+            app.ui.focus_diff_preview();
             return true;
         }
         KeyCode::Char('f') => {

@@ -1,17 +1,13 @@
-use crate::state::{AppState, FocusPane};
+use crate::state::AppState;
 
 pub(super) fn focus_board(app: &mut AppState) {
-    app.ui.focus = FocusPane::Board;
+    app.ui.focus_board();
 }
 
 pub(super) fn focus_execution(app: &mut AppState) {
-    app.ui.focus = FocusPane::Execution;
+    app.ui.focus_execution();
 }
 
 pub(super) fn cycle_focus(app: &mut AppState) {
-    app.ui.focus = match app.ui.focus {
-        FocusPane::Board => FocusPane::Execution,
-        FocusPane::Execution => FocusPane::Diff,
-        FocusPane::Diff => FocusPane::Board,
-    };
+    app.ui.cycle_focus();
 }

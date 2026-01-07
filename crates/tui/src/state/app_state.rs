@@ -151,6 +151,38 @@ pub(crate) struct UiState {
     pub(crate) executor_profiles: serde_json::Value,
 }
 
+impl UiState {
+    pub(crate) fn focus_board(&mut self) {
+        self.focus = FocusPane::Board;
+    }
+
+    pub(crate) fn focus_execution(&mut self) {
+        self.focus = FocusPane::Execution;
+    }
+
+    pub(crate) fn focus_diff(&mut self) {
+        self.focus = FocusPane::Diff;
+    }
+
+    pub(crate) fn focus_diff_files(&mut self) {
+        self.focus = FocusPane::Diff;
+        self.diff_focus = DiffFocus::Files;
+    }
+
+    pub(crate) fn focus_diff_preview(&mut self) {
+        self.focus = FocusPane::Diff;
+        self.diff_focus = DiffFocus::Preview;
+    }
+
+    pub(crate) fn cycle_focus(&mut self) {
+        self.focus = match self.focus {
+            FocusPane::Board => FocusPane::Execution,
+            FocusPane::Execution => FocusPane::Diff,
+            FocusPane::Diff => FocusPane::Board,
+        };
+    }
+}
+
 pub(crate) struct AppState {
     pub(crate) backend_url: String,
     pub(crate) info_summary: String,
