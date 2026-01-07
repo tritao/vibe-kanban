@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
 };
 
 use crate::{
@@ -1542,6 +1542,7 @@ fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
 }
 
 fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
+    f.render_widget(Clear, area);
     if app.diff.list_mode == crate::state::DiffListMode::Commits {
         return render_commit_list(f, app, area);
     }
@@ -1767,6 +1768,7 @@ fn render_diff_files(f: &mut Frame, app: &AppState, area: Rect) {
 }
 
 fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
+    f.render_widget(Clear, area);
     let border_style = if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Files {
         Style::default().fg(Color::Cyan)
     } else if app.ui.focus == FocusPane::Diff {
@@ -1863,6 +1865,7 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
 }
 
 fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
+    f.render_widget(Clear, area);
     let border_style = if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Preview
     {
         Style::default().fg(Color::Cyan)
