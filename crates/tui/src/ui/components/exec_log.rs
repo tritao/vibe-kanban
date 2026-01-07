@@ -151,7 +151,8 @@ impl UiComponent for ExecLog {
         let inner_width = area.width.saturating_sub(2) as usize;
 
         let err_lines = app.ui.last_error.as_ref().map(|e| {
-            e.lines()
+            e.text
+                .lines()
                 .flat_map(|line| {
                     wrap_line_wordwise(
                         &Line::from(vec![Span::styled(
@@ -164,7 +165,8 @@ impl UiComponent for ExecLog {
                 .collect::<Vec<_>>()
         });
         let notice_lines = app.ui.last_notice.as_ref().map(|m| {
-            m.lines()
+            m.text
+                .lines()
                 .flat_map(|line| {
                     wrap_line_wordwise(
                         &Line::from(vec![Span::styled(

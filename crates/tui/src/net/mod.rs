@@ -899,7 +899,10 @@ pub(crate) async fn logs_stream_task(
                     .send(NetEvent::LogStreamStatus(StreamStatus::Error))
                     .await;
                 let _ = net_tx
-                    .send(NetEvent::Error(format!("log stream connect: {e}")))
+                    .send(NetEvent::ErrorKey {
+                        key: crate::state::UiMessageKey::LogStreamConnect,
+                        message: format!("log stream connect: {e}"),
+                    })
                     .await;
             }
         }

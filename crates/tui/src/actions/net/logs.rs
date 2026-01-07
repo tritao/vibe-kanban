@@ -7,7 +7,8 @@ use crate::{
 pub(super) fn log_stream_status(app: &mut AppState, status: StreamStatus) -> bool {
     app.exec.log_status = status;
     if matches!(status, StreamStatus::Connected | StreamStatus::Completed) {
-        app.ui.clear_error_with_prefix("log stream connect:");
+        app.ui
+            .clear_error_scope(crate::state::UiMessageKey::LogStreamConnect);
     }
     true
 }

@@ -93,5 +93,6 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
         NetEvent::TaskCreated { task_id, status } => tasks::task_created(app, task_id, status),
         NetEvent::Notice(msg) => ui::notice(app, msg),
         NetEvent::Error(msg) => ui::error(app, msg),
+        NetEvent::ErrorKey { key, message } => ui::error_key(app, key, message),
     }
 }

@@ -167,7 +167,8 @@ fn composer_enter_with_no_attempt_keeps_composer_open() {
     assert!(
         app.ui
             .last_error
-            .as_deref()
+            .as_ref()
+            .map(|m| m.text.as_str())
             .unwrap_or("")
             .contains("No task/attempt selected")
     );

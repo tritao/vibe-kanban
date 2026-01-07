@@ -5,7 +5,10 @@ use uuid::Uuid;
 
 use crate::{
     logs::PreparedLogCache,
-    state::{AttemptRow, ExecutorProfileSelection, GitBranchItem, RepoBranchStatus, TaskStatus},
+    state::{
+        AttemptRow, ExecutorProfileSelection, GitBranchItem, RepoBranchStatus, TaskStatus,
+        UiMessageKey,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -155,4 +158,8 @@ pub(crate) enum NetEvent {
     },
     Notice(String),
     Error(String),
+    ErrorKey {
+        key: UiMessageKey,
+        message: String,
+    },
 }

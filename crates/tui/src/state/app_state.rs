@@ -11,7 +11,8 @@ use super::types::{
     AttemptRow, BranchPickerState, CommitEntry, ConfirmState, CreateTaskState,
     DelayedLoadingIndicator, DiffFocus, DiffListMode, DiffTheme, ExecutorProfileSelection,
     FocusPane, GitOpState, InputState, JobKey, LogMode, LogRenderMode, LogViewMode,
-    PendingExecHook, RepoBranchStatus, TaskStatus, TextFieldState, ToastState, TuiPrefs,
+    PendingExecHook, RepoBranchStatus, TaskStatus, TextFieldState, ToastState, TuiPrefs, UiMessage,
+    UiMessageKey, UiMessageKind,
 };
 use crate::{
     events::{NetEvent, StreamStatus},
@@ -155,8 +156,8 @@ pub(crate) struct UiState {
     pub(crate) composer_suggest_index: usize,
     pub(crate) refresh_branch_status_after_send: bool,
 
-    pub(crate) last_error: Option<String>,
-    pub(crate) last_notice: Option<String>,
+    pub(crate) last_error: Option<UiMessage>,
+    pub(crate) last_notice: Option<UiMessage>,
 
     pub(crate) toast: Option<ToastState>,
 
@@ -201,11 +202,33 @@ impl UiState {
     }
 
     pub(crate) fn set_notice(&mut self, msg: impl Into<String>) {
-        self.last_notice = Some(msg.into());
+        self.last_notice = Some(UiMessage {
+            kind: UiMessageKind::Notice,
+            scope: None,
+            text: msg.into(),
+            created_at: Instant::now(),
+        });
     }
 
     pub(crate) fn set_error(&mut self, msg: impl Into<String>) {
-        self.last_error = Some(msg.into());
+        self.last_error = Some(UiMessage {
+            kind: UiMessageKind::Error,
+            scope: None,
+            text: msg.into(),
+            created_at: Instant::now(),
+        });
+        if let Some(state) = self.project_setup.as_mut() {
+            state.busy = false;
+        }
+    }
+
+    pub(crate) fn set_error_key(&mut self, key: UiMessageKey, msg: impl Into<String>) {
+        self.last_error = Some(UiMessage {
+            kind: UiMessageKind::Error,
+            scope: Some(key),
+            text: msg.into(),
+            created_at: Instant::now(),
+        });
         if let Some(state) = self.project_setup.as_mut() {
             state.busy = false;
         }
@@ -216,9 +239,9 @@ impl UiState {
         self.last_notice = None;
     }
 
-    pub(crate) fn clear_error_with_prefix(&mut self, prefix: &str) -> bool {
-        if let Some(err) = self.last_error.as_deref()
-            && err.starts_with(prefix)
+    pub(crate) fn clear_error_scope(&mut self, scope: UiMessageKey) -> bool {
+        if let Some(err) = self.last_error.as_ref()
+            && err.scope == Some(scope)
         {
             self.last_error = None;
             return true;

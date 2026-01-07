@@ -55,3 +55,8 @@ pub(super) fn error(app: &mut AppState, msg: String) -> bool {
     app.ui.set_error(msg);
     true
 }
+
+pub(super) fn error_key(app: &mut AppState, key: crate::state::UiMessageKey, msg: String) -> bool {
+    app.ui.set_error_key(key, msg);
+    true
+}
