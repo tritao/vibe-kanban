@@ -7,6 +7,7 @@ pub(crate) mod layout;
 pub(crate) mod modals;
 pub(crate) mod palette;
 pub(crate) mod scroll;
+pub(crate) mod scroll_model;
 pub(crate) mod viewport;
 pub(crate) mod widgets;
 
