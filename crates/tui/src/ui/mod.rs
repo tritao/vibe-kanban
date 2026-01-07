@@ -4,6 +4,7 @@ pub(crate) mod components;
 pub(crate) mod constants;
 pub(crate) mod execution;
 pub(crate) mod layout;
+pub(crate) mod list_nav;
 pub(crate) mod loading;
 pub(crate) mod modals;
 pub(crate) mod palette;
