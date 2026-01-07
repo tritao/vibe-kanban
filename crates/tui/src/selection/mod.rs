@@ -1,3 +1,4 @@
+pub(crate) mod change;
 pub(crate) mod lists_filters;
 pub(crate) mod navigation;
 
