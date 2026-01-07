@@ -1,0 +1,260 @@
+use std::time::Instant;
+
+use ratatui::{
+    Frame,
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
+};
+
+use super::{badges, buttons, shared};
+use crate::{
+    state::{AppState, FocusPane, Merge},
+    text::{display_width, truncate_to_width},
+    ui::button_row::{button_row_plain, push_button_row_spans},
+};
+
+fn badge(text: impl Into<String>, fg: Color, bg: Color) -> Span<'static> {
+    crate::ui::widgets::badge(text, fg, bg)
+}
+
+pub(super) fn render_diff_repo_bar(f: &mut Frame, app: &AppState, area: Rect) {
+    let border_style = if app.ui.focus == FocusPane::Diff {
+        Style::default().fg(Color::Cyan)
+    } else {
+        Style::default()
+    };
+
+    let w = area.width.saturating_sub(2) as usize;
+
+    let repo = shared::selected_repo_status(app);
+    let branch = shared::selected_attempt_branch(app);
+
+    let (
+        repo_name,
+        target_branch,
+        ahead,
+        behind,
+        remote_ahead,
+        remote_behind,
+        dirty,
+        untracked,
+        conflicts,
+        pr_open,
+    ) = if let Some(r) = repo {
+        let ahead = r.status.commits_ahead.unwrap_or(0);
+        let behind = r.status.commits_behind.unwrap_or(0);
+        let remote_ahead = r.status.remote_commits_ahead.unwrap_or(0);
+        let remote_behind = r.status.remote_commits_behind.unwrap_or(0);
+        let dirty_count = r.status.uncommitted_count.unwrap_or(0);
+        let untracked = r.status.untracked_count.unwrap_or(0);
+        let conflicts = r.status.conflicted_files.len();
+        let pr_open = r.status.merges.iter().find_map(|m| match m {
+            Merge::Pr(pr) => Some((pr.pr_info.number, pr.pr_info.status)),
+            _ => None,
+        });
+        (
+            r.repo_name.clone(),
+            r.status.target_branch_name.clone(),
+            ahead,
+            behind,
+            remote_ahead,
+            remote_behind,
+            dirty_count,
+            untracked,
+            conflicts,
+            pr_open,
+        )
+    } else {
+        (
+            "(repo)".to_string(),
+            "—".to_string(),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            None,
+        )
+    };
+
+    let left_base = if repo.is_some() {
+        format!("{repo_name}  {branch} → {target_branch}")
+    } else if app.board.selected_attempt_id.is_some() {
+        format!("{branch}  (press S for repo status)")
+    } else {
+        "(no attempt)".to_string()
+    };
+
+    let now = Instant::now();
+    let buttons = buttons::repo_bar_button_specs(app, repo, now);
+    let stack_badge = badges::selected_stack_badge(app, repo);
+
+    let mut right_plain = String::new();
+    let mut any_badge = false;
+    if dirty > 0 {
+        right_plain.push_str(&format!(" Δ{dirty} "));
+        any_badge = true;
+    }
+    if untracked > 0 {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(&format!(" ?{untracked} "));
+        any_badge = true;
+    }
+    if ahead > 0 {
+        right_plain.push_str(&format!(" +{ahead} "));
+        any_badge = true;
+    }
+    if behind > 0 {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(&format!(" {behind} "));
+        any_badge = true;
+    }
+    if remote_ahead > 0 {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(&format!(" r+{remote_ahead} "));
+        any_badge = true;
+    }
+    if remote_behind > 0 {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(&format!(" r-{remote_behind} "));
+        any_badge = true;
+    }
+    if conflicts > 0 {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(&format!(" !{conflicts} "));
+        any_badge = true;
+    }
+    if let Some((n, _)) = pr_open {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(&format!(" PR#{n} "));
+        any_badge = true;
+    }
+    if let Some((plain, _)) = stack_badge.as_ref() {
+        if any_badge {
+            right_plain.push(' ');
+        }
+        right_plain.push_str(plain);
+        any_badge = true;
+    }
+    if any_badge {
+        right_plain.push_str("  ");
+    }
+    right_plain.push_str(&button_row_plain(&buttons));
+    let right_w = display_width(&right_plain);
+
+    let can_show_right = w > right_w + 2;
+    let left_w = if can_show_right { w - right_w - 2 } else { w };
+    let left = truncate_to_width(&left_base, left_w);
+
+    let mut spans: Vec<Span<'static>> = vec![Span::styled(
+        left,
+        Style::default().add_modifier(Modifier::BOLD),
+    )];
+
+    if can_show_right {
+        spans.push(Span::raw("  "));
+        let mut first = true;
+        if dirty > 0 {
+            spans.push(badge(format!("Δ{dirty}"), Color::Black, Color::LightYellow));
+            first = false;
+        }
+        if untracked > 0 {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(badge(
+                format!("?{untracked}"),
+                Color::Black,
+                Color::LightCyan,
+            ));
+            first = false;
+        }
+        if ahead > 0 {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(badge(format!("+{ahead}"), Color::Black, Color::LightGreen));
+            first = false;
+        }
+        if behind > 0 {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(badge(format!("{behind}"), Color::Black, Color::LightYellow));
+            first = false;
+        }
+        if remote_ahead > 0 {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(badge(
+                format!("r+{remote_ahead}"),
+                Color::Black,
+                Color::LightBlue,
+            ));
+            first = false;
+        }
+        if remote_behind > 0 {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(badge(
+                format!("r-{remote_behind}"),
+                Color::Black,
+                Color::LightYellow,
+            ));
+            first = false;
+        }
+        if conflicts > 0 {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(badge(format!("!{conflicts}"), Color::White, Color::Red));
+            first = false;
+        }
+        if let Some((n, status)) = pr_open {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            let (fg, bg) = badges::pr_badge_style(status);
+            spans.push(badge(format!("PR#{n}"), fg, bg));
+            first = false;
+        }
+        if let Some((_, span)) = stack_badge {
+            if !first {
+                spans.push(Span::raw(" "));
+            }
+            spans.push(span);
+            first = false;
+        }
+
+        if !first {
+            spans.push(Span::raw("  "));
+        }
+        push_button_row_spans(&mut spans, &buttons);
+    }
+
+    let p = Paragraph::new(Line::from(spans)).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .title("Repo")
+            .border_style(border_style),
+    );
+    f.render_widget(p, area);
+}

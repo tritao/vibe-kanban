@@ -1,4 +1,5 @@
 pub(crate) mod board;
+pub(crate) mod button_row;
 pub(crate) mod chrome;
 pub(crate) mod components;
 pub(crate) mod create_task;
