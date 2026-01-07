@@ -8,6 +8,34 @@ mod hit_test;
 mod nav;
 mod render;
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct CommitFooter {
+    pub(super) loading: bool,
+    pub(super) has_more: bool,
+}
+
+pub(super) fn commit_footer(app: &AppState) -> CommitFooter {
+    let Some(repo_id) = crate::state::repo_scope::selected_repo_id(app) else {
+        return CommitFooter {
+            loading: false,
+            has_more: false,
+        };
+    };
+    let loading = app
+        .diff
+        .commits_loading_by_repo
+        .get(&repo_id)
+        .map(|i| i.visible())
+        .unwrap_or(false);
+    let has_more = app
+        .diff
+        .commits_has_more_by_repo
+        .get(&repo_id)
+        .copied()
+        .unwrap_or(false);
+    CommitFooter { loading, has_more }
+}
+
 pub(crate) enum DiffListEvent {
     Key(KeyEvent),
     ClickIndex(usize),

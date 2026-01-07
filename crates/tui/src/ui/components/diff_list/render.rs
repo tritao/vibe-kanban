@@ -188,13 +188,9 @@ pub(super) fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
         .and_then(|id| app.diff.commits_by_repo.get(&id))
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
-    let loading = repo_id
-        .and_then(|id| app.diff.commits_loading_by_repo.get(&id))
-        .map(|i| i.visible)
-        .unwrap_or(false);
-    let has_more = repo_id
-        .and_then(|id| app.diff.commits_has_more_by_repo.get(&id).copied())
-        .unwrap_or(false);
+    let footer = super::commit_footer(app);
+    let loading = footer.loading;
+    let has_more = footer.has_more;
 
     let selected = if commits.is_empty() {
         0
