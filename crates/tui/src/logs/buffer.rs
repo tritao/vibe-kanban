@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::{
     events::StreamStatus,
-    logs::model_params::{ModelParams, extract_model_params_from_store},
+    logs::model_params::ModelParams,
     selection::exec_list,
     state::{AppState, DiffTheme, ExecRow, LogMode, LogRenderMode, LogViewMode},
     text::truncate_to_width,
@@ -728,7 +728,7 @@ fn rebuild_log_view_cache(app: &mut AppState) {
         app.exec.log_line_targets.push(None);
 
         if let Some(buf) = app.exec.log_buffers.get(&exec_id) {
-            if let Some(params) = extract_model_params_from_store(&buf.store) {
+            if let Some(params) = crate::store::logs::LogStore::new(&buf.store).model_params() {
                 if last_params.as_ref() != Some(&params) {
                     last_params = Some(params.clone());
                     let mut text = format!("  model: {}", params.model);

@@ -4,7 +4,7 @@ pub(crate) struct ModelParams {
     pub(crate) reasoning_effort: Option<String>,
 }
 
-fn parse_system_message_for_model_params(text: &str) -> Option<ModelParams> {
+pub(crate) fn parse_system_message_for_model_params(text: &str) -> Option<ModelParams> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return None;
@@ -59,25 +59,6 @@ fn parse_system_message_for_model_params(text: &str) -> Option<ModelParams> {
         model,
         reasoning_effort: effort,
     })
-}
-
-pub(crate) fn extract_model_params_from_store(store: &serde_json::Value) -> Option<ModelParams> {
-    let entries = store.get("entries")?.as_array()?;
-    for entry in entries {
-        if entry.get("type")?.as_str()? != "NORMALIZED_ENTRY" {
-            continue;
-        }
-        let content = entry.get("content")?;
-        let entry_type = content.get("entry_type")?;
-        if entry_type.get("type")?.as_str()? != "system_message" {
-            continue;
-        }
-        let text = content.get("content")?.as_str().unwrap_or("");
-        if let Some(p) = parse_system_message_for_model_params(text) {
-            return Some(p);
-        }
-    }
-    None
 }
 
 pub(crate) fn is_model_params_system_message(text: &str) -> bool {
