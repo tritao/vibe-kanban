@@ -1,4 +1,5 @@
 use anyhow::Context;
+use serde::de::DeserializeOwned;
 use utils::response::ApiResponse;
 use uuid::Uuid;
 
@@ -6,6 +7,23 @@ use crate::state::{
     ConflictOp, ExecutorProfileSelection, MergeStatus, RepoBranchStatus, StackPatchEntry,
     StackStatusResponse, TaskStatus,
 };
+
+async fn decode_json_response<T: DeserializeOwned>(resp: reqwest::Response) -> anyhow::Result<T> {
+    let status = resp.status();
+    let body = resp.text().await.context("read response body")?;
+    serde_json::from_str::<T>(&body).with_context(|| {
+        let mut snippet = body.trim().to_string();
+        const MAX: usize = 800;
+        if snippet.len() > MAX {
+            snippet.truncate(MAX);
+            snippet.push_str("…");
+        }
+        if snippet.is_empty() {
+            snippet = "<empty body>".to_string();
+        }
+        format!("decode response body as JSON (status {status}): {snippet}")
+    })
+}
 
 pub(crate) async fn update_task_status_http(
     base_url: &str,
@@ -20,7 +38,7 @@ pub(crate) async fn update_task_status_http(
     let body = serde_json::json!({ "status": status.as_api_str() });
 
     let resp = client.put(url).json(&body).send().await?;
-    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    let api = decode_json_response::<ApiResponse<serde_json::Value>>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected status update");
     }
@@ -42,7 +60,7 @@ pub(crate) async fn delete_task_http(
     }
 
     let resp = client.delete(url).send().await?;
-    let api = resp.json::<ApiResponse<serde_json::Value>>().await?;
+    let api = decode_json_response::<ApiResponse<serde_json::Value>>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected delete task");
     }
@@ -79,7 +97,7 @@ pub(crate) async fn create_task_http(
     }
 
     let resp = client.post(url).json(&body).send().await?;
-    let api = resp.json::<ApiResponse<CreatedTaskDto>>().await?;
+    let api = decode_json_response::<ApiResponse<CreatedTaskDto>>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected create task");
     }
@@ -110,7 +128,7 @@ pub(crate) async fn list_task_attempts_http(
         base_url.trim_end_matches('/')
     );
     let resp = client.get(url).send().await?;
-    let api = resp.json::<ApiResponse<Vec<WorkspaceDto>>>().await?;
+    let api = decode_json_response::<ApiResponse<Vec<WorkspaceDto>>>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected task attempts request");
     }
@@ -150,7 +168,7 @@ pub(crate) async fn project_repositories_http(
         base_url.trim_end_matches('/')
     );
     let resp = client.get(url).send().await?;
-    let api = resp.json::<ApiResponse<Vec<ProjectRepoItem>>>().await?;
+    let api = decode_json_response::<ApiResponse<Vec<ProjectRepoItem>>>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected project repositories request");
     }
@@ -592,9 +610,7 @@ pub(crate) async fn branch_status_http(
         base_url.trim_end_matches('/')
     );
     let resp = client.get(url).send().await?;
-    let api = resp
-        .json::<ApiResponseWire<Vec<RepoBranchStatus>>>()
-        .await?;
+    let api = decode_json_response::<ApiResponseWire<Vec<RepoBranchStatus>>>(resp).await?;
     if !api.success {
         anyhow::bail!(
             "{}",
@@ -637,7 +653,7 @@ pub(crate) async fn commit_list_http(
     }
 
     let resp = client.get(url).send().await?;
-    let api = resp.json::<ApiResponseWire<Vec<CommitEntryWire>>>().await?;
+    let api = decode_json_response::<ApiResponseWire<Vec<CommitEntryWire>>>(resp).await?;
     if !api.success {
         anyhow::bail!(
             "{}",
@@ -678,7 +694,7 @@ pub(crate) async fn commit_show_http(
         base_url.trim_end_matches('/')
     );
     let resp = client.get(url).send().await?;
-    let api = resp.json::<ApiResponseWire<CommitShowWire>>().await?;
+    let api = decode_json_response::<ApiResponseWire<CommitShowWire>>(resp).await?;
     if !api.success {
         anyhow::bail!(
             "{}",
@@ -756,9 +772,8 @@ pub(crate) async fn stack_status_http(
         base_url.trim_end_matches('/')
     );
     let resp = client.get(url).send().await?;
-    let api = resp
-        .json::<ApiResponseWire<StackStatusWire, StackErrorWire>>()
-        .await?;
+    let api =
+        decode_json_response::<ApiResponseWire<StackStatusWire, StackErrorWire>>(resp).await?;
     if api.success {
         return Ok(map_stack_status_wire(
             api.data
@@ -810,9 +825,8 @@ pub(crate) async fn stack_enable_http(
         .json(&RepoIdRequest { repo_id })
         .send()
         .await?;
-    let api = resp
-        .json::<ApiResponseWire<StackStatusWire, StackErrorWire>>()
-        .await?;
+    let api =
+        decode_json_response::<ApiResponseWire<StackStatusWire, StackErrorWire>>(resp).await?;
     if api.success {
         return Ok(map_stack_status_wire(
             api.data
@@ -885,9 +899,8 @@ async fn stack_post_repo_id(
         .json(&RepoIdRequest { repo_id })
         .send()
         .await?;
-    let api = resp
-        .json::<ApiResponseWire<StackStatusWire, StackErrorWire>>()
-        .await?;
+    let api =
+        decode_json_response::<ApiResponseWire<StackStatusWire, StackErrorWire>>(resp).await?;
     if api.success {
         return Ok(map_stack_status_wire(
             api.data
@@ -936,9 +949,8 @@ async fn stack_post_json<T: serde::Serialize>(
         base_url.trim_end_matches('/')
     );
     let resp = client.post(url).json(body).send().await?;
-    let api = resp
-        .json::<ApiResponseWire<StackStatusWire, StackErrorWire>>()
-        .await?;
+    let api =
+        decode_json_response::<ApiResponseWire<StackStatusWire, StackErrorWire>>(resp).await?;
     if api.success {
         return Ok(map_stack_status_wire(
             api.data
