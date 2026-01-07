@@ -2,7 +2,6 @@ pub(crate) mod button_row;
 pub(crate) mod chrome;
 pub(crate) mod components;
 pub(crate) mod constants;
-pub(crate) mod diff;
 pub(crate) mod execution;
 pub(crate) mod layout;
 pub(crate) mod loading;
@@ -15,11 +14,8 @@ pub(crate) mod widgets;
 
 pub(crate) use chrome::{render_bottom_bar, render_top_bar};
 pub(crate) use components::{
-    board_pane::render_board_pane,
+    diff_pane::sync_selected_repo_from_diff_selection,
     diff_repo_bar::{DiffRepoAction, trigger_diff_repo_action},
 };
-pub(crate) use diff::{render_diff_pane, sync_selected_repo_from_diff_selection};
-pub(crate) use execution::{
-    close_composer, open_composer, render_composer_autocomplete, render_execution_pane,
-};
+pub(crate) use execution::{close_composer, open_composer, render_composer_autocomplete};
 pub(crate) use modals::open_create_task_modal;

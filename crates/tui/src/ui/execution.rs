@@ -6,15 +6,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, List, ListItem},
 };
 
-use super::components::{UiComponent, exec_input::ExecInput, exec_log::ExecLog};
 use crate::state::AppState;
-
-pub(crate) fn render_execution_pane(f: &mut Frame, app: &AppState, area: Rect) {
-    let sections = crate::layout::split_exec_pane(area);
-
-    <ExecLog as UiComponent>::render(f, app, sections.logs);
-    <ExecInput as UiComponent>::render(f, app, sections.input);
-}
 
 pub(crate) fn open_composer(app: &mut AppState) {
     app.ui.composer_active = true;

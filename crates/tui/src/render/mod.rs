@@ -7,8 +7,10 @@ use crate::{
     layout::compute_main_layout,
     state::AppState,
     ui::{
-        render_board_pane, render_bottom_bar, render_composer_autocomplete, render_diff_pane,
-        render_execution_pane, render_top_bar,
+        components::{
+            UiComponent, board_pane::BoardPane, diff_pane::DiffPane, exec_pane::ExecPane,
+        },
+        render_bottom_bar, render_composer_autocomplete, render_top_bar,
     },
 };
 
@@ -26,9 +28,9 @@ pub(crate) fn render(f: &mut Frame, app: &AppState) {
     let top = render_top_bar(app);
     f.render_widget(top, root[0]);
 
-    render_board_pane(f, app, layout.board);
-    render_execution_pane(f, app, layout.exec);
-    render_diff_pane(f, app, layout.diff);
+    <BoardPane as UiComponent>::render(f, app, layout.board);
+    <ExecPane as UiComponent>::render(f, app, layout.exec);
+    <DiffPane as UiComponent>::render(f, app, layout.diff);
 
     let bottom = render_bottom_bar(app);
     f.render_widget(bottom, root[2]);

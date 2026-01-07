@@ -747,8 +747,11 @@ pub(crate) struct TaskRow {
 pub(crate) struct AttemptRow {
     pub(crate) id: Uuid,
     pub(crate) branch: String,
+    #[allow(dead_code)]
     pub(crate) created_at: Option<String>,
+    #[allow(dead_code)]
     pub(crate) updated_at: Option<String>,
+    #[allow(dead_code)]
     pub(crate) setup_completed_at: Option<String>,
 }
 

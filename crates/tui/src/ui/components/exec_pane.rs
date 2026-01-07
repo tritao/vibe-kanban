@@ -22,7 +22,10 @@ impl UiComponent for ExecPane {
     type Event = ExecPaneEvent;
 
     fn render(f: &mut ratatui::Frame, app: &AppState, area: ratatui::layout::Rect) {
-        crate::ui::render_execution_pane(f, app, area);
+        let sections = crate::layout::split_exec_pane(area);
+
+        <ExecLog as UiComponent>::render(f, app, sections.logs);
+        <ExecInput as UiComponent>::render(f, app, sections.input);
     }
 
     fn on_event(app: &mut AppState, event: Self::Event) -> bool {
