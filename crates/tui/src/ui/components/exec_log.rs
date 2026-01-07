@@ -335,21 +335,13 @@ impl UiComponent for ExecLog {
                 }
                 ExecLogHitKind::Left => {
                     if hit.selection.is_none() {
-                        let mut dirty = false;
-                        dirty |= app.exec.log_selected.take().is_some();
-                        dirty |= app.exec.log_mouse_selecting;
-                        dirty |= app.exec.log_mouse_select_anchor.take().is_some();
-                        dirty |= app.exec.log_mouse_select_range.take().is_some();
-                        app.exec.log_mouse_selecting = false;
-                        return dirty;
+                        return app.exec.clear_log_selection();
                     }
 
                     app.exec.log_selected = hit.selection;
 
                     if let Some(line_idx) = hit.line_idx {
-                        app.exec.log_mouse_selecting = true;
-                        app.exec.log_mouse_select_anchor = Some(line_idx);
-                        app.exec.log_mouse_select_range = Some((line_idx, line_idx));
+                        app.exec.start_log_mouse_selection(line_idx);
                     }
 
                     if hit.click_chevron {
@@ -358,23 +350,8 @@ impl UiComponent for ExecLog {
                     true
                 }
             },
-            ExecLogEvent::DragTo(cur) => {
-                let Some(anchor) = app.exec.log_mouse_select_anchor else {
-                    return false;
-                };
-                let (a, b) = if anchor <= cur {
-                    (anchor, cur)
-                } else {
-                    (cur, anchor)
-                };
-                app.exec.log_mouse_select_range = Some((a, b));
-                true
-            }
-            ExecLogEvent::DragEnd => {
-                let dirty = app.exec.log_mouse_selecting;
-                app.exec.log_mouse_selecting = false;
-                dirty
-            }
+            ExecLogEvent::DragTo(cur) => app.exec.update_log_mouse_selection(cur),
+            ExecLogEvent::DragEnd => app.exec.finish_log_mouse_selection(),
         }
     }
 }
