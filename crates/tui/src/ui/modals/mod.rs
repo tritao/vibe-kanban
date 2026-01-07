@@ -5,12 +5,16 @@ use crate::state::AppState;
 
 mod branch_picker;
 mod confirm;
+mod create_task;
 mod help;
 mod input;
 mod project_setup;
 
 pub(crate) use branch_picker::render_branch_picker_modal;
 pub(crate) use confirm::render_confirm_modal;
+pub(crate) use create_task::{
+    handle_create_task_key, open_create_task_modal, render_create_task_modal,
+};
 pub(crate) use help::render_help_modal;
 pub(crate) use input::render_input_modal;
 pub(crate) use project_setup::render_project_setup_modal;
@@ -110,11 +114,11 @@ impl ModalComponent for CreateTaskModal {
     }
     fn render(&self, f: &mut Frame, app: &AppState) {
         if let Some(state) = app.ui.create_task.as_ref() {
-            crate::ui::render_create_task_modal(f, app, state);
+            render_create_task_modal(f, app, state);
         }
     }
     fn on_key(&self, app: &mut AppState, key: KeyEvent) -> bool {
-        crate::ui::handle_create_task_key(app, key)
+        handle_create_task_key(app, key)
     }
 }
 

@@ -6,10 +6,10 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
-use super::layout::centered_rect;
 use crate::{
     selection::{find_task, projects_list},
     state::{AppState, CreateTaskFocus, CreateTaskState, TaskStatus},
+    ui::layout::centered_rect,
 };
 
 pub(crate) fn open_create_task_modal(app: &mut AppState, parent_task_id: Option<uuid::Uuid>) {
