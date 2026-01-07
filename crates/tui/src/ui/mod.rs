@@ -5,6 +5,7 @@ pub(crate) mod diff;
 pub(crate) mod execution;
 pub(crate) mod layout;
 pub(crate) mod modals;
+pub(crate) mod viewport;
 
 pub(crate) use board::{board_hit_at, render_board_pane};
 pub(crate) use chrome::{render_bottom_bar, render_top_bar};

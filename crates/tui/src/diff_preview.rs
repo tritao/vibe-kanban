@@ -5,7 +5,7 @@ use ratatui::text::Line;
 use crate::{
     diff::{build_diff_preview_request, compute_diff_preview},
     events::NetEvent,
-    jobs::{cancel_job, replace_job},
+    jobs::{cancel_job, replace_blocking_job},
     state::{AppState, JobKey},
 };
 
@@ -85,18 +85,14 @@ pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
     app.diff.diff_preview_loading_placeholder_pending = app.diff.diff_preview_lines.is_empty()
         || app.diff.diff_preview_lines == vec![Line::from("No diffs")];
 
-    replace_job(
-        app,
-        JobKey::DiffPreview,
-        tokio::task::spawn_blocking(move || {
-            let (cache_key, cache_hash, lines) = compute_diff_preview(req, width, theme, wrap);
-            let _ = net_tx.blocking_send(NetEvent::DiffPreviewReady {
-                generation,
-                cache_key,
-                cache_hash,
-                width: width_u16,
-                lines,
-            });
-        }),
-    );
+    replace_blocking_job(app, JobKey::DiffPreview, move || {
+        let (cache_key, cache_hash, lines) = compute_diff_preview(req, width, theme, wrap);
+        let _ = net_tx.blocking_send(NetEvent::DiffPreviewReady {
+            generation,
+            cache_key,
+            cache_hash,
+            width: width_u16,
+            lines,
+        });
+    });
 }

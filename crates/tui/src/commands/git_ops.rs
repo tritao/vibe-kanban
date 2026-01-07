@@ -4,8 +4,8 @@ use ratatui::style::Color;
 use uuid::Uuid;
 
 use crate::{
+    commands::run_net_job,
     events::{GitOpKind, NetEvent},
-    jobs::replace_job,
     net::ops::branch_status_http,
     selection::exec_list,
     state::{AppState, GitOpState, JobKey, PendingExecHook, ToastState},
@@ -16,12 +16,10 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
         return;
     };
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    replace_job(
+    run_net_job(
         app,
         JobKey::BranchStatus,
-        tokio::spawn(async move {
+        move |base_url, net_tx| async move {
             match branch_status_http(&base_url, attempt_id).await {
                 Ok(statuses) => {
                     let _ = net_tx
@@ -37,7 +35,7 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
                         .await;
                 }
             }
-        }),
+        },
     );
 }
 
@@ -46,12 +44,10 @@ pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration
         return;
     };
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    replace_job(
+    run_net_job(
         app,
         JobKey::BranchStatusAuto,
-        tokio::spawn(async move {
+        move |base_url, net_tx| async move {
             tokio::time::sleep(delay).await;
             match branch_status_http(&base_url, attempt_id).await {
                 Ok(statuses) => {
@@ -68,7 +64,7 @@ pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration
                         .await;
                 }
             }
-        }),
+        },
     );
 }
 

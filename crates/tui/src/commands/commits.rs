@@ -4,10 +4,10 @@ use ratatui::text::Line;
 use uuid::Uuid;
 
 use crate::{
+    commands::run_net_job,
     events::NetEvent,
-    jobs::replace_job,
     net::ops::{commit_list_http, commit_show_http},
-    state::{AppState, CommitEntry, DiffListMode, JobKey},
+    state::{AppState, CommitEntry, DiffListMode, JobKey, repo_scope::selected_repo_id},
 };
 
 const COMMIT_FILES_MARKER: &str = "----8<---- VK-FILES ----8<----";
@@ -93,18 +93,18 @@ pub(crate) fn ensure_commit_preview_rendered(app: &mut AppState, preview_width: 
             .join("\n");
 
         out.push(Line::from(""));
-        out.extend(crate::logs::markdown::render_markdown(
+        out.extend(crate::md::render(
             message.trim_end(),
             content_width.max(1),
-            crate::logs::markdown::MdSoftBreakMode::Newline,
+            crate::md::MdSoftBreakMode::Newline,
         ));
     }
     if !files.trim().is_empty() {
         let md = format!("\n\n```text\n{}\n```\n", files.trim_end());
-        out.extend(crate::logs::markdown::render_markdown(
+        out.extend(crate::md::render(
             &md,
             content_width.max(1),
-            crate::logs::markdown::MdSoftBreakMode::Newline,
+            crate::md::MdSoftBreakMode::Newline,
         ));
     }
 
@@ -123,22 +123,19 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
     let Some(attempt_id) = app.board.selected_attempt_id else {
         return;
     };
-    let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+    let Some(repo_id) = selected_repo_id(app) else {
         return;
     };
-    let repo_id = repo.repo_id;
     app.diff
         .commits_loading_by_repo
         .entry(repo_id)
         .or_default()
         .start(Instant::now(), std::time::Duration::from_millis(200));
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    replace_job(
+    run_net_job(
         app,
         JobKey::CommitList,
-        tokio::spawn(async move {
+        move |base_url, net_tx| async move {
             let limit = 80usize;
             match commit_list_http(&base_url, attempt_id, repo_id, Some(limit), Some(0)).await {
                 Ok(commits) => {
@@ -159,7 +156,7 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
                     let _ = net_tx.send(NetEvent::CommitListFailed { repo_id }).await;
                 }
             }
-        }),
+        },
     );
 }
 
@@ -170,10 +167,9 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
     let Some(attempt_id) = app.board.selected_attempt_id else {
         return;
     };
-    let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+    let Some(repo_id) = selected_repo_id(app) else {
         return;
     };
-    let repo_id = repo.repo_id;
     if crate::jobs::job_running(app, JobKey::CommitList) {
         return;
     }
@@ -198,12 +194,10 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
         .or_default()
         .start(Instant::now(), std::time::Duration::from_millis(200));
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    replace_job(
+    run_net_job(
         app,
         JobKey::CommitList,
-        tokio::spawn(async move {
+        move |base_url, net_tx| async move {
             let limit = 80usize;
             match commit_list_http(&base_url, attempt_id, repo_id, Some(limit), Some(offset)).await
             {
@@ -225,7 +219,7 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
                     let _ = net_tx.send(NetEvent::CommitListFailed { repo_id }).await;
                 }
             }
-        }),
+        },
     );
 }
 
@@ -236,10 +230,9 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     let Some(attempt_id) = app.board.selected_attempt_id else {
         return;
     };
-    let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+    let Some(repo_id) = selected_repo_id(app) else {
         return;
     };
-    let repo_id = repo.repo_id;
     let commits = app
         .diff
         .commits_by_repo
@@ -258,12 +251,10 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     app.diff.commit_preview_loading_placeholder_pending = true;
     app.diff.commit_preview_text = None;
     app.diff.commit_preview_render_width = 0;
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    replace_job(
+    run_net_job(
         app,
         JobKey::CommitPreview,
-        tokio::spawn(async move {
+        move |base_url, net_tx| async move {
             match commit_show_http(&base_url, attempt_id, repo_id, &oid).await {
                 Ok(text) => {
                     let _ = net_tx
@@ -278,7 +269,7 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
                         .await;
                 }
             }
-        }),
+        },
     );
 }
 

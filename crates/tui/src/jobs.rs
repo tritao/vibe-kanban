@@ -11,6 +11,13 @@ pub(crate) fn replace_job(app: &mut AppState, key: JobKey, job: tokio::task::Joi
     app.jobs.insert(key, job);
 }
 
+pub(crate) fn replace_blocking_job<F>(app: &mut AppState, key: JobKey, f: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    replace_job(app, key, tokio::task::spawn_blocking(f));
+}
+
 pub(crate) fn job_running(app: &AppState, key: JobKey) -> bool {
     app.jobs.get(&key).is_some_and(|h| !h.is_finished())
 }

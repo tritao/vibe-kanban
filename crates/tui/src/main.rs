@@ -9,6 +9,7 @@ mod fmt;
 mod jobs;
 mod layout;
 mod logs;
+mod md;
 mod net;
 mod prefs;
 mod render;

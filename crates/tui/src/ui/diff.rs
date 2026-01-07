@@ -1881,7 +1881,6 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
 }
 
 fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
-    f.render_widget(Clear, area);
     let border_style = if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Preview
     {
         Style::default().fg(Color::Cyan)
@@ -1920,21 +1919,21 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
     let height = area.height.saturating_sub(2) as usize;
     let end = (start + height).min(lines.len());
     let visible = lines.get(start..end).unwrap_or(&[]);
-
-    // Pad to the full viewport height so old content doesn't remain on screen when the new
-    // preview has fewer lines than the previous one.
-    let mut visible_vec = visible.to_vec();
-    visible_vec.resize(height, Line::from(""));
-
-    let mut w = Paragraph::new(visible_vec).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(title)
-            .border_style(border_style),
+    crate::ui::viewport::render_cleared_padded_paragraph(
+        f,
+        area,
+        |padded| {
+            let mut w = Paragraph::new(padded).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(title)
+                    .border_style(border_style),
+            );
+            if app.diff.list_mode == crate::state::DiffListMode::Commits {
+                w = w.wrap(Wrap { trim: false });
+            }
+            w
+        },
+        visible,
     );
-    if app.diff.list_mode == crate::state::DiffListMode::Commits {
-        w = w.wrap(Wrap { trim: false });
-    }
-
-    f.render_widget(w, area);
 }

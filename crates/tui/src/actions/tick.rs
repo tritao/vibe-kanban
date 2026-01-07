@@ -7,7 +7,7 @@ use crate::{
     diff_preview::{
         diff_preview_refresh_ready, request_diff_preview_async, schedule_diff_preview_refresh,
     },
-    jobs::{job_running, reap_finished_jobs, replace_job},
+    jobs::{job_running, reap_finished_jobs, replace_blocking_job},
     layout::{clamp_scroll_offsets, compute_main_layout},
     logs::flush_log_buffers,
     selection::exec_list,
@@ -74,28 +74,24 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
                 }
             }
 
-            replace_job(
-                app,
-                JobKey::LogPrewarm,
-                tokio::task::spawn_blocking(move || {
-                    for (exec_id, store, collapsed) in snapshot {
-                        let cache = crate::logs::buffer::build_prepared_log_cache(
-                            &store,
-                            &collapsed,
-                            target_width as usize,
-                            log_mode,
-                            render_mode,
-                            diff_theme,
-                        );
-                        let _ = net_tx.blocking_send(crate::events::NetEvent::LogPrewarmReady {
-                            exec_id,
-                            width: target_width,
-                            generation,
-                            cache,
-                        });
-                    }
-                }),
-            );
+            replace_blocking_job(app, JobKey::LogPrewarm, move || {
+                for (exec_id, store, collapsed) in snapshot {
+                    let cache = crate::logs::buffer::build_prepared_log_cache(
+                        &store,
+                        &collapsed,
+                        target_width as usize,
+                        log_mode,
+                        render_mode,
+                        diff_theme,
+                    );
+                    let _ = net_tx.blocking_send(crate::events::NetEvent::LogPrewarmReady {
+                        exec_id,
+                        width: target_width,
+                        generation,
+                        cache,
+                    });
+                }
+            });
         }
 
         // If the primary execution has a cache for the target width, swap. Even if it becomes
