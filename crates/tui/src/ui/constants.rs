@@ -10,3 +10,6 @@ pub(crate) const DIFF_PREVIEW_REFRESH_DELAY: Duration = Duration::from_millis(0)
 
 pub(crate) const LOG_WHEEL_STEP: i32 = 3;
 pub(crate) const DIFF_WHEEL_STEP: i32 = 3;
+
+pub(crate) const TOAST_SHORT: Duration = Duration::from_secs(2);
+pub(crate) const TOAST_MEDIUM: Duration = Duration::from_secs(3);

@@ -69,7 +69,7 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
                     app.ui.set_toast(
                         format!("Copy failed: {e}"),
                         crate::ui::palette::toast_err(),
-                        Some(std::time::Duration::from_secs(2)),
+                        Some(crate::ui::constants::TOAST_SHORT),
                     );
                     dirty = true;
                 }
@@ -91,7 +91,7 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
                                     .to_string()
                             },
                             crate::ui::palette::toast_ok(),
-                            Some(std::time::Duration::from_secs(2)),
+                            Some(crate::ui::constants::TOAST_SHORT),
                         );
                         dirty = true;
                     }
@@ -99,7 +99,7 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
                         app.ui.set_toast(
                             format!("Mouse capture toggle failed: {e}"),
                             crate::ui::palette::toast_err(),
-                            Some(std::time::Duration::from_secs(2)),
+                            Some(crate::ui::constants::TOAST_SHORT),
                         );
                         dirty = true;
                     }

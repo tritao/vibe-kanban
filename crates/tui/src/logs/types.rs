@@ -59,3 +59,26 @@ impl ToolUseAction {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToolStatus {
+    Success,
+    Failed,
+    Denied,
+    PendingApproval,
+    TimedOut,
+    Other,
+}
+
+impl ToolStatus {
+    pub(crate) fn parse(status: &str) -> Self {
+        match status {
+            "success" => Self::Success,
+            "failed" => Self::Failed,
+            "denied" => Self::Denied,
+            "pending_approval" => Self::PendingApproval,
+            "timed_out" => Self::TimedOut,
+            _ => Self::Other,
+        }
+    }
+}

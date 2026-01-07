@@ -224,7 +224,7 @@ pub(crate) fn finish_git_op(
         } else {
             crate::ui::palette::toast_err()
         },
-        Some(Duration::from_secs(3)),
+        Some(crate::ui::constants::TOAST_MEDIUM),
     );
 }
 
@@ -243,7 +243,7 @@ pub(crate) fn update_git_activity_indicators(app: &mut AppState, now: Instant) -
     }
 
     // Drop completed repo ops after a short grace period (for ✓ feedback).
-    let keep_for = Duration::from_secs(2);
+    let keep_for = crate::ui::constants::TOAST_SHORT;
     let before = app.diff.git_ops.len();
     app.diff.git_ops.retain(|_, s| {
         s.finished_at.is_none() || now.saturating_duration_since(s.finished_at.unwrap()) < keep_for

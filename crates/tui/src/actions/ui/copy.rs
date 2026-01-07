@@ -59,7 +59,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
         return vec![Effect::Toast {
             message: "Copy: nothing to copy".to_string(),
             color: crate::ui::palette::toast_warn(),
-            expires_at: Some(Instant::now() + std::time::Duration::from_secs(2)),
+            expires_at: Some(Instant::now() + crate::ui::constants::TOAST_SHORT),
         }];
     }
 
@@ -76,7 +76,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
         Effect::Toast {
             message: label.to_string(),
             color: crate::ui::palette::toast_ok(),
-            expires_at: Some(Instant::now() + std::time::Duration::from_secs(2)),
+            expires_at: Some(Instant::now() + crate::ui::constants::TOAST_SHORT),
         },
     ]
 }

@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crossterm::event::KeyCode;
 use ratatui::style::{Modifier, Style};
@@ -178,7 +178,7 @@ pub(super) fn repo_bar_button_specs(
 
             let recently_done = done.is_some_and(|(done_kind, _, done_at)| {
                 kind == Some(done_kind)
-                    && now.saturating_duration_since(done_at) < Duration::from_secs(2)
+                    && now.saturating_duration_since(done_at) < crate::ui::constants::TOAST_SHORT
             });
 
             let is_running = kind.is_some_and(|k| running_kind == Some(k));

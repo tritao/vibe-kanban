@@ -3,7 +3,7 @@ use ratatui::{
     text::Span,
 };
 
-use crate::{events::StreamStatus, state::MergeStatus};
+use crate::{events::StreamStatus, logs::types::ToolStatus, state::MergeStatus};
 
 pub(crate) fn border_active() -> Style {
     Style::default().fg(Color::Cyan)
@@ -78,29 +78,29 @@ pub(crate) fn log_accent_feedback() -> Color {
     Color::Yellow
 }
 
-pub(crate) fn log_tool_status_badge(status: Option<&str>) -> (Span<'static>, Style) {
-    match status.unwrap_or("created") {
-        "success" => (
+pub(crate) fn log_tool_status_badge(status: ToolStatus) -> (Span<'static>, Style) {
+    match status {
+        ToolStatus::Success => (
             Span::styled("ok", Style::default().fg(Color::Green)),
             Style::default().fg(Color::Green),
         ),
-        "failed" => (
+        ToolStatus::Failed => (
             Span::styled("fail", Style::default().fg(Color::Red)),
             Style::default().fg(Color::Red),
         ),
-        "denied" => (
+        ToolStatus::Denied => (
             Span::styled("denied", Style::default().fg(Color::Yellow)),
             Style::default().fg(Color::Yellow),
         ),
-        "pending_approval" => (
+        ToolStatus::PendingApproval => (
             Span::styled("approval", Style::default().fg(Color::Magenta)),
             Style::default().fg(Color::Magenta),
         ),
-        "timed_out" => (
+        ToolStatus::TimedOut => (
             Span::styled("timeout", Style::default().fg(Color::Yellow)),
             Style::default().fg(Color::Yellow),
         ),
-        _ => (
+        ToolStatus::Other => (
             Span::styled("…", Style::default().add_modifier(Modifier::DIM)),
             Style::default().add_modifier(Modifier::DIM),
         ),

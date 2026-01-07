@@ -14,7 +14,7 @@ use crate::{
     diff::highlight_unified_diff,
     logs::{
         model_params::is_model_params_system_message,
-        types::{NormalizedEntryType, ToolUseAction},
+        types::{NormalizedEntryType, ToolStatus, ToolUseAction},
     },
     state::{DiffTheme, LogRenderMode},
     text::{sanitize_tui_text, truncate_to_width},
@@ -26,6 +26,11 @@ fn tool_status_str(entry_type: &serde_json::Value) -> Option<&str> {
         return Some(s);
     }
     status.get("status").and_then(|v| v.as_str())
+}
+
+fn tool_status(entry_type: &serde_json::Value) -> ToolStatus {
+    let s = tool_status_str(entry_type).unwrap_or("created");
+    ToolStatus::parse(s)
 }
 
 pub(super) fn append_normalized_entry(
@@ -275,7 +280,7 @@ pub(super) fn append_normalized_entry(
             );
         }
         NormalizedEntryType::ToolUse => {
-            let status = tool_status_str(entry_type);
+            let status = tool_status(entry_type);
             let (status_badge, _status_style) = crate::ui::palette::log_tool_status_badge(status);
 
             let action_type = entry_type.get("action_type");

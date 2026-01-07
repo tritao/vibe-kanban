@@ -478,7 +478,7 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
     app.ui.set_toast(
         "Creating task…",
         crate::ui::palette::toast_info(),
-        Some(std::time::Duration::from_secs(2)),
+        Some(crate::ui::constants::TOAST_SHORT),
     );
 
     let base_url = app.backend_url.clone();

@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use super::super::{
     context::{require_selected_attempt_id, resolve_repo_for_command},
     git_ops::begin_git_op,
@@ -62,7 +60,7 @@ fn handle_pr_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
             app.ui.set_toast(
                 format!("PR: opened (PR#{}, {repo_name})", pr.number),
                 crate::ui::palette::toast_ok(),
-                Some(Duration::from_secs(2)),
+                Some(crate::ui::constants::TOAST_SHORT),
             );
             Ok(())
         }
@@ -97,7 +95,7 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
             app.ui.set_toast(
                 "PR: conflicts in progress (resolve/abort first)".to_string(),
                 crate::ui::palette::toast_warn(),
-                Some(Duration::from_secs(2)),
+                Some(crate::ui::constants::TOAST_SHORT),
             );
             return Ok(());
         }
@@ -105,7 +103,7 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
             app.ui.set_toast(
                 "PR: no changes to open (up to date)".to_string(),
                 crate::ui::palette::toast_ok(),
-                Some(Duration::from_secs(2)),
+                Some(crate::ui::constants::TOAST_SHORT),
             );
             return Ok(());
         }
@@ -117,7 +115,7 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
             app.ui.set_toast(
                 format!("PR: already exists (PR#{n})"),
                 crate::ui::palette::toast_ok(),
-                Some(Duration::from_secs(2)),
+                Some(crate::ui::constants::TOAST_SHORT),
             );
             return Ok(());
         }

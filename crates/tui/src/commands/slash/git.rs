@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use uuid::Uuid;
 
 use crate::{
@@ -91,7 +89,7 @@ pub(super) fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Re
             app.ui.set_toast(
                 "Rebase: conflicts in progress (resolve/abort first)".to_string(),
                 crate::ui::palette::toast_warn(),
-                Some(Duration::from_secs(2)),
+                Some(crate::ui::constants::TOAST_SHORT),
             );
             return Ok(());
         }
@@ -99,7 +97,7 @@ pub(super) fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Re
             app.ui.set_toast(
                 "Rebase: already up to date".to_string(),
                 crate::ui::palette::toast_ok(),
-                Some(Duration::from_secs(2)),
+                Some(crate::ui::constants::TOAST_SHORT),
             );
             return Ok(());
         }
@@ -139,7 +137,7 @@ pub(super) fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Res
             app.ui.set_toast(
                 "Merge: conflicts in progress (resolve/abort first)".to_string(),
                 crate::ui::palette::toast_warn(),
-                Some(Duration::from_secs(2)),
+                Some(crate::ui::constants::TOAST_SHORT),
             );
             return Ok(());
         }
@@ -147,7 +145,7 @@ pub(super) fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Res
             app.ui.set_toast(
                 "Merge: nothing to merge (up to date)".to_string(),
                 crate::ui::palette::toast_ok(),
-                Some(Duration::from_secs(2)),
+                Some(crate::ui::constants::TOAST_SHORT),
             );
             return Ok(());
         }

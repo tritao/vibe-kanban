@@ -23,15 +23,24 @@ fn toast(app: &mut AppState, message: impl Into<String>, color: Color, seconds: 
         .set_toast(message, color, Some(Duration::from_secs(seconds)));
 }
 
+fn toast_short(app: &mut AppState, message: impl Into<String>, color: Color) {
+    app.ui
+        .set_toast(message, color, Some(crate::ui::constants::TOAST_SHORT));
+}
+
+fn toast_medium(app: &mut AppState, message: impl Into<String>, color: Color) {
+    app.ui
+        .set_toast(message, color, Some(crate::ui::constants::TOAST_MEDIUM));
+}
+
 fn ensure_attempt_selected(app: &mut AppState, context: &str) -> bool {
     if app.board.selected_attempt_id.is_some() {
         return true;
     }
-    toast(
+    toast_short(
         app,
         format!("{context}: no attempt selected"),
         crate::ui::palette::toast_err(),
-        2,
     );
     false
 }
@@ -41,11 +50,10 @@ fn ensure_repo_status_loaded(app: &mut AppState, context: &str) -> bool {
         return true;
     }
     request_branch_status_refresh(app);
-    toast(
+    toast_short(
         app,
         format!("{context}: loading repo status…"),
         crate::ui::palette::toast_warn(),
-        2,
     );
     false
 }
@@ -61,11 +69,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             }
 
             let Some(idx) = shared::repo_index_with_conflicts(app) else {
-                toast(
+                toast_short(
                     app,
                     "Conflicts: none detected",
                     crate::ui::palette::toast_ok(),
-                    2,
                 );
                 return;
             };
@@ -99,20 +106,18 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             app.ui
                 .composer
                 .ensure_cursor_visible(content_w, inner_h.max(1));
-            toast(
+            toast_short(
                 app,
                 format!("Conflicts: drafted resolution request ({})", repo.repo_name),
                 crate::ui::palette::toast_info(),
-                2,
             );
         }
         DiffRepoAction::OpenConflict => {
             let Some(attempt_id) = app.board.selected_attempt_id else {
-                toast(
+                toast_short(
                     app,
                     "Open: no attempt selected",
                     crate::ui::palette::toast_err(),
-                    2,
                 );
                 return;
             };
@@ -121,11 +126,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             }
 
             let Some(idx) = shared::repo_index_with_conflicts(app) else {
-                toast(
+                toast_short(
                     app,
                     "Open: no conflicts detected",
                     crate::ui::palette::toast_ok(),
-                    2,
                 );
                 return;
             };
@@ -134,11 +138,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 return;
             };
             let Some(first) = repo.status.conflicted_files.first().cloned() else {
-                toast(
+                toast_short(
                     app,
                     "Open: no conflicted files listed",
                     crate::ui::palette::toast_warn(),
-                    2,
                 );
                 return;
             };
@@ -165,11 +168,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
         }
         DiffRepoAction::OpenPr => {
             let Some(repo) = shared::selected_repo_status(app) else {
-                toast(
+                toast_short(
                     app,
                     "PR: no repo selected",
                     crate::ui::palette::toast_warn(),
-                    2,
                 );
                 return;
             };
@@ -177,42 +179,34 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 Merge::Pr(pr) => Some(&pr.pr_info),
                 _ => None,
             }) else {
-                toast(
-                    app,
-                    "PR: none attached",
-                    crate::ui::palette::toast_warn(),
-                    2,
-                );
+                toast_short(app, "PR: none attached", crate::ui::palette::toast_warn());
                 return;
             };
 
             match open_url(&pr.url) {
                 Ok(()) => {
-                    toast(
+                    toast_short(
                         app,
                         format!("PR: opened (PR#{})", pr.number),
                         crate::ui::palette::toast_ok(),
-                        2,
                     );
                 }
                 Err(e) => {
                     app.ui.set_notice(format!("PR URL: {}", pr.url));
-                    toast(
+                    toast_medium(
                         app,
                         format!("PR: failed to open ({e})"),
                         crate::ui::palette::toast_err(),
-                        3,
                     );
                 }
             }
         }
         DiffRepoAction::AbortConflicts => {
             let Some(attempt_id) = app.board.selected_attempt_id else {
-                toast(
+                toast_short(
                     app,
                     "Abort: no attempt selected",
                     crate::ui::palette::toast_err(),
-                    2,
                 );
                 return;
             };
@@ -221,11 +215,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             }
 
             let Some(idx) = shared::repo_index_with_conflicts(app) else {
-                toast(
+                toast_short(
                     app,
                     "Abort: no conflicts detected",
                     crate::ui::palette::toast_ok(),
-                    2,
                 );
                 return;
             };

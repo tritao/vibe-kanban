@@ -60,7 +60,7 @@ impl Default for DelayedLoadingIndicator {
     fn default() -> Self {
         Self {
             started_at: None,
-            delay: Duration::from_millis(120),
+            delay: crate::ui::constants::LOADING_INDICATOR_DELAY,
             pending: false,
             visible: false,
         }
