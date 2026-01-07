@@ -8,11 +8,10 @@ use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
 use super::types::{
-    AttemptRow, BranchPickerState, CommitEntry, ConfirmState, CreateTaskState,
-    DelayedLoadingIndicator, DiffFocus, DiffListMode, DiffTheme, ExecutorProfileSelection,
-    FocusPane, GitOpState, InputState, JobKey, LogMode, LogRenderMode, LogViewMode,
-    PendingExecHook, RepoBranchStatus, TaskStatus, TextFieldState, ToastState, TuiPrefs, UiMessage,
-    UiMessageKey, UiMessageKind,
+    AttemptRow, BranchPickerState, CommitEntry, ConfirmState, CreateTaskState, DiffFocus,
+    DiffListMode, DiffTheme, ExecutorProfileSelection, FocusPane, GitOpState, InputState, JobKey,
+    LogMode, LogRenderMode, LogViewMode, PendingExecHook, RepoBranchStatus, TaskStatus,
+    TextFieldState, ToastState, TuiPrefs, UiMessage, UiMessageKey, UiMessageKind,
 };
 use crate::{
     events::{NetEvent, StreamStatus},
@@ -110,7 +109,7 @@ pub(crate) struct DiffState {
 
     pub(crate) list_mode: DiffListMode,
     pub(crate) commits_by_repo: HashMap<Uuid, Vec<CommitEntry>>,
-    pub(crate) commits_loading_by_repo: HashMap<Uuid, DelayedLoadingIndicator>,
+    pub(crate) commits_loading_by_repo: HashMap<Uuid, super::types::LoadingState>,
     pub(crate) commits_has_more_by_repo: HashMap<Uuid, bool>,
     pub(crate) selected_commit_index: usize,
     pub(crate) commit_preview_gen: u64,

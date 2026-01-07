@@ -125,7 +125,7 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
     let Some(repo_id) = selected_repo_id(app) else {
         return;
     };
-    crate::ui::loading::start_indicator_with_delay(
+    crate::ui::loading::start_with_delay(
         app.diff.commits_loading_by_repo.entry(repo_id).or_default(),
         crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY,
     );
@@ -186,7 +186,7 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
         .get(&repo_id)
         .map(|v| v.len())
         .unwrap_or(0);
-    crate::ui::loading::start_indicator_with_delay(
+    crate::ui::loading::start_with_delay(
         app.diff.commits_loading_by_repo.entry(repo_id).or_default(),
         crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY,
     );

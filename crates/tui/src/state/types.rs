@@ -70,26 +70,17 @@ impl PendingExecHook {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct DelayedLoadingIndicator {
+pub(crate) struct LoadingState {
     pub(crate) started_at: Option<Instant>,
     pub(crate) delay: Duration,
     pub(crate) pending: bool,
     pub(crate) visible: bool,
+    pub(crate) placeholder_pending: bool,
 }
 
-impl Default for DelayedLoadingIndicator {
-    fn default() -> Self {
-        Self {
-            started_at: None,
-            delay: crate::ui::constants::LOADING_INDICATOR_DELAY,
-            pending: false,
-            visible: false,
-        }
-    }
-}
-
-impl DelayedLoadingIndicator {
-    pub(crate) fn start(&mut self, now: Instant, delay: Duration) {
+impl LoadingState {
+    pub(crate) fn start(&mut self, now: Instant, delay: Duration, placeholder_pending: bool) {
+        self.placeholder_pending = placeholder_pending;
         self.started_at = Some(now);
         self.delay = delay;
         self.pending = true;
@@ -97,6 +88,7 @@ impl DelayedLoadingIndicator {
     }
 
     pub(crate) fn stop(&mut self) {
+        self.placeholder_pending = false;
         self.started_at = None;
         self.pending = false;
         self.visible = false;
@@ -116,31 +108,21 @@ impl DelayedLoadingIndicator {
         self.visible = true;
         true
     }
-}
-
-#[derive(Debug, Clone, Default)]
-pub(crate) struct LoadingState {
-    pub(crate) indicator: DelayedLoadingIndicator,
-    pub(crate) placeholder_pending: bool,
-}
-
-impl LoadingState {
-    pub(crate) fn start(&mut self, now: Instant, delay: Duration, placeholder_pending: bool) {
-        self.placeholder_pending = placeholder_pending;
-        self.indicator.start(now, delay);
-    }
-
-    pub(crate) fn stop(&mut self) {
-        self.placeholder_pending = false;
-        self.indicator.stop();
-    }
-
-    pub(crate) fn tick(&mut self, now: Instant, is_running: bool) -> bool {
-        self.indicator.tick(now, is_running)
-    }
 
     pub(crate) fn visible(&self) -> bool {
-        self.indicator.visible
+        self.visible
+    }
+}
+
+impl Default for LoadingState {
+    fn default() -> Self {
+        Self {
+            started_at: None,
+            delay: crate::ui::constants::LOADING_INDICATOR_DELAY,
+            pending: false,
+            visible: false,
+            placeholder_pending: false,
+        }
     }
 }
 

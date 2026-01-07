@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use crate::state::{DelayedLoadingIndicator, LoadingState};
+use crate::state::LoadingState;
 
 pub(crate) fn start_with_default_delay(state: &mut LoadingState, placeholder_pending: bool) {
     state.start(
@@ -10,9 +10,6 @@ pub(crate) fn start_with_default_delay(state: &mut LoadingState, placeholder_pen
     );
 }
 
-pub(crate) fn start_indicator_with_delay(
-    indicator: &mut DelayedLoadingIndicator,
-    delay: std::time::Duration,
-) {
-    indicator.start(Instant::now(), delay);
+pub(crate) fn start_with_delay(state: &mut LoadingState, delay: std::time::Duration) {
+    state.start(Instant::now(), delay, false);
 }
