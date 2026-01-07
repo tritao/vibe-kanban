@@ -139,7 +139,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
         }
         KeyCode::Char('c') => {
             // Only show commits when stack mode is not enabled for this repo.
-            if let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) {
+            if let Some(repo) = crate::state::repo_scope::selected_repo(app) {
                 if app
                     .diff
                     .stack_status_by_repo
@@ -203,7 +203,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                 app.ui.set_error("Stack: load repo status first (press S)");
                 return true;
             }
-            let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+            let Some(repo) = crate::state::repo_scope::selected_repo(app) else {
                 return false;
             };
             let Some(attempt_id) = app.board.selected_attempt_id else {
@@ -222,7 +222,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     .set_error("Branches: load repo status first (press S)");
                 return true;
             }
-            let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+            let Some(repo) = crate::state::repo_scope::selected_repo(app) else {
                 return false;
             };
 
@@ -245,7 +245,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     .set_error("Target branch: load repo status first (press S)");
                 return true;
             }
-            let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
+            let Some(repo) = crate::state::repo_scope::selected_repo(app) else {
                 return false;
             };
 

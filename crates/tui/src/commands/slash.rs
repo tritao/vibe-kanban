@@ -288,7 +288,7 @@ fn handle_commits_command(app: &mut AppState) -> Result<(), String> {
     let _attempt_id = require_selected_attempt_id(app)?;
     require_repo_status_loaded(app)?;
 
-    if let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) {
+    if let Some(repo) = crate::state::repo_scope::selected_repo(app) {
         if app
             .diff
             .stack_status_by_repo

@@ -13,11 +13,11 @@ pub(super) fn selected_attempt_branch(app: &AppState) -> String {
 }
 
 pub(super) fn repo_index_with_conflicts(app: &AppState) -> Option<usize> {
-    let selected = app.diff.repo_statuses.get(app.diff.selected_repo_index);
+    let selected = crate::state::repo_scope::selected_repo(app);
     if selected
         .is_some_and(|r| r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty())
     {
-        return Some(app.diff.selected_repo_index);
+        return crate::state::repo_scope::selected_repo_index_clamped(app);
     }
     app.diff
         .repo_statuses
@@ -39,9 +39,5 @@ pub(super) fn git_kind_for_diff_action(action: DiffRepoAction) -> Option<GitOpKi
 }
 
 pub(super) fn selected_repo_status(app: &AppState) -> Option<&RepoBranchStatus> {
-    app.diff.repo_statuses.get(
-        app.diff
-            .selected_repo_index
-            .min(app.diff.repo_statuses.len().saturating_sub(1)),
-    )
+    crate::state::repo_scope::selected_repo(app)
 }

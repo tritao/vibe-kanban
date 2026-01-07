@@ -172,7 +172,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     }
 
     if app.diff.list_mode == crate::state::DiffListMode::Commits {
-        if let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) {
+        if let Some(repo) = crate::state::repo_scope::selected_repo(app) {
             let repo_id = repo.repo_id;
             let running = job_running(app, JobKey::CommitList);
             if let Some(ind) = app.diff.commits_loading_by_repo.get_mut(&repo_id) {
