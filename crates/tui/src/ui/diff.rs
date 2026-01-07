@@ -1787,7 +1787,8 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
         .map(|v| v.as_slice())
         .unwrap_or(&[]);
     let loading = repo_id
-        .and_then(|id| app.diff.commits_loading_by_repo.get(&id).copied())
+        .and_then(|id| app.diff.commits_loading_by_repo.get(&id))
+        .map(|i| i.visible)
         .unwrap_or(false);
     let has_more = repo_id
         .and_then(|id| app.diff.commits_has_more_by_repo.get(&id).copied())
@@ -1897,7 +1898,7 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
                 "Diff ({}){}{}",
                 app.diff.diff_theme.label(),
                 if app.diff.diff_wrap { ", wrap" } else { "" },
-                if app.diff.diff_preview_loading {
+                if app.diff.diff_preview_loading.visible {
                     ", loading"
                 } else {
                     ""
@@ -1907,7 +1908,7 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
         crate::state::DiffListMode::Commits => (&app.diff.commit_preview_lines, {
             format!(
                 "Commit{}",
-                if app.diff.commit_preview_loading {
+                if app.diff.commit_preview_loading.visible {
                     " (loading)"
                 } else {
                     ""

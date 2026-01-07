@@ -5,10 +5,10 @@ use tokio::sync::{mpsc, watch};
 use uuid::Uuid;
 
 use super::types::{
-    AttemptRow, BranchPickerState, CommitEntry, ConfirmState, CreateTaskState, DiffFocus,
-    DiffListMode, DiffTheme, ExecutorProfileSelection, FocusPane, GitOpState, InputState, JobKey,
-    LogMode, LogRenderMode, LogViewMode, PendingExecHook, RepoBranchStatus, TaskStatus,
-    TextFieldState, ToastState, TuiPrefs,
+    AttemptRow, BranchPickerState, CommitEntry, ConfirmState, CreateTaskState,
+    DelayedLoadingIndicator, DiffFocus, DiffListMode, DiffTheme, ExecutorProfileSelection,
+    FocusPane, GitOpState, InputState, JobKey, LogMode, LogRenderMode, LogViewMode,
+    PendingExecHook, RepoBranchStatus, TaskStatus, TextFieldState, ToastState, TuiPrefs,
 };
 use crate::{
     events::{NetEvent, StreamStatus},
@@ -91,9 +91,8 @@ pub(crate) struct DiffState {
     pub(crate) diff_preview_pending: bool,
     pub(crate) diff_preview_next_refresh_at: Option<Instant>,
     pub(crate) diff_preview_gen: u64,
-    pub(crate) diff_preview_loading: bool,
-    pub(crate) diff_preview_loading_started_at: Option<Instant>,
     pub(crate) diff_preview_loading_placeholder_pending: bool,
+    pub(crate) diff_preview_loading: DelayedLoadingIndicator,
 
     pub(crate) repo_statuses: Vec<RepoBranchStatus>,
     pub(crate) branch_status_loaded_attempt_id: Option<Uuid>,
@@ -107,17 +106,14 @@ pub(crate) struct DiffState {
 
     pub(crate) list_mode: DiffListMode,
     pub(crate) commits_by_repo: HashMap<Uuid, Vec<CommitEntry>>,
-    pub(crate) commits_loading_by_repo: HashMap<Uuid, bool>,
-    pub(crate) commits_loading_started_at: HashMap<Uuid, Instant>,
-    pub(crate) commits_loading_indicator_pending: HashMap<Uuid, bool>,
+    pub(crate) commits_loading_by_repo: HashMap<Uuid, DelayedLoadingIndicator>,
     pub(crate) commits_has_more_by_repo: HashMap<Uuid, bool>,
     pub(crate) selected_commit_index: usize,
     pub(crate) commit_preview_text: Option<String>,
     pub(crate) commit_preview_lines: Vec<Line<'static>>,
-    pub(crate) commit_preview_loading: bool,
     pub(crate) commit_preview_render_width: u16,
-    pub(crate) commit_preview_loading_started_at: Option<Instant>,
     pub(crate) commit_preview_loading_placeholder_pending: bool,
+    pub(crate) commit_preview_loading: DelayedLoadingIndicator,
 }
 
 pub(crate) struct UiState {
@@ -341,9 +337,8 @@ impl AppState {
                 diff_preview_pending: false,
                 diff_preview_next_refresh_at: None,
                 diff_preview_gen: 0,
-                diff_preview_loading: false,
-                diff_preview_loading_started_at: None,
                 diff_preview_loading_placeholder_pending: false,
+                diff_preview_loading: DelayedLoadingIndicator::default(),
 
                 repo_statuses: vec![],
                 branch_status_loaded_attempt_id: None,
@@ -358,16 +353,13 @@ impl AppState {
                 list_mode: DiffListMode::Files,
                 commits_by_repo: HashMap::new(),
                 commits_loading_by_repo: HashMap::new(),
-                commits_loading_started_at: HashMap::new(),
-                commits_loading_indicator_pending: HashMap::new(),
                 commits_has_more_by_repo: HashMap::new(),
                 selected_commit_index: 0,
                 commit_preview_text: None,
                 commit_preview_lines: vec![Line::from("No commit selected")],
-                commit_preview_loading: false,
                 commit_preview_render_width: 0,
-                commit_preview_loading_started_at: None,
                 commit_preview_loading_placeholder_pending: false,
+                commit_preview_loading: DelayedLoadingIndicator::default(),
             },
 
             jobs: HashMap::new(),

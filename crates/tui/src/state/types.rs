@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
@@ -45,6 +45,55 @@ impl PendingExecHook {
             prev_exec_id,
             wait_new_exec: true,
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct DelayedLoadingIndicator {
+    pub(crate) started_at: Option<Instant>,
+    pub(crate) delay: Duration,
+    pub(crate) pending: bool,
+    pub(crate) visible: bool,
+}
+
+impl Default for DelayedLoadingIndicator {
+    fn default() -> Self {
+        Self {
+            started_at: None,
+            delay: Duration::from_millis(120),
+            pending: false,
+            visible: false,
+        }
+    }
+}
+
+impl DelayedLoadingIndicator {
+    pub(crate) fn start(&mut self, now: Instant, delay: Duration) {
+        self.started_at = Some(now);
+        self.delay = delay;
+        self.pending = true;
+        self.visible = false;
+    }
+
+    pub(crate) fn stop(&mut self) {
+        self.started_at = None;
+        self.pending = false;
+        self.visible = false;
+    }
+
+    pub(crate) fn tick(&mut self, now: Instant, is_running: bool) -> bool {
+        if !self.pending || !is_running {
+            return false;
+        }
+        let Some(started) = self.started_at else {
+            return false;
+        };
+        if now.saturating_duration_since(started) < self.delay {
+            return false;
+        }
+        self.pending = false;
+        self.visible = true;
+        true
     }
 }
 

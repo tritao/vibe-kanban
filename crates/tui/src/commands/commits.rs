@@ -127,13 +127,11 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
         return;
     };
     let repo_id = repo.repo_id;
-    app.diff.commits_loading_by_repo.insert(repo_id, false);
     app.diff
-        .commits_loading_started_at
-        .insert(repo_id, Instant::now());
-    app.diff
-        .commits_loading_indicator_pending
-        .insert(repo_id, true);
+        .commits_loading_by_repo
+        .entry(repo_id)
+        .or_default()
+        .start(Instant::now(), std::time::Duration::from_millis(200));
 
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
@@ -176,13 +174,7 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
         return;
     };
     let repo_id = repo.repo_id;
-    if app
-        .diff
-        .commits_loading_by_repo
-        .get(&repo_id)
-        .copied()
-        .unwrap_or(false)
-    {
+    if crate::jobs::job_running(app, JobKey::CommitList) {
         return;
     }
     if !app
@@ -200,13 +192,11 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
         .get(&repo_id)
         .map(|v| v.len())
         .unwrap_or(0);
-    app.diff.commits_loading_by_repo.insert(repo_id, false);
     app.diff
-        .commits_loading_started_at
-        .insert(repo_id, Instant::now());
-    app.diff
-        .commits_loading_indicator_pending
-        .insert(repo_id, true);
+        .commits_loading_by_repo
+        .entry(repo_id)
+        .or_default()
+        .start(Instant::now(), std::time::Duration::from_millis(200));
 
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
@@ -262,9 +252,9 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     let idx = app.diff.selected_commit_index.min(commits.len() - 1);
     let oid = commits[idx].oid.clone();
 
-    app.diff.commit_preview_loading = true;
-    app.diff.commit_preview_loading = false;
-    app.diff.commit_preview_loading_started_at = Some(Instant::now());
+    app.diff
+        .commit_preview_loading
+        .start(Instant::now(), std::time::Duration::from_millis(120));
     app.diff.commit_preview_loading_placeholder_pending = true;
     app.diff.commit_preview_text = None;
     app.diff.commit_preview_render_width = 0;
@@ -311,9 +301,11 @@ pub(crate) fn apply_commit_list_page(
     append: bool,
     has_more: bool,
 ) {
-    app.diff.commits_loading_by_repo.insert(repo_id, false);
-    app.diff.commits_loading_started_at.remove(&repo_id);
-    app.diff.commits_loading_indicator_pending.remove(&repo_id);
+    app.diff
+        .commits_loading_by_repo
+        .entry(repo_id)
+        .or_default()
+        .stop();
     app.diff.commits_has_more_by_repo.insert(repo_id, has_more);
     if append {
         app.diff

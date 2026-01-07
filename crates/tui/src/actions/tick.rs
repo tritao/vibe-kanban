@@ -16,8 +16,6 @@ use crate::{
 
 pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool {
     let mut dirty = false;
-    const DIFF_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(120);
-    const COMMIT_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(120);
     const COMMIT_LIST_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(200);
 
     if reap_finished_jobs(app) {
@@ -143,29 +141,24 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
             dirty = true;
         } else if app.diff.diff_preview_lines != vec![Line::from("No diffs")] {
             app.diff.diff_preview_lines = vec![Line::from("No diffs")];
-            app.diff.diff_preview_loading = false;
-            app.diff.diff_preview_loading_started_at = None;
             app.diff.diff_preview_loading_placeholder_pending = false;
+            app.diff.diff_preview_loading.stop();
             dirty = true;
         }
         app.diff.diff_preview_pending = false;
         app.diff.diff_preview_next_refresh_at = None;
     }
 
-    // Show the diff preview loading indicator only if the async preview job takes long enough to
-    // be noticeable. This avoids a split-second ", loading" flash for fast rebuilds.
-    if job_running(app, JobKey::DiffPreview)
-        && let Some(started) = app.diff.diff_preview_loading_started_at
-        && !app.diff.diff_preview_loading
-        && now.saturating_duration_since(started) >= DIFF_LOADING_INDICATOR_DELAY
+    // Show loading indicators only if the async job takes long enough to be noticeable.
+    if app
+        .diff
+        .diff_preview_loading
+        .tick(now, job_running(app, JobKey::DiffPreview))
     {
-        app.diff.diff_preview_loading = true;
         dirty = true;
     }
-    if job_running(app, JobKey::DiffPreview)
+    if app.diff.diff_preview_loading.visible
         && app.diff.diff_preview_loading_placeholder_pending
-        && let Some(started) = app.diff.diff_preview_loading_started_at
-        && now.saturating_duration_since(started) >= DIFF_LOADING_INDICATOR_DELAY
         && (app.diff.diff_preview_lines.is_empty()
             || app.diff.diff_preview_lines == vec![Line::from("No diffs")])
     {
@@ -191,42 +184,30 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     }
 
     if app.diff.list_mode == crate::state::DiffListMode::Commits {
-        let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) else {
-            // no repo status yet
-            return dirty;
-        };
-        let repo_id = repo.repo_id;
-        if app
-            .diff
-            .commits_loading_indicator_pending
-            .get(&repo_id)
-            .copied()
-            .unwrap_or(false)
-            && let Some(started) = app.diff.commits_loading_started_at.get(&repo_id).copied()
-            && !app
-                .diff
-                .commits_loading_by_repo
-                .get(&repo_id)
-                .copied()
-                .unwrap_or(false)
-            && now.saturating_duration_since(started) >= COMMIT_LIST_LOADING_INDICATOR_DELAY
-            && job_running(app, JobKey::CommitList)
-        {
-            app.diff.commits_loading_by_repo.insert(repo_id, true);
-            app.diff
-                .commits_loading_indicator_pending
-                .insert(repo_id, false);
-            dirty = true;
+        if let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) {
+            let repo_id = repo.repo_id;
+            let running = job_running(app, JobKey::CommitList);
+            if let Some(ind) = app.diff.commits_loading_by_repo.get_mut(&repo_id) {
+                if ind.delay != COMMIT_LIST_LOADING_INDICATOR_DELAY {
+                    ind.delay = COMMIT_LIST_LOADING_INDICATOR_DELAY;
+                }
+                if ind.tick(now, running) {
+                    dirty = true;
+                }
+            }
         }
     }
 
-    if job_running(app, JobKey::CommitPreview)
-        && let Some(started) = app.diff.commit_preview_loading_started_at
-        && app.diff.commit_preview_loading_placeholder_pending
-        && !app.diff.commit_preview_loading
-        && now.saturating_duration_since(started) >= COMMIT_LOADING_INDICATOR_DELAY
+    if app
+        .diff
+        .commit_preview_loading
+        .tick(now, job_running(app, JobKey::CommitPreview))
     {
-        app.diff.commit_preview_loading = true;
+        dirty = true;
+    }
+    if app.diff.commit_preview_loading.visible
+        && app.diff.commit_preview_loading_placeholder_pending
+    {
         app.diff.commit_preview_loading_placeholder_pending = false;
         if app.diff.commit_preview_text.is_none()
             && (app.diff.commit_preview_lines.is_empty()

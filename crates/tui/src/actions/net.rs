@@ -321,9 +321,8 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             app.diff.diff_preview_cache_hash = cache_hash;
             app.diff.diff_preview_cache_width = width;
             app.diff.diff_preview_lines = lines;
-            app.diff.diff_preview_loading = false;
-            app.diff.diff_preview_loading_started_at = None;
             app.diff.diff_preview_loading_placeholder_pending = false;
+            app.diff.diff_preview_loading.stop();
             true
         }
         NetEvent::LogPrewarmReady {
@@ -424,9 +423,8 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 app.diff.commit_preview_text =
                     Some(crate::commands::sanitize_commit_preview_text(&text));
                 app.diff.commit_preview_render_width = 0;
-                app.diff.commit_preview_loading = false;
-                app.diff.commit_preview_loading_started_at = None;
                 app.diff.commit_preview_loading_placeholder_pending = false;
+                app.diff.commit_preview_loading.stop();
             }
             true
         }
@@ -440,16 +438,17 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 app.diff.commit_preview_text = None;
                 app.diff.commit_preview_lines = vec![ratatui::text::Line::from(message)];
                 app.diff.commit_preview_render_width = 0;
-                app.diff.commit_preview_loading = false;
-                app.diff.commit_preview_loading_started_at = None;
                 app.diff.commit_preview_loading_placeholder_pending = false;
+                app.diff.commit_preview_loading.stop();
             }
             true
         }
         NetEvent::CommitListFailed { repo_id } => {
-            app.diff.commits_loading_by_repo.insert(repo_id, false);
-            app.diff.commits_loading_started_at.remove(&repo_id);
-            app.diff.commits_loading_indicator_pending.remove(&repo_id);
+            app.diff
+                .commits_loading_by_repo
+                .entry(repo_id)
+                .or_default()
+                .stop();
             true
         }
         NetEvent::TaskCreated { task_id, status } => {
