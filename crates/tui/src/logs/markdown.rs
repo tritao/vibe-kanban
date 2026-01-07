@@ -191,8 +191,17 @@ pub(crate) fn render_markdown(
     };
 
     let push_text = |block: &mut Block, text: &str, style: Style| {
-        for word in text.split_whitespace() {
-            push_word(block, word, style);
+        // pulldown-cmark generally emits explicit line breaks as SoftBreak/HardBreak events,
+        // but some inputs can still contain literal '\n' inside Text events. Preserve those.
+        let mut first_line = true;
+        for line in text.split('\n') {
+            if !first_line {
+                block.tokens.push(MdToken::Newline);
+            }
+            first_line = false;
+            for word in line.split_whitespace() {
+                push_word(block, word, style);
+            }
         }
     };
 
