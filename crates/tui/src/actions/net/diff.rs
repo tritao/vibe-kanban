@@ -107,6 +107,8 @@ pub(super) fn branch_status_loaded(
     if app.board.selected_attempt_id != Some(attempt_id) {
         return true;
     }
+    app.ui
+        .clear_error_scope(crate::state::UiMessageKey::BranchStatus);
     app.diff.repo_statuses = statuses;
     app.diff.branch_status_loaded_attempt_id = Some(attempt_id);
     app.diff.branch_status_loaded_at = Some(Instant::now());

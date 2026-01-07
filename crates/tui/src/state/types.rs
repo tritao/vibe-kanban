@@ -33,6 +33,11 @@ pub(crate) enum UiMessageKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UiMessageKey {
     LogStreamConnect,
+    BranchStatus,
+    CommitList,
+    CommitPreview,
+    StackOp,
+    PullRequestOp,
 }
 
 #[derive(Debug, Clone)]

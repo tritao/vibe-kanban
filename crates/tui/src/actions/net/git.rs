@@ -12,6 +12,15 @@ pub(super) fn git_op_finished(
     message: String,
 ) -> bool {
     finish_git_op(app, repo_id, kind, ok, message);
+    if ok
+        && matches!(
+            kind,
+            GitOpKind::CreatePr | GitOpKind::AttachPr | GitOpKind::PrComments
+        )
+    {
+        app.ui
+            .clear_error_scope(crate::state::UiMessageKey::PullRequestOp);
+    }
     if ok && app.diff.list_mode == crate::state::DiffListMode::Commits {
         let selected_repo_id = app
             .diff
@@ -35,6 +44,8 @@ pub(super) fn stack_status_loaded(
     {
         return true;
     }
+    app.ui
+        .clear_error_scope(crate::state::UiMessageKey::StackOp);
     app.diff.stack_status_by_repo.insert(repo_id, status);
     true
 }
@@ -46,6 +57,8 @@ pub(super) fn commit_list_loaded(
     append: bool,
     has_more: bool,
 ) -> bool {
+    app.ui
+        .clear_error_scope(crate::state::UiMessageKey::CommitList);
     crate::commands::apply_commit_list_page(app, repo_id, commits, append, has_more);
     true
 }
@@ -63,6 +76,8 @@ pub(super) fn commit_preview_loaded(
         .get(app.diff.selected_repo_index)
         .map(|r| r.repo_id);
     if selected_repo_id == Some(repo_id) && generation == app.diff.commit_preview_gen {
+        app.ui
+            .clear_error_scope(crate::state::UiMessageKey::CommitPreview);
         app.diff.commit_preview_text = Some(crate::commands::sanitize_commit_preview_text(&text));
         app.diff.commit_preview_render_width = 0;
         app.diff.commit_preview_loading.stop();

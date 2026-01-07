@@ -173,7 +173,10 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
             }
             Err(e) => {
                 let _ = net_tx
-                    .send(NetEvent::Error(format!("pr create failed: {e}")))
+                    .send(NetEvent::ErrorKey {
+                        key: crate::state::UiMessageKey::PullRequestOp,
+                        message: format!("pr create failed: {e}"),
+                    })
                     .await;
                 let _ = net_tx
                     .send(NetEvent::GitOpFinished {
@@ -238,7 +241,10 @@ fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(),
             }
             Err(e) => {
                 let _ = net_tx
-                    .send(NetEvent::Error(format!("pr attach failed: {e}")))
+                    .send(NetEvent::ErrorKey {
+                        key: crate::state::UiMessageKey::PullRequestOp,
+                        message: format!("pr attach failed: {e}"),
+                    })
                     .await;
                 let _ = net_tx
                     .send(NetEvent::GitOpFinished {
@@ -290,7 +296,10 @@ fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(
             }
             Err(e) => {
                 let _ = net_tx
-                    .send(NetEvent::Error(format!("pr comments failed: {e}")))
+                    .send(NetEvent::ErrorKey {
+                        key: crate::state::UiMessageKey::PullRequestOp,
+                        message: format!("pr comments failed: {e}"),
+                    })
                     .await;
                 let _ = net_tx
                     .send(NetEvent::GitOpFinished {

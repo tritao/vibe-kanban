@@ -30,7 +30,10 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::Error(format!("branch status failed: {e}")))
+                        .send(NetEvent::ErrorKey {
+                            key: crate::state::UiMessageKey::BranchStatus,
+                            message: format!("branch status failed: {e}"),
+                        })
                         .await;
                 }
             }
@@ -59,7 +62,10 @@ pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::Error(format!("branch status failed: {e}")))
+                        .send(NetEvent::ErrorKey {
+                            key: crate::state::UiMessageKey::BranchStatus,
+                            message: format!("branch status failed: {e}"),
+                        })
                         .await;
                 }
             }
