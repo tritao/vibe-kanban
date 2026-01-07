@@ -1,5 +1,6 @@
 mod clipboard;
 mod commits;
+mod context;
 mod git_ops;
 mod job_runner;
 mod open_url;
@@ -8,8 +9,9 @@ mod stack_ops;
 
 pub(crate) use clipboard::copy_to_clipboard_osc52;
 pub(crate) use commits::*;
+pub(crate) use context::*;
 pub(crate) use git_ops::*;
-pub(crate) use job_runner::run_net_job;
+pub(crate) use job_runner::{run_net_job, spawn_net_task};
 pub(crate) use open_url::open_url;
 pub(crate) use slash::*;
 pub(crate) use stack_ops::*;

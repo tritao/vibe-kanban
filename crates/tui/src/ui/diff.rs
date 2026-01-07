@@ -96,10 +96,7 @@ fn repo_index_with_conflicts(app: &AppState) -> Option<usize> {
 }
 
 fn badge(text: impl Into<String>, fg: Color, bg: Color) -> Span<'static> {
-    Span::styled(
-        format!(" {} ", text.into()),
-        Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
-    )
+    crate::ui::widgets::badge(text, fg, bg)
 }
 
 fn pr_badge_style(status: MergeStatus) -> (Color, Color) {
@@ -643,10 +640,8 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 return;
             };
 
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
             let repo_name = repo.repo_name.clone();
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match open_editor_http(&base_url, attempt_id, Some(first.clone())).await {
                     Ok(url) => {
                         let msg = match url {
@@ -765,13 +760,11 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 return;
             }
 
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
             let attempt_id = app.board.selected_attempt_id;
             let task_id = app.board.selected_task_id;
             let project_id = app.board.selected_project_id;
             let executor_profile = app.ui.selected_executor_profile.clone();
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 let attempt_id = match attempt_id {
                     Some(id) => id,
                     None => {
@@ -1024,9 +1017,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             if !begin_git_op(app, Some(repo_id), GitOpKind::Merge, &repo_name) {
                 return;
             }
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match merge_task_attempt_http(&base_url, attempt_id, repo_id).await {
                     Ok(()) => {
                         let _ = net_tx
@@ -1096,9 +1087,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             if !begin_git_op(app, Some(repo_id), GitOpKind::Rebase, &repo_name) {
                 return;
             }
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match rebase_task_attempt_http(&base_url, attempt_id, repo_id, None, None).await {
                     Ok(()) => {
                         let _ = net_tx
@@ -1187,9 +1176,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 .selected_task_id
                 .and_then(|id| find_task(&app.board.tasks_store, id).map(|t| t.title))
                 .unwrap_or_else(|| "Vibe Kanban PR".to_string());
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match create_pr_http(
                     &base_url,
                     attempt_id,
@@ -1881,27 +1868,19 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
 }
 
 fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
-    let border_style = if app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Preview
-    {
-        Style::default().fg(Color::Cyan)
-    } else if app.ui.focus == FocusPane::Diff {
-        Style::default()
-    } else {
-        Style::default()
-    };
+    let border_style = crate::ui::widgets::focused_border(
+        app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Preview,
+    );
 
     let (lines, title) = match app.diff.list_mode {
         crate::state::DiffListMode::Files => (
             &app.diff.diff_preview_lines,
-            format!(
-                "Diff ({}){}{}",
-                app.diff.diff_theme.label(),
-                if app.diff.diff_wrap { ", wrap" } else { "" },
-                if app.diff.diff_preview_loading.visible() {
-                    ", loading"
-                } else {
-                    ""
-                }
+            crate::ui::widgets::title_with_tags(
+                format!("Diff ({})", app.diff.diff_theme.label()),
+                &[
+                    ("wrap", app.diff.diff_wrap),
+                    ("loading", app.diff.diff_preview_loading.visible()),
+                ],
             ),
         ),
         crate::state::DiffListMode::Commits => (&app.diff.commit_preview_lines, {

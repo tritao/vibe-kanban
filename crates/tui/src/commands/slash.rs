@@ -3,9 +3,12 @@ use std::time::{Duration, Instant};
 use ratatui::style::Color;
 use uuid::Uuid;
 
-use super::git_ops::{
-    arm_branch_status_refresh_after_next_exec, arm_branch_status_refresh_for_exec, begin_git_op,
-    request_branch_status_refresh, set_toast,
+use super::{
+    context::{require_repo_status_loaded, require_selected_attempt_id, resolve_repo_for_command},
+    git_ops::{
+        arm_branch_status_refresh_after_next_exec, arm_branch_status_refresh_for_exec,
+        begin_git_op, request_branch_status_refresh, set_toast,
+    },
 };
 use crate::{
     commands::open_url,
@@ -75,8 +78,6 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
         return submit_slash_command(app, &msg);
     }
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
     let attempt_id = app.board.selected_attempt_id;
     let task_id = app.board.selected_task_id;
     let project_id = app.board.selected_project_id;
@@ -118,7 +119,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
         }
     }
 
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         let mut attempt_id = attempt_id;
         let mut session_id = session_id;
 
@@ -407,14 +408,8 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
 }
 
 fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
-    let attempt_id = app
-        .board
-        .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())?;
-    if app.diff.repo_statuses.is_empty() {
-        request_branch_status_refresh(app);
-        return Err("no repo status loaded yet (run /status)".to_string());
-    }
+    let attempt_id = require_selected_attempt_id(app)?;
+    require_repo_status_loaded(app)?;
 
     // Default: /stack status
     let sub = tokens.get(1).map(|s| s.as_str()).unwrap_or("status");
@@ -593,13 +588,8 @@ fn parse_stack_kv_flags(
 }
 
 fn handle_commits_command(app: &mut AppState) -> Result<(), String> {
-    if app.board.selected_attempt_id.is_none() {
-        return Err("no attempt selected".to_string());
-    }
-    if app.diff.repo_statuses.is_empty() {
-        request_branch_status_refresh(app);
-        return Err("no repo status loaded yet (run /status)".to_string());
-    }
+    let _attempt_id = require_selected_attempt_id(app)?;
+    require_repo_status_loaded(app)?;
 
     if let Some(repo) = app.diff.repo_statuses.get(app.diff.selected_repo_index) {
         if app
@@ -681,9 +671,7 @@ fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> Result<(), 
             .unwrap_or_default()
     ));
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match update_executor_profile_http(&base_url, &selection).await {
             Ok(()) => {
                 let _ = net_tx
@@ -810,10 +798,8 @@ fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
             .unwrap_or_default()
     ));
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
     let selection2 = selection.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match update_model_settings_http(
             &base_url,
             &selection2,
@@ -857,9 +843,7 @@ fn handle_delete_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
         Some("promote")
     };
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match delete_task_http(&base_url, task_id, mode).await {
             Ok(()) => {
                 let _ = net_tx
@@ -887,10 +871,8 @@ pub(crate) fn trigger_abort_conflicts(
         return;
     }
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
     let repo_name = repo_name.to_string();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match abort_conflicts_http(&base_url, attempt_id, repo_id).await {
             Ok(()) => {
                 let _ = net_tx
@@ -938,10 +920,7 @@ fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
         crate::slash::parse_flags(tokens, 1, crate::slash::flags_for_command("abort"), help)?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
-    let attempt_id = app
-        .board
-        .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())?;
+    let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     trigger_abort_conflicts(app, attempt_id, repo_id, &repo_name);
@@ -954,13 +933,8 @@ fn handle_resolve_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
         crate::slash::parse_flags(tokens, 1, crate::slash::flags_for_command("resolve"), help)?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
-    if app.board.selected_attempt_id.is_none() {
-        return Err("no attempt selected".to_string());
-    }
-    if app.diff.repo_statuses.is_empty() {
-        request_branch_status_refresh(app);
-        return Err("no repo status loaded yet (run /status)".to_string());
-    }
+    let _attempt_id = require_selected_attempt_id(app)?;
+    require_repo_status_loaded(app)?;
 
     if let Some(arg) = repo_arg.as_deref().filter(|s| !s.trim().is_empty()) {
         let _ = resolve_repo_for_command(app, Some(arg))?;
@@ -1037,10 +1011,7 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
     let onto = parsed.get_value("--onto").map(ToString::to_string);
     let old = parsed.get_value("--old").map(ToString::to_string);
 
-    let attempt_id = app
-        .board
-        .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())?;
+    let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
@@ -1068,9 +1039,7 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
         return Ok(());
     }
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match rebase_task_attempt_http(&base_url, attempt_id, repo_id, old, onto).await {
             Ok(()) => {
                 let _ = net_tx
@@ -1118,10 +1087,7 @@ fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
         crate::slash::parse_flags(tokens, 1, crate::slash::flags_for_command("merge"), help)?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
-    let attempt_id = app
-        .board
-        .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())?;
+    let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
@@ -1149,9 +1115,7 @@ fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
         return Ok(());
     }
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match merge_task_attempt_http(&base_url, attempt_id, repo_id).await {
             Ok(()) => {
                 let _ = net_tx
@@ -1199,10 +1163,7 @@ fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
     let force = parsed.get_bool("--force");
 
-    let attempt_id = app
-        .board
-        .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())?;
+    let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     let kind = if force {
@@ -1214,9 +1175,7 @@ fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
         return Ok(());
     }
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         let result = if force {
             force_push_task_attempt_branch_http(&base_url, attempt_id, repo_id).await
         } else {
@@ -1343,10 +1302,7 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
     let draft = Some(parsed.get_bool("--draft"));
     let auto_desc = parsed.get_bool("--auto-desc");
 
-    let attempt_id = app
-        .board
-        .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())?;
+    let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
@@ -1395,9 +1351,7 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
         return Ok(());
     }
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match create_pr_http(
             &base_url,
             attempt_id,
@@ -1463,19 +1417,14 @@ fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(),
     )?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
-    let attempt_id = app
-        .board
-        .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())?;
+    let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     if !begin_git_op(app, Some(repo_id), GitOpKind::AttachPr, &repo_name) {
         return Ok(());
     }
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match attach_pr_http(&base_url, attempt_id, repo_id).await {
             Ok(resp) => {
                 let msg = if resp.pr_attached {
@@ -1533,19 +1482,14 @@ fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(
     )?;
     let repo_arg = parsed.get_value("--repo").map(ToString::to_string);
 
-    let attempt_id = app
-        .board
-        .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())?;
+    let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     if !begin_git_op(app, Some(repo_id), GitOpKind::PrComments, &repo_name) {
         return Ok(());
     }
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match get_pr_comments_http(&base_url, attempt_id, repo_id).await {
             Ok(count) => {
                 let _ = net_tx
@@ -1586,16 +1530,9 @@ fn handle_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
             .unwrap_or("usage: /open <file_path>")
             .to_string());
     }
-    let attempt_id = app
-        .board
-        .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())?;
-
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
+    let attempt_id = require_selected_attempt_id(app)?;
     let file_path = tokens[1].clone();
-
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match open_editor_http(&base_url, attempt_id, Some(file_path.clone())).await {
             Ok(url) => {
                 let msg = match url {
@@ -1612,48 +1549,4 @@ fn handle_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
         }
     });
     Ok(())
-}
-
-pub(crate) fn resolve_repo_for_command(
-    app: &mut AppState,
-    repo_arg: Option<&str>,
-) -> Result<(Uuid, String), String> {
-    if app.diff.repo_statuses.is_empty() {
-        request_branch_status_refresh(app);
-        return Err("no repo status loaded yet (run /status)".to_string());
-    }
-
-    if let Some(arg) = repo_arg.filter(|s| !s.trim().is_empty()) {
-        if let Ok(n) = arg.parse::<usize>() {
-            let idx = n.saturating_sub(1);
-            let repo = app
-                .diff
-                .repo_statuses
-                .get(idx)
-                .ok_or_else(|| format!("repo index out of range: {arg}"))?;
-            return Ok((repo.repo_id, repo.repo_name.clone()));
-        }
-
-        let needle = arg.to_ascii_lowercase();
-        let idx = app
-            .diff
-            .repo_statuses
-            .iter()
-            .position(|r| r.repo_name.to_ascii_lowercase() == needle)
-            .or_else(|| {
-                app.diff
-                    .repo_statuses
-                    .iter()
-                    .position(|r| r.repo_name.to_ascii_lowercase().contains(&needle))
-            })
-            .ok_or_else(|| format!("unknown repo: {arg}"))?;
-        crate::selection_hooks::set_selected_repo_index(app, idx);
-    }
-
-    let repo = app
-        .diff
-        .repo_statuses
-        .get(app.diff.selected_repo_index)
-        .ok_or_else(|| "no repo selected".to_string())?;
-    Ok((repo.repo_id, repo.repo_name.clone()))
 }
