@@ -5,329 +5,27 @@ use uuid::Uuid;
 
 use super::{
     context::{require_repo_status_loaded, require_selected_attempt_id, resolve_repo_for_command},
-    git_ops::{
-        arm_branch_status_refresh_after_next_exec, arm_branch_status_refresh_for_exec,
-        begin_git_op, request_branch_status_refresh, set_toast,
-    },
+    git_ops::{begin_git_op, request_branch_status_refresh, set_toast},
 };
 use crate::{
     commands::open_url,
     events::{GitOpKind, NetEvent},
-    logs::{append_local_user_message, set_pending_user_log},
     net::ops::{
         CreateGitHubPrRequest, abort_conflicts_http, attach_pr_http, branch_status_http,
-        create_pr_http, create_task_attempt_http, delete_task_http, follow_up_http,
-        force_push_task_attempt_branch_http, get_pr_comments_http, latest_session_id_http,
-        list_task_attempts_http, merge_task_attempt_http, open_editor_http,
-        project_repositories_http, push_task_attempt_branch_http, queue_follow_up_http,
-        rebase_task_attempt_http, repo_branches_http, update_executor_profile_http,
+        create_pr_http, delete_task_http, force_push_task_attempt_branch_http,
+        get_pr_comments_http, merge_task_attempt_http, open_editor_http,
+        push_task_attempt_branch_http, rebase_task_attempt_http, update_executor_profile_http,
         update_model_settings_http,
     },
-    selection::{exec_list, find_task},
+    selection::find_task,
     state::{AppState, Merge},
     ui::{DiffRepoAction, trigger_diff_repo_action},
 };
 
-fn is_quit_slash(message: &str) -> bool {
-    let trimmed = message.trim_start();
-    let Some(cmdline) = trimmed.strip_prefix('/') else {
-        return false;
-    };
-    let tokens = crate::cli_parse::tokenize_command_line(cmdline).ok();
-    let Some(tokens) = tokens else {
-        return false;
-    };
-    let Some(first) = tokens.get(0) else {
-        return false;
-    };
-    let cmd = crate::slash::canonical_command_name(first.as_str()).unwrap_or(first.as_str());
-    cmd == "quit"
-}
-
-pub(crate) fn submit_composer(app: &mut AppState) -> bool {
-    let msg = app.ui.composer.buffer.trim_end().to_string();
-    if msg.trim().is_empty() {
-        app.ui.composer_active = false;
-        app.ui.composer.clear();
-        return false;
-    }
-
-    let refresh_branch_status_after_send = app.ui.refresh_branch_status_after_send;
-    app.ui.refresh_branch_status_after_send = false;
-
-    // Keep a local record of what the user sent in the run logs, since the backend log stream
-    // does not always include user messages.
-    let mut execs_for_log = exec_list(&app.exec.exec_store);
-    execs_for_log.sort_by_key(|e| e.created_at.clone().unwrap_or_default());
-    let current_exec_id = app
-        .exec
-        .selected_exec_id
-        .or_else(|| execs_for_log.last().map(|e| e.id));
-
-    if crate::slash::composer_is_slash_mode(&msg) {
-        if is_quit_slash(&msg) {
-            app.ui.composer_active = false;
-            app.ui.composer.clear();
-            return true;
-        }
-        if let Some(exec_id) = current_exec_id {
-            append_local_user_message(app, exec_id, &msg);
-        }
-        app.ui.composer_active = false;
-        app.ui.composer.clear();
-        return submit_slash_command(app, &msg);
-    }
-
-    let attempt_id = app.board.selected_attempt_id;
-    let task_id = app.board.selected_task_id;
-    let project_id = app.board.selected_project_id;
-    let executor_profile = app.ui.selected_executor_profile.clone();
-
-    let execs = exec_list(&app.exec.exec_store);
-    let active = app
-        .exec
-        .selected_exec_id
-        .and_then(|id| execs.iter().find(|e| e.id == id));
-    let session_id = active.and_then(|e| e.session_id);
-    let is_running = active.and_then(|e| e.status.as_deref()) == Some("running");
-
-    if session_id.is_none() && attempt_id.is_none() && task_id.is_none() {
-        app.ui.last_error = Some(
-            "No task/attempt selected. Create/select a task first (press `n` to create a task)."
-                .to_string(),
-        );
-        return false;
-    }
-
-    app.ui.composer_active = false;
-    app.ui.composer.clear();
-
-    if let Some(exec_id) = current_exec_id {
-        if is_running {
-            append_local_user_message(app, exec_id, &msg);
-        } else {
-            set_pending_user_log(app, msg.clone());
-        }
-    }
-    if refresh_branch_status_after_send {
-        if is_running {
-            if let Some(exec_id) = current_exec_id {
-                arm_branch_status_refresh_for_exec(app, exec_id);
-            }
-        } else {
-            arm_branch_status_refresh_after_next_exec(app, current_exec_id);
-        }
-    }
-
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        let mut attempt_id = attempt_id;
-        let mut session_id = session_id;
-
-        if session_id.is_none() {
-            if attempt_id.is_none() {
-                let Some(task_id) = task_id else {
-                    let _ = net_tx
-                        .send(NetEvent::Error(
-                            "no task selected; cannot create attempt".to_string(),
-                        ))
-                        .await;
-                    return;
-                };
-
-                let existing_attempts = match list_task_attempts_http(&base_url, task_id).await {
-                    Ok(a) => a,
-                    Err(e) => {
-                        let _ = net_tx
-                            .send(NetEvent::Error(format!(
-                                "failed to load task attempts: {e}"
-                            )))
-                            .await;
-                        return;
-                    }
-                };
-                let _ = net_tx
-                    .send(NetEvent::AttemptsLoaded {
-                        task_id,
-                        attempts: existing_attempts.clone(),
-                    })
-                    .await;
-
-                if let Some(first) = existing_attempts.first() {
-                    attempt_id = Some(first.id);
-                } else {
-                    let Some(project_id) = project_id else {
-                        let _ = net_tx
-                            .send(NetEvent::Error(
-                                "no project selected; cannot create attempt".to_string(),
-                            ))
-                            .await;
-                        return;
-                    };
-                    let Some(executor_profile) = executor_profile else {
-                        let _ = net_tx
-                            .send(NetEvent::Error(
-                                "no executor selected yet; wait for /api/info".to_string(),
-                            ))
-                            .await;
-                        return;
-                    };
-
-                    let repos = match project_repositories_http(&base_url, project_id).await {
-                        Ok(r) => r,
-                        Err(e) => {
-                            let _ = net_tx
-                                .send(NetEvent::Error(format!(
-                                    "failed to load project repositories: {e}"
-                                )))
-                                .await;
-                            return;
-                        }
-                    };
-                    if repos.is_empty() {
-                        let _ = net_tx
-                            .send(NetEvent::Error(
-                                "project has no repositories; add one first".to_string(),
-                            ))
-                            .await;
-                        return;
-                    }
-
-                    let mut repo_inputs: Vec<(Uuid, String)> = Vec::with_capacity(repos.len());
-                    for repo in repos {
-                        let branches = repo_branches_http(&base_url, repo.id)
-                            .await
-                            .unwrap_or_default();
-                        let target_branch = branches
-                            .iter()
-                            .find(|b| b.is_current && !b.is_remote)
-                            .or_else(|| branches.iter().find(|b| b.is_current))
-                            .map(|b| b.name.clone())
-                            .unwrap_or_else(|| "main".to_string());
-                        repo_inputs.push((repo.id, target_branch));
-                    }
-
-                    let created = match create_task_attempt_http(
-                        &base_url,
-                        task_id,
-                        &executor_profile,
-                        repo_inputs,
-                    )
-                    .await
-                    {
-                        Ok(a) => a,
-                        Err(e) => {
-                            let _ = net_tx
-                                .send(NetEvent::Error(format!(
-                                    "failed to create task attempt: {e}"
-                                )))
-                                .await;
-                            return;
-                        }
-                    };
-
-                    attempt_id = Some(created.id);
-                    let _ = net_tx
-                        .send(NetEvent::AttemptsLoaded {
-                            task_id,
-                            attempts: vec![created.clone()],
-                        })
-                        .await;
-                    let _ = net_tx
-                        .send(NetEvent::Notice(format!(
-                            "Started attempt on branch {}.",
-                            created.branch
-                        )))
-                        .await;
-                }
-            }
-
-            // The workspace start can be async; poll briefly for a session to appear.
-            if let Some(workspace_id) = attempt_id {
-                for _ in 0..40 {
-                    match latest_session_id_http(&base_url, workspace_id).await {
-                        Ok(Some(sid)) => {
-                            session_id = Some(sid);
-                            break;
-                        }
-                        Ok(None) => tokio::time::sleep(Duration::from_millis(250)).await,
-                        Err(e) => {
-                            let _ = net_tx
-                                .send(NetEvent::Error(format!("failed to load sessions: {e}")))
-                                .await;
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
-        let session_id = match session_id {
-            Some(id) => Some(id),
-            None => match attempt_id {
-                Some(workspace_id) => match latest_session_id_http(&base_url, workspace_id).await {
-                    Ok(id) => id,
-                    Err(e) => {
-                        let _ = net_tx
-                            .send(NetEvent::Error(format!("failed to load sessions: {e}")))
-                            .await;
-                        return;
-                    }
-                },
-                None => None,
-            },
-        };
-
-        let Some(session_id) = session_id else {
-            let _ = net_tx
-                .send(NetEvent::Error(
-                    "no session available for this attempt (workspace still starting?)".to_string(),
-                ))
-                .await;
-            return;
-        };
-
-        let result = if is_running {
-            queue_follow_up_http(&base_url, session_id, &msg).await
-        } else {
-            follow_up_http(&base_url, session_id, &msg).await
-        };
-
-        match result {
-            Ok(()) => {}
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::Error(format!("follow-up failed: {e}")))
-                    .await;
-            }
-        }
-    });
-
-    false
-}
-
-pub(crate) fn submit_slash_command(app: &mut AppState, raw: &str) -> bool {
-    let cmdline = raw.trim_start().trim_start_matches('/');
-    let tokens = match crate::cli_parse::tokenize_command_line(cmdline) {
-        Ok(t) => t,
-        Err(e) => {
-            app.ui.last_error = Some(format!("invalid command: {e}"));
-            return false;
-        }
-    };
-
-    if tokens.is_empty() {
-        app.ui.last_error = Some("invalid command: empty".to_string());
-        return false;
-    }
-
-    match parse_slash_command(app, &tokens) {
-        Ok(quit) => return quit,
-        Err(e) => {
-            app.ui.last_error = Some(e);
-        }
-    }
-    false
-}
+mod submit;
+pub(crate) use submit::submit_composer;
+mod git;
+pub(crate) use git::trigger_abort_conflicts;
 
 fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, String> {
     let cmd =
@@ -360,7 +58,7 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
             Ok(false)
         }
         "resolve" => {
-            handle_resolve_command(app, tokens)?;
+            git::handle_resolve_command(app, tokens)?;
             Ok(false)
         }
         "repo" => {
@@ -368,19 +66,19 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
             Ok(false)
         }
         "rebase" => {
-            handle_rebase_command(app, tokens)?;
+            git::handle_rebase_command(app, tokens)?;
             Ok(false)
         }
         "abort" => {
-            handle_abort_command(app, tokens)?;
+            git::handle_abort_command(app, tokens)?;
             Ok(false)
         }
         "merge" => {
-            handle_merge_command(app, tokens)?;
+            git::handle_merge_command(app, tokens)?;
             Ok(false)
         }
         "push" => {
-            handle_push_command(app, tokens)?;
+            git::handle_push_command(app, tokens)?;
             Ok(false)
         }
         "pr" => {
@@ -861,59 +559,31 @@ fn handle_delete_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
     Ok(())
 }
 
-pub(crate) fn trigger_abort_conflicts(
+#[allow(dead_code)]
+fn trigger_abort_conflicts_legacy(
     app: &mut AppState,
     attempt_id: Uuid,
     repo_id: Uuid,
     repo_name: &str,
 ) {
-    if !begin_git_op(app, Some(repo_id), GitOpKind::Abort, repo_name) {
-        return;
-    }
-
-    let repo_name = repo_name.to_string();
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        match abort_conflicts_http(&base_url, attempt_id, repo_id).await {
-            Ok(()) => {
-                let _ = net_tx
-                    .send(NetEvent::Notice(format!(
-                        "Aborted conflicts for {repo_name}."
-                    )))
-                    .await;
-                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx
-                        .send(NetEvent::BranchStatusLoaded {
-                            attempt_id,
-                            statuses,
-                        })
-                        .await;
-                }
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::Abort,
-                        ok: true,
-                        message: format!("Git: abort finished ({repo_name})"),
-                    })
-                    .await;
-            }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::Error(format!("abort failed: {e}")))
-                    .await;
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::Abort,
-                        ok: false,
-                        message: format!("Git: abort failed ({repo_name})"),
-                    })
-                    .await;
-            }
-        }
-    });
+    crate::commands::spawn_repo_git_op(
+        app,
+        attempt_id,
+        repo_id,
+        GitOpKind::Abort,
+        repo_name,
+        crate::commands::GitOpOutcome {
+            notice: Some(format!("Aborted conflicts for {repo_name}.")),
+            refresh_branch_status: true,
+            diff_reconnect: false,
+            finished_message_ok: Some(format!("Git: abort finished ({repo_name})")),
+            finished_message_err: Some(format!("Git: abort failed ({repo_name})")),
+        },
+        move |base_url| async move { abort_conflicts_http(&base_url, attempt_id, repo_id).await },
+    );
 }
 
+#[allow(dead_code)]
 fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("abort").unwrap_or("/abort");
     let parsed =
@@ -923,10 +593,11 @@ fn handle_abort_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
     let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
-    trigger_abort_conflicts(app, attempt_id, repo_id, &repo_name);
+    trigger_abort_conflicts_legacy(app, attempt_id, repo_id, &repo_name);
     Ok(())
 }
 
+#[allow(dead_code)]
 fn handle_resolve_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("resolve").unwrap_or("/resolve [--repo R]");
     let parsed =
@@ -1003,6 +674,7 @@ fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), Stri
     Ok(())
 }
 
+#[allow(dead_code)]
 fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("rebase").unwrap_or("/rebase [--onto B]");
     let parsed =
@@ -1035,52 +707,27 @@ fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Result<(), St
         }
     }
 
-    if !begin_git_op(app, Some(repo_id), GitOpKind::Rebase, &repo_name) {
-        return Ok(());
-    }
-
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        match rebase_task_attempt_http(&base_url, attempt_id, repo_id, old, onto).await {
-            Ok(()) => {
-                let _ = net_tx
-                    .send(NetEvent::Notice(format!("Rebase started for {repo_name}.")))
-                    .await;
-                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx
-                        .send(NetEvent::BranchStatusLoaded {
-                            attempt_id,
-                            statuses,
-                        })
-                        .await;
-                }
-                let _ = net_tx.send(NetEvent::DiffReconnect).await;
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::Rebase,
-                        ok: true,
-                        message: format!("Git: rebase finished ({repo_name})"),
-                    })
-                    .await;
-            }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::Error(format!("rebase failed: {e}")))
-                    .await;
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::Rebase,
-                        ok: false,
-                        message: format!("Git: rebase failed ({repo_name})"),
-                    })
-                    .await;
-            }
-        }
-    });
+    crate::commands::spawn_repo_git_op(
+        app,
+        attempt_id,
+        repo_id,
+        GitOpKind::Rebase,
+        &repo_name,
+        crate::commands::GitOpOutcome {
+            notice: Some(format!("Rebase started for {repo_name}.")),
+            refresh_branch_status: true,
+            diff_reconnect: true,
+            finished_message_ok: Some(format!("Git: rebase finished ({repo_name})")),
+            finished_message_err: Some(format!("Git: rebase failed ({repo_name})")),
+        },
+        move |base_url| async move {
+            rebase_task_attempt_http(&base_url, attempt_id, repo_id, old, onto).await
+        },
+    );
     Ok(())
 }
 
+#[allow(dead_code)]
 fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("merge").unwrap_or("/merge");
     let parsed =
@@ -1111,51 +758,25 @@ fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Result<(), Str
         }
     }
 
-    if !begin_git_op(app, Some(repo_id), GitOpKind::Merge, &repo_name) {
-        return Ok(());
-    }
-
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        match merge_task_attempt_http(&base_url, attempt_id, repo_id).await {
-            Ok(()) => {
-                let _ = net_tx
-                    .send(NetEvent::Notice(format!("Merged {repo_name}.")))
-                    .await;
-                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx
-                        .send(NetEvent::BranchStatusLoaded {
-                            attempt_id,
-                            statuses,
-                        })
-                        .await;
-                }
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::Merge,
-                        ok: true,
-                        message: format!("Git: merge finished ({repo_name})"),
-                    })
-                    .await;
-            }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::Error(format!("merge failed: {e}")))
-                    .await;
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::Merge,
-                        ok: false,
-                        message: format!("Git: merge failed ({repo_name})"),
-                    })
-                    .await;
-            }
-        }
-    });
+    crate::commands::spawn_repo_git_op(
+        app,
+        attempt_id,
+        repo_id,
+        GitOpKind::Merge,
+        &repo_name,
+        crate::commands::GitOpOutcome {
+            notice: Some(format!("Merged {repo_name}.")),
+            refresh_branch_status: true,
+            diff_reconnect: false,
+            finished_message_ok: Some(format!("Git: merge finished ({repo_name})")),
+            finished_message_err: Some(format!("Git: merge failed ({repo_name})")),
+        },
+        move |base_url| async move { merge_task_attempt_http(&base_url, attempt_id, repo_id).await },
+    );
     Ok(())
 }
 
+#[allow(dead_code)]
 fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let help = crate::slash::help_syntax_for_command("push").unwrap_or("/push [--force]");
     let parsed =
@@ -1171,59 +792,33 @@ fn handle_push_command(app: &mut AppState, tokens: &[String]) -> Result<(), Stri
     } else {
         GitOpKind::Push
     };
-    if !begin_git_op(app, Some(repo_id), kind, &repo_name) {
-        return Ok(());
-    }
-
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        let result = if force {
-            force_push_task_attempt_branch_http(&base_url, attempt_id, repo_id).await
-        } else {
-            push_task_attempt_branch_http(&base_url, attempt_id, repo_id).await
-        };
-        match result {
-            Ok(()) => {
-                let _ = net_tx
-                    .send(NetEvent::Notice(format!(
-                        "Pushed {repo_name}{}.",
-                        if force { " (force)" } else { "" }
-                    )))
-                    .await;
-                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                    let _ = net_tx
-                        .send(NetEvent::BranchStatusLoaded {
-                            attempt_id,
-                            statuses,
-                        })
-                        .await;
-                }
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind,
-                        ok: true,
-                        message: format!(
-                            "Git: push finished ({repo_name}{})",
-                            if force { ", force" } else { "" }
-                        ),
-                    })
-                    .await;
+    let notice = format!("Pushed {repo_name}{}.", if force { " (force)" } else { "" });
+    let ok_message = format!(
+        "Git: push finished ({repo_name}{})",
+        if force { ", force" } else { "" }
+    );
+    let err_message = format!("Git: push failed ({repo_name})");
+    crate::commands::spawn_repo_git_op(
+        app,
+        attempt_id,
+        repo_id,
+        kind,
+        &repo_name,
+        crate::commands::GitOpOutcome {
+            notice: Some(notice),
+            refresh_branch_status: true,
+            diff_reconnect: false,
+            finished_message_ok: Some(ok_message),
+            finished_message_err: Some(err_message),
+        },
+        move |base_url| async move {
+            if force {
+                force_push_task_attempt_branch_http(&base_url, attempt_id, repo_id).await
+            } else {
+                push_task_attempt_branch_http(&base_url, attempt_id, repo_id).await
             }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::Error(format!("push failed: {e}")))
-                    .await;
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind,
-                        ok: false,
-                        message: format!("Git: push failed ({repo_name})"),
-                    })
-                    .await;
-            }
-        }
-    });
+        },
+    );
     Ok(())
 }
 

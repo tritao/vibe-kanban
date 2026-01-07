@@ -24,3 +24,7 @@ pub(crate) fn truncate(s: &str, max: usize) -> String {
     out.push('…');
     out
 }
+
+pub(crate) fn op_failed(op: &str, e: impl std::fmt::Display) -> String {
+    format!("{op} failed: {e}")
+}

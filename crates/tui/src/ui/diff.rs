@@ -1,11 +1,13 @@
 use std::time::{Duration, Instant};
 
+mod preview;
+
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, Paragraph},
 };
 
 use crate::{
@@ -17,9 +19,8 @@ use crate::{
     events::{GitOpKind, NetEvent, StreamStatus},
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     net::ops::{
-        CreateGitHubPrRequest, branch_status_http, create_pr_http, create_task_attempt_http,
-        list_task_attempts_http, merge_task_attempt_http, open_editor_http,
-        project_repositories_http, rebase_task_attempt_http, repo_branches_http,
+        CreateGitHubPrRequest, branch_status_http, create_pr_http, merge_task_attempt_http,
+        open_editor_http, rebase_task_attempt_http,
     },
     selection::find_task,
     state::{
@@ -42,7 +43,7 @@ pub(crate) fn render_diff_pane(f: &mut Frame, app: &AppState, area: Rect) {
 
     render_diff_repo_bar(f, app, sections[0]);
     render_diff_files(f, app, sections[1]);
-    render_diff_preview(f, app, sections[2]);
+    preview::render_diff_preview(f, app, sections[2]);
 }
 
 fn selected_attempt_branch(app: &AppState) -> String {
@@ -765,187 +766,27 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let project_id = app.board.selected_project_id;
             let executor_profile = app.ui.selected_executor_profile.clone();
             crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-                let attempt_id = match attempt_id {
+                let attempt_id = match crate::commands::ensure_attempt_id_for_repo_ops(
+                    &base_url,
+                    &net_tx,
+                    attempt_id,
+                    task_id,
+                    project_id,
+                    executor_profile,
+                )
+                .await
+                {
                     Some(id) => id,
                     None => {
-                        let Some(task_id) = task_id else {
-                            let _ = net_tx
-                                .send(NetEvent::Error(
-                                    "Git: no task selected (select/create a task first)"
-                                        .to_string(),
-                                ))
-                                .await;
-                            let _ = net_tx
-                                .send(NetEvent::GitOpFinished {
-                                    repo_id,
-                                    kind: GitOpKind::Status,
-                                    ok: false,
-                                    message: "Git: status failed".to_string(),
-                                })
-                                .await;
-                            return;
-                        };
-
-                        let existing_attempts =
-                            match list_task_attempts_http(&base_url, task_id).await {
-                                Ok(a) => a,
-                                Err(e) => {
-                                    let _ = net_tx
-                                        .send(NetEvent::Error(format!(
-                                            "Git: failed to load task attempts: {e}"
-                                        )))
-                                        .await;
-                                    let _ = net_tx
-                                        .send(NetEvent::GitOpFinished {
-                                            repo_id,
-                                            kind: GitOpKind::Status,
-                                            ok: false,
-                                            message: "Git: status failed".to_string(),
-                                        })
-                                        .await;
-                                    return;
-                                }
-                            };
-
-                        if let Some(first) = existing_attempts.first() {
-                            let first_id = first.id;
-                            let _ = net_tx
-                                .send(NetEvent::AttemptsLoaded {
-                                    task_id,
-                                    attempts: existing_attempts,
-                                })
-                                .await;
-                            first_id
-                        } else {
-                            let Some(project_id) = project_id else {
-                                let _ = net_tx
-                                    .send(NetEvent::Error(
-                                        "Git: no project selected (select a project first)"
-                                            .to_string(),
-                                    ))
-                                    .await;
-                                let _ = net_tx
-                                    .send(NetEvent::GitOpFinished {
-                                        repo_id,
-                                        kind: GitOpKind::Status,
-                                        ok: false,
-                                        message: "Git: status failed".to_string(),
-                                    })
-                                    .await;
-                                return;
-                            };
-                            let Some(executor_profile) = executor_profile else {
-                                let _ = net_tx
-                                    .send(NetEvent::Error(
-                                        "Git: no executor selected yet (wait for /api/info)"
-                                            .to_string(),
-                                    ))
-                                    .await;
-                                let _ = net_tx
-                                    .send(NetEvent::GitOpFinished {
-                                        repo_id,
-                                        kind: GitOpKind::Status,
-                                        ok: false,
-                                        message: "Git: status failed".to_string(),
-                                    })
-                                    .await;
-                                return;
-                            };
-
-                            let repos = match project_repositories_http(&base_url, project_id).await
-                            {
-                                Ok(r) => r,
-                                Err(e) => {
-                                    let _ = net_tx
-                                        .send(NetEvent::Error(format!(
-                                            "Git: failed to load project repositories: {e}"
-                                        )))
-                                        .await;
-                                    let _ = net_tx
-                                        .send(NetEvent::GitOpFinished {
-                                            repo_id,
-                                            kind: GitOpKind::Status,
-                                            ok: false,
-                                            message: "Git: status failed".to_string(),
-                                        })
-                                        .await;
-                                    return;
-                                }
-                            };
-                            if repos.is_empty() {
-                                let _ = net_tx
-                                    .send(NetEvent::Error(
-                                        "Git: project has no repositories (add one first)"
-                                            .to_string(),
-                                    ))
-                                    .await;
-                                let _ = net_tx
-                                    .send(NetEvent::GitOpFinished {
-                                        repo_id,
-                                        kind: GitOpKind::Status,
-                                        ok: false,
-                                        message: "Git: status failed".to_string(),
-                                    })
-                                    .await;
-                                return;
-                            }
-
-                            let mut repo_inputs: Vec<(uuid::Uuid, String)> =
-                                Vec::with_capacity(repos.len());
-                            for repo in repos {
-                                let branches = repo_branches_http(&base_url, repo.id)
-                                    .await
-                                    .unwrap_or_default();
-                                let target_branch = branches
-                                    .iter()
-                                    .find(|b| b.is_current && !b.is_remote)
-                                    .or_else(|| branches.iter().find(|b| b.is_current))
-                                    .map(|b| b.name.clone())
-                                    .unwrap_or_else(|| "main".to_string());
-                                repo_inputs.push((repo.id, target_branch));
-                            }
-
-                            let created = match create_task_attempt_http(
-                                &base_url,
-                                task_id,
-                                &executor_profile,
-                                repo_inputs,
-                            )
-                            .await
-                            {
-                                Ok(a) => a,
-                                Err(e) => {
-                                    let _ = net_tx
-                                        .send(NetEvent::Error(format!(
-                                            "Git: failed to start attempt: {e}"
-                                        )))
-                                        .await;
-                                    let _ = net_tx
-                                        .send(NetEvent::GitOpFinished {
-                                            repo_id,
-                                            kind: GitOpKind::Status,
-                                            ok: false,
-                                            message: "Git: status failed".to_string(),
-                                        })
-                                        .await;
-                                    return;
-                                }
-                            };
-
-                            let _ = net_tx
-                                .send(NetEvent::AttemptsLoaded {
-                                    task_id,
-                                    attempts: vec![created.clone()],
-                                })
-                                .await;
-                            let _ = net_tx
-                                .send(NetEvent::Notice(format!(
-                                    "Started attempt on branch {}.",
-                                    created.branch
-                                )))
-                                .await;
-                            created.id
-                        }
+                        let _ = net_tx
+                            .send(NetEvent::GitOpFinished {
+                                repo_id,
+                                kind: GitOpKind::Status,
+                                ok: false,
+                                message: "Git: status failed".to_string(),
+                            })
+                            .await;
+                        return;
                     }
                 };
 
@@ -972,7 +813,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                     }
                     Err(e) => {
                         let _ = net_tx
-                            .send(NetEvent::Error(format!("branch status failed: {e}")))
+                            .send(NetEvent::Error(crate::fmt::op_failed("branch status", e)))
                             .await;
                         let _ = net_tx
                             .send(NetEvent::GitOpFinished {
@@ -1014,47 +855,23 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             }
-            if !begin_git_op(app, Some(repo_id), GitOpKind::Merge, &repo_name) {
-                return;
-            }
-            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-                match merge_task_attempt_http(&base_url, attempt_id, repo_id).await {
-                    Ok(()) => {
-                        let _ = net_tx
-                            .send(NetEvent::Notice(format!("Merged {repo_name}.")))
-                            .await;
-                        if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                            let _ = net_tx
-                                .send(NetEvent::BranchStatusLoaded {
-                                    attempt_id,
-                                    statuses,
-                                })
-                                .await;
-                        }
-                        let _ = net_tx
-                            .send(NetEvent::GitOpFinished {
-                                repo_id: Some(repo_id),
-                                kind: GitOpKind::Merge,
-                                ok: true,
-                                message: format!("Git: merge finished ({repo_name})"),
-                            })
-                            .await;
-                    }
-                    Err(e) => {
-                        let _ = net_tx
-                            .send(NetEvent::Error(format!("merge failed: {e}")))
-                            .await;
-                        let _ = net_tx
-                            .send(NetEvent::GitOpFinished {
-                                repo_id: Some(repo_id),
-                                kind: GitOpKind::Merge,
-                                ok: false,
-                                message: format!("Git: merge failed ({repo_name})"),
-                            })
-                            .await;
-                    }
-                }
-            });
+            crate::commands::spawn_repo_git_op(
+                app,
+                attempt_id,
+                repo_id,
+                GitOpKind::Merge,
+                &repo_name,
+                crate::commands::GitOpOutcome {
+                    notice: Some(format!("Merged {repo_name}.")),
+                    refresh_branch_status: true,
+                    diff_reconnect: false,
+                    finished_message_ok: Some(format!("Git: merge finished ({repo_name})")),
+                    finished_message_err: Some(format!("Git: merge failed ({repo_name})")),
+                },
+                move |base_url| async move {
+                    merge_task_attempt_http(&base_url, attempt_id, repo_id).await
+                },
+            );
         }
         DiffRepoAction::Rebase => {
             let Ok((repo_id, repo_name)) = resolve_repo_for_command(app, None) else {
@@ -1084,48 +901,23 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             }
-            if !begin_git_op(app, Some(repo_id), GitOpKind::Rebase, &repo_name) {
-                return;
-            }
-            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-                match rebase_task_attempt_http(&base_url, attempt_id, repo_id, None, None).await {
-                    Ok(()) => {
-                        let _ = net_tx
-                            .send(NetEvent::Notice(format!("Rebase started for {repo_name}.")))
-                            .await;
-                        if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
-                            let _ = net_tx
-                                .send(NetEvent::BranchStatusLoaded {
-                                    attempt_id,
-                                    statuses,
-                                })
-                                .await;
-                        }
-                        let _ = net_tx.send(NetEvent::DiffReconnect).await;
-                        let _ = net_tx
-                            .send(NetEvent::GitOpFinished {
-                                repo_id: Some(repo_id),
-                                kind: GitOpKind::Rebase,
-                                ok: true,
-                                message: format!("Git: rebase finished ({repo_name})"),
-                            })
-                            .await;
-                    }
-                    Err(e) => {
-                        let _ = net_tx
-                            .send(NetEvent::Error(format!("rebase failed: {e}")))
-                            .await;
-                        let _ = net_tx
-                            .send(NetEvent::GitOpFinished {
-                                repo_id: Some(repo_id),
-                                kind: GitOpKind::Rebase,
-                                ok: false,
-                                message: format!("Git: rebase failed ({repo_name})"),
-                            })
-                            .await;
-                    }
-                }
-            });
+            crate::commands::spawn_repo_git_op(
+                app,
+                attempt_id,
+                repo_id,
+                GitOpKind::Rebase,
+                &repo_name,
+                crate::commands::GitOpOutcome {
+                    notice: Some(format!("Rebase started for {repo_name}.")),
+                    refresh_branch_status: true,
+                    diff_reconnect: true,
+                    finished_message_ok: Some(format!("Git: rebase finished ({repo_name})")),
+                    finished_message_err: Some(format!("Git: rebase failed ({repo_name})")),
+                },
+                move |base_url| async move {
+                    rebase_task_attempt_http(&base_url, attempt_id, repo_id, None, None).await
+                },
+            );
         }
         DiffRepoAction::CreatePr => {
             let Ok((repo_id, repo_name)) = resolve_repo_for_command(app, None) else {
@@ -1867,52 +1659,4 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
     f.render_stateful_widget(widget, area, &mut state);
 }
 
-fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
-    let border_style = crate::ui::widgets::focused_border(
-        app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Preview,
-    );
-
-    let (lines, title) = match app.diff.list_mode {
-        crate::state::DiffListMode::Files => (
-            &app.diff.diff_preview_lines,
-            crate::ui::widgets::title_with_tags(
-                format!("Diff ({})", app.diff.diff_theme.label()),
-                &[
-                    ("wrap", app.diff.diff_wrap),
-                    ("loading", app.diff.diff_preview_loading.visible()),
-                ],
-            ),
-        ),
-        crate::state::DiffListMode::Commits => (&app.diff.commit_preview_lines, {
-            format!(
-                "Commit{}",
-                if app.diff.commit_preview_loading.visible() {
-                    " (loading)"
-                } else {
-                    ""
-                }
-            )
-        }),
-    };
-    let start = app.diff.diff_scroll_offset.min(lines.len());
-    let height = area.height.saturating_sub(2) as usize;
-    let end = (start + height).min(lines.len());
-    let visible = lines.get(start..end).unwrap_or(&[]);
-    crate::ui::viewport::render_cleared_padded_paragraph(
-        f,
-        area,
-        |padded| {
-            let mut w = Paragraph::new(padded).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title(title)
-                    .border_style(border_style),
-            );
-            if app.diff.list_mode == crate::state::DiffListMode::Commits {
-                w = w.wrap(Wrap { trim: false });
-            }
-            w
-        },
-        visible,
-    );
-}
+// Rendered via `preview::render_diff_preview`.
