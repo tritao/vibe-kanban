@@ -80,6 +80,36 @@ pub(crate) fn ensure_commit_preview_rendered(app: &mut AppState, preview_width: 
 
     let content_width = preview_width.saturating_sub(2) as usize;
     if !message.trim().is_empty() {
+        fn dedent_markdownish_line(line: &str) -> &str {
+            // Git commit bodies are sometimes indented in tooling output; a leading 4-space indent
+            // turns Markdown into an indented code block (which would show literal `**`).
+            // Only strip the indent when the content looks like Markdown syntax.
+            let s = line.strip_prefix("    ").unwrap_or(line);
+            if std::ptr::eq(s, line) {
+                return line;
+            }
+            let t = s.trim_start();
+            if t.starts_with("**")
+                || t.starts_with('*')
+                || t.starts_with('-')
+                || t.starts_with('+')
+                || t.starts_with('#')
+                || t.starts_with('>')
+                || t.starts_with('`')
+                || t.starts_with('[')
+            {
+                s
+            } else {
+                line
+            }
+        }
+
+        let message = message
+            .lines()
+            .map(dedent_markdownish_line)
+            .collect::<Vec<_>>()
+            .join("\n");
+
         out.push(Line::from(""));
         out.extend(crate::logs::markdown::render_markdown(
             message.trim_end(),
