@@ -12,8 +12,6 @@ use crate::{
     },
 };
 
-mod legacy;
-
 pub(crate) fn render(f: &mut Frame, app: &AppState) {
     let root = Layout::default()
         .direction(Direction::Vertical)
