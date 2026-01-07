@@ -3,28 +3,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::{selection::BoardTaskItem, state::TaskRow};
-
-pub(crate) fn render_task_line(task: &TaskRow) -> Line<'static> {
-    let mut spans: Vec<Span<'static>> = vec![];
-    if task.has_in_progress_attempt {
-        spans.push(Span::styled(
-            "RUN ",
-            Style::default().fg(crate::ui::palette::notice_fg()),
-        ));
-    } else if task.last_attempt_failed {
-        spans.push(Span::styled("FAIL", crate::ui::palette::badge_fail()));
-        spans.push(Span::raw(" "));
-    }
-    spans.push(Span::raw(task.title.clone()));
-    if let Some(executor) = task.executor.as_ref().filter(|s| !s.trim().is_empty()) {
-        spans.push(Span::styled(
-            format!(" · {executor}"),
-            Style::default().add_modifier(Modifier::DIM),
-        ));
-    }
-    Line::from(spans)
-}
+use crate::selection::BoardTaskItem;
 
 pub(crate) fn render_board_task_line(item: &BoardTaskItem) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = vec![];

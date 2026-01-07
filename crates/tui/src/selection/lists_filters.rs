@@ -133,47 +133,6 @@ pub(crate) fn active_exec_id(execs: &[ExecRow]) -> Option<Uuid> {
     Some(filtered[filtered.len() - 1].id)
 }
 
-pub(crate) struct TasksByStatus {
-    pub(crate) todo: Vec<TaskRow>,
-    pub(crate) inprogress: Vec<TaskRow>,
-    pub(crate) inreview: Vec<TaskRow>,
-    pub(crate) done: Vec<TaskRow>,
-    pub(crate) cancelled: Vec<TaskRow>,
-}
-
-pub(crate) fn tasks_by_status(tasks: &[TaskRow]) -> TasksByStatus {
-    let mut out = TasksByStatus {
-        todo: vec![],
-        inprogress: vec![],
-        inreview: vec![],
-        done: vec![],
-        cancelled: vec![],
-    };
-
-    for t in tasks {
-        match t.status {
-            TaskStatus::Todo => out.todo.push(t.clone()),
-            TaskStatus::InProgress => out.inprogress.push(t.clone()),
-            TaskStatus::InReview => out.inreview.push(t.clone()),
-            TaskStatus::Done => out.done.push(t.clone()),
-            TaskStatus::Cancelled => out.cancelled.push(t.clone()),
-        }
-    }
-
-    let sort = |a: &TaskRow, b: &TaskRow| {
-        b.updated_at
-            .cmp(&a.updated_at)
-            .then_with(|| a.title.cmp(&b.title))
-    };
-    out.todo.sort_by(sort);
-    out.inprogress.sort_by(sort);
-    out.inreview.sort_by(sort);
-    out.done.sort_by(sort);
-    out.cancelled.sort_by(sort);
-
-    out
-}
-
 #[derive(Debug, Clone)]
 pub(crate) struct BoardTaskItem {
     pub(crate) task: TaskRow,
