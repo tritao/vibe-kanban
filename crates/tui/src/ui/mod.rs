@@ -19,4 +19,6 @@ pub(crate) use create_task::{
     handle_create_task_key, open_create_task_modal, render_create_task_modal,
 };
 pub(crate) use diff::{render_diff_pane, sync_selected_repo_from_diff_selection};
-pub(crate) use execution::{render_composer_autocomplete, render_execution_pane};
+pub(crate) use execution::{
+    close_composer, open_composer, render_composer_autocomplete, render_execution_pane,
+};

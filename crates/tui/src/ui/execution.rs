@@ -19,6 +19,29 @@ pub(crate) fn render_execution_pane(f: &mut Frame, app: &AppState, area: Rect) {
     <ExecInput as UiComponent>::render(f, app, sections[1]);
 }
 
+pub(crate) fn open_composer(app: &mut AppState) {
+    app.ui.composer_active = true;
+    app.ui.composer_suggest_index = 0;
+    app.ui.composer.set_end();
+    let layout =
+        crate::layout::compute_main_layout(crate::layout::current_terminal_rect(), app.ui.focus);
+    let area = layout.exec_input;
+    let inner_w = area.width.saturating_sub(2) as usize;
+    let inner_h = area.height.saturating_sub(2) as usize;
+    let prefix_w = crate::text::display_width("  ");
+    let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
+    app.ui
+        .composer
+        .ensure_cursor_visible(content_w, inner_h.max(1));
+}
+
+pub(crate) fn close_composer(app: &mut AppState) {
+    app.ui.composer_active = false;
+    app.ui.composer.clear();
+    app.ui.composer_suggest_index = 0;
+    app.ui.refresh_branch_status_after_send = false;
+}
+
 pub(crate) fn render_composer_autocomplete(f: &mut Frame, app: &AppState, input_area: Rect) {
     if !app.ui.composer_active || !crate::slash::composer_is_slash_mode(&app.ui.composer.buffer) {
         return;

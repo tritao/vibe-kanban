@@ -1,9 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{
-    CopyTarget, Effect, composer, confirm, copy::reduce_copy, keys_diff, keys_exec, keys_global,
-    modals, sel,
-};
+use super::{CopyTarget, Effect, composer, confirm, copy::reduce_copy, keys_global, modals, sel};
 use crate::{
     commands::submit_composer,
     state::{AppState, DiffFocus, FocusPane},
@@ -105,11 +102,17 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
     ) {
         return (false, true, vec![]);
     }
-    if let Some(dirty) = keys_diff::handle_diff_key(app, key) {
-        return (false, dirty, vec![]);
+    if <crate::ui::components::diff_pane::DiffPane as crate::ui::components::UiComponent>::on_event(
+        app,
+        crate::ui::components::diff_pane::DiffPaneEvent::Key(key),
+    ) {
+        return (false, true, vec![]);
     }
-    if let Some((dirty, effects)) = keys_exec::handle_exec_key(app, key) {
-        return (false, dirty, effects);
+    if <crate::ui::components::exec_pane::ExecPane as crate::ui::components::UiComponent>::on_event(
+        app,
+        crate::ui::components::exec_pane::ExecPaneEvent::Key(key),
+    ) {
+        return (false, true, vec![]);
     }
 
     (false, false, vec![])
