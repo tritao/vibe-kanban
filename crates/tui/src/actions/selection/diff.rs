@@ -23,8 +23,10 @@ pub(in crate::actions) fn reset_diff_stream_state(app: &mut AppState) {
 
     app.diff.list_mode = crate::state::DiffListMode::Files;
     app.diff.selected_commit_index = 0;
+    app.diff.commit_preview_text = None;
     app.diff.commit_preview_lines = vec![Line::from("No commit selected")];
     app.diff.commit_preview_loading = false;
+    app.diff.commit_preview_render_width = 0;
 }
 
 pub(in crate::actions) fn select_adjacent_diff_file(app: &mut AppState, delta: i32) {

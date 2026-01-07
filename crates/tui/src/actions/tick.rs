@@ -182,5 +182,11 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         dirty = true;
     }
 
+    if app.diff.list_mode == crate::state::DiffListMode::Commits {
+        if crate::commands::ensure_commit_preview_rendered(app, layout.diff_preview.width) {
+            dirty = true;
+        }
+    }
+
     dirty
 }

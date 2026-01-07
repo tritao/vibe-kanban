@@ -140,7 +140,7 @@ pub(crate) enum NetEvent {
     },
     CommitPreviewLoaded {
         repo_id: Uuid,
-        lines: Vec<Line<'static>>,
+        text: String,
     },
     CommitPreviewFailed {
         repo_id: Uuid,

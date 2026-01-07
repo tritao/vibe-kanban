@@ -168,7 +168,7 @@ pub async fn show_commit(
                 "show",
                 "--no-color",
                 "--name-status",
-                "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n    %s%n",
+                "--format=commit %H%nAuthor: %an <%ae>%nDate:   %ad%n%n%B%n%n----8<---- VK-FILES ----8<----%n",
                 &oid,
             ],
         )

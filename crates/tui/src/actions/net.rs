@@ -413,7 +413,7 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
             crate::commands::apply_commit_list_page(app, repo_id, commits, append, has_more);
             true
         }
-        NetEvent::CommitPreviewLoaded { repo_id, lines } => {
+        NetEvent::CommitPreviewLoaded { repo_id, text } => {
             // Only update the preview if we're still looking at this repo.
             let selected_repo_id = app
                 .diff
@@ -421,7 +421,9 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 .get(app.diff.selected_repo_index)
                 .map(|r| r.repo_id);
             if selected_repo_id == Some(repo_id) {
-                app.diff.commit_preview_lines = lines;
+                app.diff.commit_preview_text =
+                    Some(crate::commands::sanitize_commit_preview_text(&text));
+                app.diff.commit_preview_render_width = 0;
                 app.diff.commit_preview_loading = false;
             }
             true
@@ -433,7 +435,9 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 .get(app.diff.selected_repo_index)
                 .map(|r| r.repo_id);
             if selected_repo_id == Some(repo_id) {
+                app.diff.commit_preview_text = None;
                 app.diff.commit_preview_lines = vec![ratatui::text::Line::from(message)];
+                app.diff.commit_preview_render_width = 0;
                 app.diff.commit_preview_loading = false;
             }
             true

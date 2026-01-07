@@ -1821,10 +1821,25 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
                     Style::default().add_modifier(Modifier::DIM),
                 ));
                 spans.push(Span::raw(" "));
-                spans.push(Span::styled(
-                    c.subject.clone(),
-                    Style::default().add_modifier(Modifier::BOLD),
-                ));
+                let content_width = area.width.saturating_sub(2) as usize;
+                let hash_w = display_width(&c.short_oid) + 1;
+                let avail = content_width.saturating_sub(hash_w).max(1);
+                let rendered = crate::logs::markdown::render_markdown(
+                    c.subject.as_str(),
+                    avail,
+                    crate::logs::markdown::MdSoftBreakMode::Space,
+                );
+                if let Some(first) = rendered.first() {
+                    spans.extend(first.spans.iter().cloned());
+                    if rendered.len() > 1 {
+                        spans.push(Span::styled(
+                            " …".to_string(),
+                            Style::default().add_modifier(Modifier::DIM),
+                        ));
+                    }
+                } else {
+                    spans.push(Span::raw(c.subject.clone()));
+                }
                 ListItem::new(Line::from(spans))
             })
             .collect()

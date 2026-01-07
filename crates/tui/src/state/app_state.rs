@@ -110,8 +110,10 @@ pub(crate) struct DiffState {
     pub(crate) commits_loading_by_repo: HashMap<Uuid, bool>,
     pub(crate) commits_has_more_by_repo: HashMap<Uuid, bool>,
     pub(crate) selected_commit_index: usize,
+    pub(crate) commit_preview_text: Option<String>,
     pub(crate) commit_preview_lines: Vec<Line<'static>>,
     pub(crate) commit_preview_loading: bool,
+    pub(crate) commit_preview_render_width: u16,
 }
 
 pub(crate) struct UiState {
@@ -354,8 +356,10 @@ impl AppState {
                 commits_loading_by_repo: HashMap::new(),
                 commits_has_more_by_repo: HashMap::new(),
                 selected_commit_index: 0,
+                commit_preview_text: None,
                 commit_preview_lines: vec![Line::from("No commit selected")],
                 commit_preview_loading: false,
+                commit_preview_render_width: 0,
             },
 
             jobs: HashMap::new(),

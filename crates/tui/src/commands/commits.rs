@@ -8,6 +8,8 @@ use crate::{
     state::{AppState, CommitEntry, DiffListMode, JobKey},
 };
 
+const COMMIT_FILES_MARKER: &str = "----8<---- VK-FILES ----8<----";
+
 fn sanitize_for_terminal(s: &str) -> String {
     // Tabs cause cursor jumps in terminals but are treated as a single cell in ratatui buffers,
     // which can leave visual artifacts when switching between lines of different lengths.
@@ -15,32 +17,91 @@ fn sanitize_for_terminal(s: &str) -> String {
     s.replace('\t', "    ").replace('\r', "")
 }
 
-fn format_commit_show(text: &str) -> Vec<Line<'static>> {
-    use ratatui::{
-        style::{Modifier, Style},
-        text::Span,
+pub(crate) fn sanitize_commit_preview_text(text: &str) -> String {
+    // Keep this in sync with how we render the preview in the UI.
+    // - Expand tabs (git name-status uses tabs).
+    // - Strip CRs to avoid CRLF cursor oddities.
+    sanitize_for_terminal(text)
+}
+
+pub(crate) fn ensure_commit_preview_rendered(app: &mut AppState, preview_width: u16) -> bool {
+    if app.diff.list_mode != DiffListMode::Commits {
+        return false;
+    }
+    let preview_width = preview_width.max(1);
+    if app.diff.commit_preview_render_width == preview_width {
+        return false;
+    }
+    let Some(text) = app.diff.commit_preview_text.clone() else {
+        return false;
     };
 
     let mut out: Vec<Line<'static>> = vec![];
-    for raw in text.lines() {
-        let line = sanitize_for_terminal(raw);
-        if line.starts_with("commit ") {
-            out.push(Line::from(Span::styled(
-                line,
-                Style::default().add_modifier(Modifier::BOLD),
-            )));
-            continue;
+    let mut it = text.lines();
+
+    // Header (plain, styled): commit / Author / Date until first blank line.
+    while let Some(raw) = it.next() {
+        if raw.trim().is_empty() {
+            break;
         }
-        if line.starts_with("Author:") || line.starts_with("Date:") {
-            out.push(Line::from(Span::styled(
+        let line = raw.to_string();
+        let styled = if line.starts_with("commit ") {
+            Line::styled(
                 line,
-                Style::default().add_modifier(Modifier::DIM),
-            )));
-            continue;
-        }
-        out.push(Line::from(line));
+                ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::BOLD),
+            )
+        } else if line.starts_with("Author:") || line.starts_with("Date:") {
+            Line::styled(
+                line,
+                ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::DIM),
+            )
+        } else {
+            Line::from(line)
+        };
+        out.push(styled);
     }
-    out
+
+    let mut message = String::new();
+    let mut files = String::new();
+    let mut in_files = false;
+    for raw in it {
+        if raw.trim_end() == COMMIT_FILES_MARKER {
+            in_files = true;
+            continue;
+        }
+        if in_files {
+            files.push_str(raw);
+            files.push('\n');
+        } else {
+            message.push_str(raw);
+            message.push('\n');
+        }
+    }
+
+    let content_width = preview_width.saturating_sub(2) as usize;
+    if !message.trim().is_empty() {
+        out.push(Line::from(""));
+        out.extend(crate::logs::markdown::render_markdown(
+            message.trim_end(),
+            content_width.max(1),
+            crate::logs::markdown::MdSoftBreakMode::Newline,
+        ));
+    }
+    if !files.trim().is_empty() {
+        let md = format!("\n\n```text\n{}\n```\n", files.trim_end());
+        out.extend(crate::logs::markdown::render_markdown(
+            &md,
+            content_width.max(1),
+            crate::logs::markdown::MdSoftBreakMode::Newline,
+        ));
+    }
+
+    if out.is_empty() {
+        out.push(Line::from("No commit selected"));
+    }
+    app.diff.commit_preview_lines = out;
+    app.diff.commit_preview_render_width = preview_width;
+    true
 }
 
 pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
@@ -179,6 +240,8 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
 
     app.diff.commit_preview_loading = true;
     app.diff.commit_preview_lines = vec![Line::from("Loading commit…")];
+    app.diff.commit_preview_text = None;
+    app.diff.commit_preview_render_width = 0;
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();
     replace_job(
@@ -187,9 +250,8 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
         tokio::spawn(async move {
             match commit_show_http(&base_url, attempt_id, repo_id, &oid).await {
                 Ok(text) => {
-                    let lines: Vec<Line<'static>> = format_commit_show(&text);
                     let _ = net_tx
-                        .send(NetEvent::CommitPreviewLoaded { repo_id, lines })
+                        .send(NetEvent::CommitPreviewLoaded { repo_id, text })
                         .await;
                 }
                 Err(e) => {
