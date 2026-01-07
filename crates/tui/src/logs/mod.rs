@@ -1,7 +1,9 @@
 pub(crate) mod assemble;
 pub(crate) mod buffer;
+pub(crate) mod constants;
 pub(crate) mod markdown;
 pub(crate) mod model_params;
+pub(crate) mod types;
 
 pub(crate) use buffer::{
     ExecLogBuffer, LogSelection, PreparedLogCache, append_local_user_message, enqueue_log_patch,

@@ -12,7 +12,10 @@ use super::{
 };
 use crate::{
     diff::highlight_unified_diff,
-    logs::model_params::is_model_params_system_message,
+    logs::{
+        model_params::is_model_params_system_message,
+        types::{NormalizedEntryType, ToolUseAction},
+    },
     state::{DiffTheme, LogRenderMode},
     text::{sanitize_tui_text, truncate_to_width},
 };
@@ -128,8 +131,8 @@ pub(super) fn append_normalized_entry(
         .unwrap_or("unknown");
     let content_text = entry.get("content").and_then(|v| v.as_str()).unwrap_or("");
 
-    match entry_type_tag {
-        "user_message" => {
+    match NormalizedEntryType::parse(entry_type_tag) {
+        NormalizedEntryType::UserMessage => {
             append_text_block(
                 lines,
                 map,
@@ -141,7 +144,7 @@ pub(super) fn append_normalized_entry(
                 render_mode,
             );
         }
-        "assistant_message" => {
+        NormalizedEntryType::AssistantMessage => {
             append_text_block(
                 lines,
                 map,
@@ -153,7 +156,7 @@ pub(super) fn append_normalized_entry(
                 render_mode,
             );
         }
-        "system_message" => {
+        NormalizedEntryType::SystemMessage => {
             let trimmed = content_text.trim();
             if trimmed.is_empty() {
                 return;
@@ -181,7 +184,7 @@ pub(super) fn append_normalized_entry(
                 render_mode,
             );
         }
-        "error_message" => {
+        NormalizedEntryType::ErrorMessage => {
             append_text_block(
                 lines,
                 map,
@@ -193,7 +196,7 @@ pub(super) fn append_normalized_entry(
                 render_mode,
             );
         }
-        "user_feedback" => {
+        NormalizedEntryType::UserFeedback => {
             let denied_tool = entry_type
                 .get("denied_tool")
                 .and_then(|v| v.as_str())
@@ -209,7 +212,7 @@ pub(super) fn append_normalized_entry(
                 render_mode,
             );
         }
-        "thinking" => {
+        NormalizedEntryType::Thinking => {
             let kind = ProgressKind::Thinking;
             if state.progress_kind == Some(kind)
                 && let Some(pos) = state.progress_line_pos
@@ -225,7 +228,7 @@ pub(super) fn append_normalized_entry(
                 push_line(lines, map, entry_idx, progress_line(kind, 1, width), width);
             }
         }
-        "loading" => {
+        NormalizedEntryType::Loading => {
             let kind = ProgressKind::Loading;
             if state.progress_kind == Some(kind)
                 && let Some(pos) = state.progress_line_pos
@@ -241,7 +244,7 @@ pub(super) fn append_normalized_entry(
                 push_line(lines, map, entry_idx, progress_line(kind, 1, width), width);
             }
         }
-        "next_action" => {
+        NormalizedEntryType::NextAction => {
             let failed = entry_type
                 .get("failed")
                 .and_then(|v| v.as_bool())
@@ -271,7 +274,7 @@ pub(super) fn append_normalized_entry(
                 width,
             );
         }
-        "tool_use" => {
+        NormalizedEntryType::ToolUse => {
             let status = tool_status_str(entry_type);
             let (status_badge, _status_style) = crate::ui::palette::log_tool_status_badge(status);
 
@@ -297,6 +300,7 @@ pub(super) fn append_normalized_entry(
                 .and_then(|v| v.as_str())
                 .unwrap_or("other");
 
+            let action_kind = ToolUseAction::parse(action);
             let (label, accent) = crate::ui::palette::log_tool_kind(action);
 
             let arrow = if collapsed { "▸" } else { "▾" };
@@ -312,8 +316,8 @@ pub(super) fn append_normalized_entry(
             ];
 
             // Put the most important detail in the header for scannability.
-            match action {
-                "command_run" => {
+            match action_kind {
+                ToolUseAction::CommandRun => {
                     let cmd = action_type
                         .get("command")
                         .and_then(|v| v.as_str())
@@ -323,7 +327,7 @@ pub(super) fn append_normalized_entry(
                         Style::default().add_modifier(Modifier::BOLD),
                     ));
                 }
-                "file_edit" => {
+                ToolUseAction::FileEdit => {
                     let path = action_type
                         .get("path")
                         .and_then(|v| v.as_str())
@@ -346,8 +350,8 @@ pub(super) fn append_normalized_entry(
             header_spans.push(Span::raw(")"));
             push_line(lines, map, entry_idx, Line::from(header_spans), width);
 
-            match action {
-                "file_read" => {
+            match action_kind {
+                ToolUseAction::FileRead => {
                     let path = action_type
                         .get("path")
                         .and_then(|v| v.as_str())
@@ -363,7 +367,7 @@ pub(super) fn append_normalized_entry(
                         width,
                     );
                 }
-                "search" => {
+                ToolUseAction::Search => {
                     let query = action_type
                         .get("query")
                         .and_then(|v| v.as_str())
@@ -379,7 +383,7 @@ pub(super) fn append_normalized_entry(
                         width,
                     );
                 }
-                "command_run" => {
+                ToolUseAction::CommandRun => {
                     state.attach_to_entry = Some(entry_idx);
 
                     let exit_status = action_type.get("result").and_then(|v| v.get("exit_status"));
@@ -435,8 +439,11 @@ pub(super) fn append_normalized_entry(
                                 width,
                             );
                         } else {
-                            const MAX_OUTPUT_LINES: usize = 5000;
-                            for (i, l) in output.lines().take(MAX_OUTPUT_LINES).enumerate() {
+                            for (i, l) in output
+                                .lines()
+                                .take(crate::logs::constants::MAX_COMMAND_OUTPUT_LINES)
+                                .enumerate()
+                            {
                                 let line = sanitize_tui_text(l.strip_suffix('\r').unwrap_or(l));
                                 push_line(
                                     lines,
@@ -448,7 +455,7 @@ pub(super) fn append_normalized_entry(
                                     )),
                                     width,
                                 );
-                                if i + 1 == MAX_OUTPUT_LINES {
+                                if i + 1 == crate::logs::constants::MAX_COMMAND_OUTPUT_LINES {
                                     push_line(
                                         lines,
                                         map,
@@ -464,7 +471,7 @@ pub(super) fn append_normalized_entry(
                         }
                     }
                 }
-                "web_fetch" => {
+                ToolUseAction::WebFetch => {
                     let url = action_type
                         .get("url")
                         .and_then(|v| v.as_str())
@@ -480,7 +487,7 @@ pub(super) fn append_normalized_entry(
                         width,
                     );
                 }
-                "file_edit" => {
+                ToolUseAction::FileEdit => {
                     let path = action_type
                         .get("path")
                         .and_then(|v| v.as_str())
@@ -570,7 +577,6 @@ pub(super) fn append_normalized_entry(
                                     width,
                                 );
                             } else {
-                                const MAX_DIFF_LINES: usize = 300;
                                 for c in &changes {
                                     if c.get("action").and_then(|v| v.as_str()) != Some("edit") {
                                         continue;
@@ -586,8 +592,12 @@ pub(super) fn append_normalized_entry(
                                     let mut rendered = highlight_unified_diff(
                                         path, diff, body_width, diff_theme, false,
                                     );
-                                    if rendered.len() > MAX_DIFF_LINES {
-                                        rendered.truncate(MAX_DIFF_LINES);
+                                    if rendered.len()
+                                        > crate::logs::constants::MAX_FILE_EDIT_DIFF_LINES
+                                    {
+                                        rendered.truncate(
+                                            crate::logs::constants::MAX_FILE_EDIT_DIFF_LINES,
+                                        );
                                         rendered.push(Line::from(Span::styled(
                                             "… (truncated)".to_string(),
                                             Style::default().add_modifier(Modifier::DIM),
@@ -617,7 +627,7 @@ pub(super) fn append_normalized_entry(
                         );
                     }
                 }
-                "task_create" => {
+                ToolUseAction::TaskCreate => {
                     let description = action_type
                         .get("description")
                         .and_then(|v| v.as_str())
@@ -656,7 +666,7 @@ pub(super) fn append_normalized_entry(
                         }
                     }
                 }
-                "plan_presentation" => {
+                ToolUseAction::PlanPresentation => {
                     let plan = action_type
                         .get("plan")
                         .and_then(|v| v.as_str())
@@ -695,7 +705,7 @@ pub(super) fn append_normalized_entry(
                         }
                     }
                 }
-                "todo_management" => {
+                ToolUseAction::TodoManagement => {
                     let todos = action_type.get("todos").and_then(|v| v.as_array()).cloned();
                     if let Some(todos) = todos {
                         // De-duplicate repeated identical todo lists. Some executors emit the
@@ -732,7 +742,7 @@ pub(super) fn append_normalized_entry(
                             width,
                         );
                         if !collapsed {
-                            for t in todos.iter().take(50) {
+                            for t in todos.iter().take(crate::logs::constants::MAX_TODO_ITEMS) {
                                 let content =
                                     t.get("content").and_then(|v| v.as_str()).unwrap_or("");
                                 let status = t.get("status").and_then(|v| v.as_str()).unwrap_or("");
@@ -754,7 +764,7 @@ pub(super) fn append_normalized_entry(
                         }
                     }
                 }
-                "tool" => {
+                ToolUseAction::Tool => {
                     let tool_name = action_type
                         .get("tool_name")
                         .and_then(|v| v.as_str())
@@ -776,7 +786,10 @@ pub(super) fn append_normalized_entry(
                                 width,
                             );
                             if !collapsed {
-                                for l in pretty.lines().take(80) {
+                                for l in pretty
+                                    .lines()
+                                    .take(crate::logs::constants::MAX_TOOL_ARGS_LINES)
+                                {
                                     let l = sanitize_tui_text(l);
                                     push_line(
                                         lines,
@@ -832,7 +845,10 @@ pub(super) fn append_normalized_entry(
                             }
                         } else if result_ty == "json" {
                             if let Ok(pretty) = serde_json::to_string_pretty(value) {
-                                for l in pretty.lines().take(200) {
+                                for l in pretty
+                                    .lines()
+                                    .take(crate::logs::constants::MAX_TOOL_JSON_LINES)
+                                {
                                     let l = sanitize_tui_text(l);
                                     push_line(
                                         lines,
@@ -849,7 +865,7 @@ pub(super) fn append_normalized_entry(
                         }
                     }
                 }
-                _ => {
+                ToolUseAction::Other => {
                     if !content_text.trim().is_empty() {
                         append_text_block(
                             lines,
@@ -865,9 +881,9 @@ pub(super) fn append_normalized_entry(
                 }
             }
         }
-        other => {
+        NormalizedEntryType::Other => {
             // Fallback: preserve existing behavior.
-            let fallback = other.replace('_', " ");
+            let fallback = entry_type_tag.replace('_', " ");
             if !content_text.trim().is_empty() {
                 append_text_block(
                     lines,
@@ -910,8 +926,9 @@ pub(super) fn normalized_entry_text(entry: &serde_json::Value) -> Option<String>
 
     let entry_type = entry.get("entry_type")?;
     let ty = entry_type.get("type").and_then(|v| v.as_str())?;
-    let label = match ty {
-        "tool_use" => {
+    let kind = NormalizedEntryType::parse(ty);
+    let label = match kind {
+        NormalizedEntryType::ToolUse => {
             let tool = entry_type
                 .get("tool_name")
                 .and_then(|v| v.as_str())
@@ -923,10 +940,10 @@ pub(super) fn normalized_entry_text(entry: &serde_json::Value) -> Option<String>
                 .unwrap_or("created");
             format!("{tool} ({status})")
         }
-        "next_action" => "next action".to_string(),
-        "loading" => "loading…".to_string(),
-        "thinking" => "thinking…".to_string(),
-        other => other.replace('_', " "),
+        NormalizedEntryType::NextAction => "next action".to_string(),
+        NormalizedEntryType::Loading => "loading…".to_string(),
+        NormalizedEntryType::Thinking => "thinking…".to_string(),
+        _ => ty.replace('_', " "),
     };
 
     Some(label)
