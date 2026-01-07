@@ -8,6 +8,13 @@ use crate::{
     state::{AppState, CommitEntry, DiffListMode, JobKey},
 };
 
+fn sanitize_for_terminal(s: &str) -> String {
+    // Tabs cause cursor jumps in terminals but are treated as a single cell in ratatui buffers,
+    // which can leave visual artifacts when switching between lines of different lengths.
+    // `git show --name-status` uses tabs between status and path, so we expand them.
+    s.replace('\t', "    ").replace('\r', "")
+}
+
 fn format_commit_show(text: &str) -> Vec<Line<'static>> {
     use ratatui::{
         style::{Modifier, Style},
@@ -16,7 +23,7 @@ fn format_commit_show(text: &str) -> Vec<Line<'static>> {
 
     let mut out: Vec<Line<'static>> = vec![];
     for raw in text.lines() {
-        let line = raw.to_string();
+        let line = sanitize_for_terminal(raw);
         if line.starts_with("commit ") {
             out.push(Line::from(Span::styled(
                 line,
