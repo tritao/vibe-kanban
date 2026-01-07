@@ -1,10 +1,8 @@
-use std::time::{Duration, Instant};
-
-use ratatui::style::Color;
+use std::time::Duration;
 
 use super::super::{
     context::{require_selected_attempt_id, resolve_repo_for_command},
-    git_ops::{begin_git_op, set_toast},
+    git_ops::begin_git_op,
 };
 use crate::{
     commands::open_url,
@@ -61,11 +59,10 @@ fn handle_pr_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
 
     match open_url(&pr.url) {
         Ok(()) => {
-            set_toast(
-                app,
+            app.ui.set_toast(
                 format!("PR: opened (PR#{}, {repo_name})", pr.number),
-                Color::Green,
-                Some(Instant::now() + Duration::from_secs(2)),
+                crate::ui::palette::toast_ok(),
+                Some(Duration::from_secs(2)),
             );
             Ok(())
         }
@@ -97,20 +94,18 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
 
     if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
         if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
-            set_toast(
-                app,
+            app.ui.set_toast(
                 "PR: conflicts in progress (resolve/abort first)".to_string(),
-                Color::Yellow,
-                Some(Instant::now() + Duration::from_secs(2)),
+                crate::ui::palette::toast_warn(),
+                Some(Duration::from_secs(2)),
             );
             return Ok(());
         }
         if r.status.commits_ahead.unwrap_or(0) == 0 {
-            set_toast(
-                app,
+            app.ui.set_toast(
                 "PR: no changes to open (up to date)".to_string(),
-                Color::Green,
-                Some(Instant::now() + Duration::from_secs(2)),
+                crate::ui::palette::toast_ok(),
+                Some(Duration::from_secs(2)),
             );
             return Ok(());
         }
@@ -119,11 +114,10 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
             _ => None,
         });
         if let Some(n) = pr_open {
-            set_toast(
-                app,
+            app.ui.set_toast(
                 format!("PR: already exists (PR#{n})"),
-                Color::Green,
-                Some(Instant::now() + Duration::from_secs(2)),
+                crate::ui::palette::toast_ok(),
+                Some(Duration::from_secs(2)),
             );
             return Ok(());
         }

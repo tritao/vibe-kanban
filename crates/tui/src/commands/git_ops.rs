@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 
-use ratatui::style::Color;
 use uuid::Uuid;
 
 use crate::{
@@ -145,16 +144,6 @@ pub(crate) fn request_diff_reconnect(app: &mut AppState) {
     let _ = app.diff_reconnect_tx.send(next);
 }
 
-pub(crate) fn set_toast(
-    app: &mut AppState,
-    message: String,
-    color: Color,
-    expires_at: Option<Instant>,
-) {
-    let expires_in = expires_at.and_then(|t| t.checked_duration_since(Instant::now()));
-    app.ui.set_toast(message, color, expires_in);
-}
-
 pub(crate) fn begin_git_op(
     app: &mut AppState,
     repo_id: Option<Uuid>,
@@ -201,10 +190,9 @@ pub(crate) fn begin_git_op(
     } else {
         format!(" ({repo_name})")
     };
-    set_toast(
-        app,
+    app.ui.set_toast(
         format!("Git: {}…{scope}", kind.label()),
-        Color::Yellow,
+        crate::ui::palette::toast_warn(),
         None,
     );
     true
@@ -229,11 +217,14 @@ pub(crate) fn finish_git_op(
         }
     }
 
-    set_toast(
-        app,
+    app.ui.set_toast(
         message,
-        if ok { Color::Green } else { Color::Red },
-        Some(now + Duration::from_secs(3)),
+        if ok {
+            crate::ui::palette::toast_ok()
+        } else {
+            crate::ui::palette::toast_err()
+        },
+        Some(Duration::from_secs(3)),
     );
 }
 

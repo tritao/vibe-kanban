@@ -1,13 +1,9 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use ratatui::style::Color;
 use uuid::Uuid;
 
 use crate::{
-    commands::{
-        require_repo_status_loaded, require_selected_attempt_id, resolve_repo_for_command,
-        set_toast,
-    },
+    commands::{require_repo_status_loaded, require_selected_attempt_id, resolve_repo_for_command},
     events::GitOpKind,
     net::ops::{
         abort_conflicts_http, force_push_task_attempt_branch_http, merge_task_attempt_http,
@@ -92,20 +88,18 @@ pub(super) fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Re
 
     if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
         if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
-            set_toast(
-                app,
+            app.ui.set_toast(
                 "Rebase: conflicts in progress (resolve/abort first)".to_string(),
-                Color::Yellow,
-                Some(Instant::now() + Duration::from_secs(2)),
+                crate::ui::palette::toast_warn(),
+                Some(Duration::from_secs(2)),
             );
             return Ok(());
         }
         if old.is_none() && onto.is_none() && r.status.commits_behind.unwrap_or(0) == 0 {
-            set_toast(
-                app,
+            app.ui.set_toast(
                 "Rebase: already up to date".to_string(),
-                Color::Green,
-                Some(Instant::now() + Duration::from_secs(2)),
+                crate::ui::palette::toast_ok(),
+                Some(Duration::from_secs(2)),
             );
             return Ok(());
         }
@@ -142,20 +136,18 @@ pub(super) fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Res
 
     if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
         if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
-            set_toast(
-                app,
+            app.ui.set_toast(
                 "Merge: conflicts in progress (resolve/abort first)".to_string(),
-                Color::Yellow,
-                Some(Instant::now() + Duration::from_secs(2)),
+                crate::ui::palette::toast_warn(),
+                Some(Duration::from_secs(2)),
             );
             return Ok(());
         }
         if r.status.commits_ahead.unwrap_or(0) == 0 {
-            set_toast(
-                app,
+            app.ui.set_toast(
                 "Merge: nothing to merge (up to date)".to_string(),
-                Color::Green,
-                Some(Instant::now() + Duration::from_secs(2)),
+                crate::ui::palette::toast_ok(),
+                Some(Duration::from_secs(2)),
             );
             return Ok(());
         }

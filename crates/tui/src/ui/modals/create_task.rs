@@ -430,8 +430,6 @@ fn ensure_cursor_visible(state: &mut CreateTaskState) {
 }
 
 fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
-    use std::time::Instant;
-
     let Some(project_id) = app.board.selected_project_id else {
         app.ui.create_task = Some(CreateTaskState {
             error: Some("No project selected.".to_string()),
@@ -457,11 +455,10 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
     let status = state.status;
     let parent_task_id = state.parent_task_id;
 
-    crate::commands::set_toast(
-        app,
-        "Creating task…".to_string(),
+    app.ui.set_toast(
+        "Creating task…",
         crate::ui::palette::toast_info(),
-        Some(Instant::now() + std::time::Duration::from_secs(2)),
+        Some(std::time::Duration::from_secs(2)),
     );
 
     let base_url = app.backend_url.clone();

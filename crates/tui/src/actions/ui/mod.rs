@@ -7,11 +7,7 @@ use crossterm::{
 use ratatui::style::Color;
 
 pub(super) use super::selection as sel;
-use crate::{
-    commands::{copy_to_clipboard_osc52, set_toast},
-    events::UiEvent,
-    state::AppState,
-};
+use crate::{commands::copy_to_clipboard_osc52, events::UiEvent, state::AppState};
 
 mod composer;
 mod confirm;
@@ -70,11 +66,10 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
         match eff {
             Effect::CopyOsc52(text) => {
                 if let Err(e) = copy_to_clipboard_osc52(&text) {
-                    set_toast(
-                        app,
+                    app.ui.set_toast(
                         format!("Copy failed: {e}"),
-                        Color::Red,
-                        Some(Instant::now() + std::time::Duration::from_secs(2)),
+                        crate::ui::palette::toast_err(),
+                        Some(std::time::Duration::from_secs(2)),
                     );
                     dirty = true;
                 }
@@ -88,25 +83,23 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
                 match res {
                     Ok(()) => {
                         app.ui.mouse_capture_enabled = enabled;
-                        set_toast(
-                            app,
+                        app.ui.set_toast(
                             if enabled {
                                 "Mouse capture enabled".to_string()
                             } else {
                                 "Mouse capture disabled (terminal text selection enabled)"
                                     .to_string()
                             },
-                            Color::Green,
-                            Some(Instant::now() + std::time::Duration::from_secs(2)),
+                            crate::ui::palette::toast_ok(),
+                            Some(std::time::Duration::from_secs(2)),
                         );
                         dirty = true;
                     }
                     Err(e) => {
-                        set_toast(
-                            app,
+                        app.ui.set_toast(
                             format!("Mouse capture toggle failed: {e}"),
-                            Color::Red,
-                            Some(Instant::now() + std::time::Duration::from_secs(2)),
+                            crate::ui::palette::toast_err(),
+                            Some(std::time::Duration::from_secs(2)),
                         );
                         dirty = true;
                     }
@@ -117,7 +110,8 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
                 color,
                 expires_at,
             } => {
-                set_toast(app, message, color, expires_at);
+                let expires_in = expires_at.and_then(|t| t.checked_duration_since(Instant::now()));
+                app.ui.set_toast(message, color, expires_in);
                 dirty = true;
             }
         }
