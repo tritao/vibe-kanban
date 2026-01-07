@@ -40,6 +40,12 @@ async fn main() -> Result<(), VibeKanbanError> {
         .with(sentry_layer())
         .init();
 
+    tracing::info!(
+        "Vibe Kanban backend {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        option_env!("VIBE_GIT_COMMIT").unwrap_or("unknown")
+    );
+
     // Create asset directory if it doesn't exist
     if !asset_dir().exists() {
         std::fs::create_dir_all(asset_dir())?;
