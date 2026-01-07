@@ -127,9 +127,7 @@ pub(crate) fn render_tasks_board(f: &mut Frame, app: &AppState, area: ratatui::l
             vec![ListItem::new(Line::from("—"))]
         } else {
             list.iter()
-                .map(|t| {
-                    ListItem::new(crate::ui::components::task_lines::render_task_line(t))
-                })
+                .map(|t| ListItem::new(crate::ui::components::task_lines::render_task_line(t)))
                 .collect()
         };
 

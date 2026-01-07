@@ -11,12 +11,12 @@ use super::UiComponent;
 use crate::{
     layout::rect_contains,
     prefs::save_prefs,
-    ui::components::task_lines::render_board_task_line,
     selection::{BoardTaskItem, board_tasks_by_status, find_task},
     state::{
         AppState, ConfirmAction, ConfirmAltAction, ConfirmState, DeleteTaskMode, FocusPane,
         TaskStatus,
     },
+    ui::components::task_lines::render_board_task_line,
     util::{board_statuses, window_for_list},
 };
 

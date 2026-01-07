@@ -3,10 +3,7 @@ use ratatui::{
     text::{Line, Span},
 };
 
-use crate::{
-    selection::BoardTaskItem,
-    state::TaskRow,
-};
+use crate::{selection::BoardTaskItem, state::TaskRow};
 
 pub(crate) fn render_task_line(task: &TaskRow) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = vec![];
@@ -63,4 +60,3 @@ pub(crate) fn render_board_task_line(item: &BoardTaskItem) -> Line<'static> {
     }
     Line::from(spans)
 }
-
