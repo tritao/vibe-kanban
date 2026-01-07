@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 
 use super::{
     UiComponent,
@@ -18,18 +18,6 @@ pub(crate) enum DiffPaneEvent {
 }
 
 pub(crate) struct DiffPane;
-
-fn split_diff_area(area: Rect) -> [Rect; 3] {
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(10),
-            Constraint::Min(3),
-        ])
-        .split(area);
-    [sections[0], sections[1], sections[2]]
-}
 
 impl UiComponent for DiffPane {
     type Event = DiffPaneEvent;
@@ -58,13 +46,13 @@ impl UiComponent for DiffPane {
 fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool {
     let col = mouse.column;
     let row = mouse.row;
-    let [repo_bar, files, preview] = split_diff_area(area);
+    let split = crate::layout::split_diff_pane(area);
 
     const DIFF_WHEEL_STEP: usize = 3;
 
     match mouse.kind {
         MouseEventKind::ScrollUp => {
-            if crate::layout::rect_contains(preview, col, row) {
+            if crate::layout::rect_contains(split.preview, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Preview;
                 let _ = <DiffPreview as UiComponent>::on_event(
@@ -73,7 +61,7 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
                 );
                 return true;
             }
-            if crate::layout::rect_contains(files, col, row) {
+            if crate::layout::rect_contains(split.files, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Files;
                 let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(-1));
@@ -82,7 +70,7 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
             false
         }
         MouseEventKind::ScrollDown => {
-            if crate::layout::rect_contains(preview, col, row) {
+            if crate::layout::rect_contains(split.preview, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Preview;
                 let _ = <DiffPreview as UiComponent>::on_event(
@@ -91,7 +79,7 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
                 );
                 return true;
             }
-            if crate::layout::rect_contains(files, col, row) {
+            if crate::layout::rect_contains(split.files, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Files;
                 let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(1));
@@ -100,22 +88,24 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
             false
         }
         MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
-            if crate::layout::rect_contains(repo_bar, col, row) {
+            if crate::layout::rect_contains(split.repo_bar, col, row) {
                 app.ui.focus = FocusPane::Diff;
-                if let Some(evt) = <DiffRepoBar as UiComponent>::hit_test(app, repo_bar, col, row) {
+                if let Some(evt) =
+                    <DiffRepoBar as UiComponent>::hit_test(app, split.repo_bar, col, row)
+                {
                     let _ = <DiffRepoBar as UiComponent>::on_event(app, evt);
                 }
                 return true;
             }
-            if crate::layout::rect_contains(files, col, row) {
+            if crate::layout::rect_contains(split.files, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Files;
-                if let Some(evt) = <DiffList as UiComponent>::hit_test(app, files, col, row) {
+                if let Some(evt) = <DiffList as UiComponent>::hit_test(app, split.files, col, row) {
                     let _ = <DiffList as UiComponent>::on_event(app, evt);
                 }
                 return true;
             }
-            if crate::layout::rect_contains(preview, col, row) {
+            if crate::layout::rect_contains(split.preview, col, row) {
                 app.ui.focus = FocusPane::Diff;
                 app.ui.diff_focus = DiffFocus::Preview;
                 return true;

@@ -1,7 +1,4 @@
-use ratatui::{
-    Frame,
-    layout::{Constraint, Direction, Layout, Rect},
-};
+use ratatui::{Frame, layout::Rect};
 
 use super::components::{
     UiComponent, diff_list::DiffList, diff_preview::DiffPreview, diff_repo_bar::DiffRepoBar,
@@ -9,18 +6,11 @@ use super::components::{
 use crate::{diff::diff_rows_with_all_filtered, state::AppState};
 
 pub(crate) fn render_diff_pane(f: &mut Frame, app: &AppState, area: Rect) {
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(10),
-            Constraint::Min(3),
-        ])
-        .split(area);
+    let sections = crate::layout::split_diff_pane(area);
 
-    <DiffRepoBar as UiComponent>::render(f, app, sections[0]);
-    <DiffList as UiComponent>::render(f, app, sections[1]);
-    <DiffPreview as UiComponent>::render(f, app, sections[2]);
+    <DiffRepoBar as UiComponent>::render(f, app, sections.repo_bar);
+    <DiffList as UiComponent>::render(f, app, sections.files);
+    <DiffPreview as UiComponent>::render(f, app, sections.preview);
 }
 
 fn repo_name_from_path(path: &str) -> Option<&str> {

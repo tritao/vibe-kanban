@@ -1,5 +1,5 @@
 use crossterm::event::{KeyCode, KeyEvent, MouseEvent, MouseEventKind};
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::Rect;
 
 use super::{
     UiComponent,
@@ -14,14 +14,6 @@ pub(crate) enum ExecPaneEvent {
 }
 
 pub(crate) struct ExecPane;
-
-fn split_exec_area(area: Rect) -> [Rect; 2] {
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(7)])
-        .split(area);
-    [sections[0], sections[1]]
-}
 
 impl UiComponent for ExecPane {
     type Event = ExecPaneEvent;
@@ -64,13 +56,13 @@ fn handle_exec_key(app: &mut AppState, key: KeyEvent) -> bool {
 fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool {
     let col = mouse.column;
     let row = mouse.row;
-    let [logs, input] = split_exec_area(area);
+    let split = crate::layout::split_exec_pane(area);
 
     const LOG_WHEEL_STEP: usize = 3;
 
     match mouse.kind {
         MouseEventKind::ScrollUp => {
-            if crate::layout::rect_contains(logs, col, row) {
+            if crate::layout::rect_contains(split.logs, col, row) {
                 app.ui.focus = FocusPane::Execution;
                 let _ = <ExecLog as UiComponent>::on_event(
                     app,
@@ -81,7 +73,7 @@ fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
             false
         }
         MouseEventKind::ScrollDown => {
-            if crate::layout::rect_contains(logs, col, row) {
+            if crate::layout::rect_contains(split.logs, col, row) {
                 app.ui.focus = FocusPane::Execution;
                 let _ = <ExecLog as UiComponent>::on_event(
                     app,
@@ -92,13 +84,13 @@ fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
             false
         }
         MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
-            if crate::layout::rect_contains(input, col, row) {
+            if crate::layout::rect_contains(split.input, col, row) {
                 app.ui.focus = FocusPane::Execution;
                 if let Some(ExecInputEvent::ClickTo {
                     cursor,
                     content_w,
                     inner_h,
-                }) = <ExecInput as UiComponent>::hit_test(app, input, col, row)
+                }) = <ExecInput as UiComponent>::hit_test(app, split.input, col, row)
                 {
                     return <ExecInput as UiComponent>::on_event(
                         app,
@@ -111,9 +103,9 @@ fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
                 }
                 return true;
             }
-            if crate::layout::rect_contains(logs, col, row) {
+            if crate::layout::rect_contains(split.logs, col, row) {
                 app.ui.focus = FocusPane::Execution;
-                if let Some(evt) = <ExecLog as UiComponent>::hit_test(app, logs, col, row) {
+                if let Some(evt) = <ExecLog as UiComponent>::hit_test(app, split.logs, col, row) {
                     return <ExecLog as UiComponent>::on_event(app, evt);
                 }
                 return true;
@@ -121,10 +113,10 @@ fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
             false
         }
         MouseEventKind::Drag(crossterm::event::MouseButton::Left) => {
-            if crate::layout::rect_contains(logs, col, row) {
+            if crate::layout::rect_contains(split.logs, col, row) {
                 app.ui.focus = FocusPane::Execution;
                 let Some(ExecLogEvent::Hit(_, hit)) =
-                    <ExecLog as UiComponent>::hit_test(app, logs, col, row)
+                    <ExecLog as UiComponent>::hit_test(app, split.logs, col, row)
                 else {
                     return false;
                 };
@@ -142,10 +134,10 @@ fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
             false
         }
         MouseEventKind::Down(crossterm::event::MouseButton::Right) => {
-            if crate::layout::rect_contains(logs, col, row) {
+            if crate::layout::rect_contains(split.logs, col, row) {
                 app.ui.focus = FocusPane::Execution;
                 let Some(ExecLogEvent::Hit(_, hit)) =
-                    <ExecLog as UiComponent>::hit_test(app, logs, col, row)
+                    <ExecLog as UiComponent>::hit_test(app, split.logs, col, row)
                 else {
                     return false;
                 };

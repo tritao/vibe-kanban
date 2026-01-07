@@ -2,6 +2,46 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 
 use crate::state::{AppState, FocusPane};
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ExecPaneRects {
+    pub(crate) logs: Rect,
+    pub(crate) input: Rect,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DiffPaneRects {
+    pub(crate) repo_bar: Rect,
+    pub(crate) files: Rect,
+    pub(crate) preview: Rect,
+}
+
+pub(crate) fn split_exec_pane(area: Rect) -> ExecPaneRects {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(3), Constraint::Length(7)])
+        .split(area);
+    ExecPaneRects {
+        logs: sections[0],
+        input: sections[1],
+    }
+}
+
+pub(crate) fn split_diff_pane(area: Rect) -> DiffPaneRects {
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3),
+            Constraint::Length(10),
+            Constraint::Min(3),
+        ])
+        .split(area);
+    DiffPaneRects {
+        repo_bar: sections[0],
+        files: sections[1],
+        preview: sections[2],
+    }
+}
+
 pub(crate) fn current_terminal_rect() -> Rect {
     let (w, h) = crossterm::terminal::size().unwrap_or((80, 24));
     Rect {
@@ -54,27 +94,16 @@ pub(crate) fn compute_main_layout(area: Rect, focus: FocusPane) -> MainLayoutRec
         ])
         .split(root[1]);
 
-    let exec_sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(3), Constraint::Length(7)])
-        .split(main[1]);
-
-    let diff_sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(3),
-            Constraint::Length(10),
-            Constraint::Min(3),
-        ])
-        .split(main[2]);
+    let exec_split = split_exec_pane(main[1]);
+    let diff_split = split_diff_pane(main[2]);
 
     MainLayoutRects {
         board: main[0],
         exec: main[1],
         diff: main[2],
-        exec_logs: exec_sections[0],
-        exec_input: exec_sections[1],
-        diff_preview: diff_sections[2],
+        exec_logs: exec_split.logs,
+        exec_input: exec_split.input,
+        diff_preview: diff_split.preview,
     }
 }
 
