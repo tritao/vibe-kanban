@@ -4,7 +4,14 @@ use super::{focus, modals, scroll, sel};
 use crate::{
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     state::AppState,
-    ui::board_hit_at,
+    ui::{
+        board_hit_at,
+        components::{
+            UiComponent,
+            diff_list::{DiffList, DiffListEvent},
+            diff_preview::{DiffPreview, DiffPreviewEvent},
+        },
+    },
 };
 
 mod board;
@@ -42,15 +49,15 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
             }
             if rect_contains(layout.diff_preview, col, row) {
                 focus::focus_diff_preview(app);
-                scroll::scroll_diff_up(app, DIFF_WHEEL_STEP);
+                let _ = <DiffPreview as UiComponent>::on_event(
+                    app,
+                    DiffPreviewEvent::WheelDelta(-(DIFF_WHEEL_STEP as i32)),
+                );
                 return true;
             }
             if rect_contains(layout.diff_files, col, row) {
                 focus::focus_diff_files(app);
-                match app.diff.list_mode {
-                    crate::state::DiffListMode::Files => sel::select_adjacent_diff_file(app, -1),
-                    crate::state::DiffListMode::Commits => sel::select_adjacent_commit(app, -1),
-                }
+                let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(-1));
                 return true;
             }
             if let Some(hit) = board_hit_at(app, layout.board, col, row) {
@@ -68,15 +75,15 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
             }
             if rect_contains(layout.diff_preview, col, row) {
                 focus::focus_diff_preview(app);
-                scroll::scroll_diff_down(app, DIFF_WHEEL_STEP);
+                let _ = <DiffPreview as UiComponent>::on_event(
+                    app,
+                    DiffPreviewEvent::WheelDelta(DIFF_WHEEL_STEP as i32),
+                );
                 return true;
             }
             if rect_contains(layout.diff_files, col, row) {
                 focus::focus_diff_files(app);
-                match app.diff.list_mode {
-                    crate::state::DiffListMode::Files => sel::select_adjacent_diff_file(app, 1),
-                    crate::state::DiffListMode::Commits => sel::select_adjacent_commit(app, 1),
-                }
+                let _ = <DiffList as UiComponent>::on_event(app, DiffListEvent::WheelDelta(1));
                 return true;
             }
             if let Some(hit) = board_hit_at(app, layout.board, col, row) {

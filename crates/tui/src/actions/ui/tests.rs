@@ -41,7 +41,8 @@ fn copy_diff_files_emits_copy_effect() {
             "a.txt": { "type": "DIFF", "content": { "change": "modified", "additions": 1, "deletions": 0 } }
         }
     });
-    super::sel::select_diff_file(&mut app, 1); // 0 is ALL
+    app.diff.selected_diff_index = 1; // 0 is ALL
+    crate::selection_hooks::on_diff_file_selected(&mut app);
 
     let (quit, _dirty, effects) = super::reduce_ui(
         &mut app,

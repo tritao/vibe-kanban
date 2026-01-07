@@ -1,13 +1,10 @@
 use crossterm::event::MouseEvent;
 
-use super::{
-    super::{focus, sel},
-    hit_test::{commit_list_hit_at, diff_files_hit_at},
-};
+use super::super::focus;
 use crate::{
     layout::rect_contains,
     state::AppState,
-    ui::components::{UiComponent, diff_repo_bar::DiffRepoBar},
+    ui::components::{UiComponent, diff_list::DiffList, diff_repo_bar::DiffRepoBar},
 };
 
 pub(super) fn handle_diff_left_click(
@@ -29,17 +26,8 @@ pub(super) fn handle_diff_left_click(
     }
     if rect_contains(layout.diff_files, col, row) {
         focus::focus_diff_files(app);
-        match app.diff.list_mode {
-            crate::state::DiffListMode::Files => {
-                if let Some(idx) = diff_files_hit_at(app, layout.diff_files, col, row) {
-                    sel::select_diff_file(app, idx);
-                }
-            }
-            crate::state::DiffListMode::Commits => {
-                if let Some(idx) = commit_list_hit_at(app, layout.diff_files, col, row) {
-                    sel::select_commit(app, idx);
-                }
-            }
+        if let Some(evt) = <DiffList as UiComponent>::hit_test(app, layout.diff_files, col, row) {
+            let _ = <DiffList as UiComponent>::on_event(app, evt);
         }
         return true;
     }

@@ -1,3 +1,5 @@
+pub(crate) mod diff_list;
+pub(crate) mod diff_preview;
 pub(crate) mod diff_repo_bar;
 
 use ratatui::{Frame, layout::Rect};

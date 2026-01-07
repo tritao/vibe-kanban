@@ -1,11 +1,13 @@
 use crossterm::event::{KeyCode, KeyEvent};
 
-use super::{focus, scroll, sel};
+use super::focus;
 use crate::{
     prefs::save_prefs,
-    state::{AppState, DiffFocus, FocusPane},
+    state::{AppState, FocusPane},
     ui::components::{
         UiComponent,
+        diff_list::{DiffList, DiffListEvent},
+        diff_preview::{DiffPreview, DiffPreviewEvent},
         diff_repo_bar::{DiffRepoAction, DiffRepoBar, DiffRepoBarEvent},
     },
 };
@@ -16,6 +18,13 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
     }
 
     if <DiffRepoBar as UiComponent>::on_event(app, DiffRepoBarEvent::Key(key)) {
+        return Some(true);
+    }
+
+    if <DiffList as UiComponent>::on_event(app, DiffListEvent::Key(key)) {
+        return Some(true);
+    }
+    if <DiffPreview as UiComponent>::on_event(app, DiffPreviewEvent::Key(key)) {
         return Some(true);
     }
 
@@ -207,35 +216,6 @@ pub(super) fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> Option<bool>
                 }
             });
 
-            Some(true)
-        }
-        KeyCode::Up | KeyCode::Char('k') if app.ui.diff_focus == DiffFocus::Files => {
-            match app.diff.list_mode {
-                crate::state::DiffListMode::Files => sel::select_adjacent_diff_file(app, -1),
-                crate::state::DiffListMode::Commits => sel::select_adjacent_commit(app, -1),
-            }
-            Some(true)
-        }
-        KeyCode::Down | KeyCode::Char('j') if app.ui.diff_focus == DiffFocus::Files => {
-            match app.diff.list_mode {
-                crate::state::DiffListMode::Files => sel::select_adjacent_diff_file(app, 1),
-                crate::state::DiffListMode::Commits => sel::select_adjacent_commit(app, 1),
-            }
-            Some(true)
-        }
-        KeyCode::PageUp => {
-            scroll::scroll_diff_up(app, 20);
-            Some(true)
-        }
-        KeyCode::PageDown => {
-            if app.ui.diff_focus == DiffFocus::Files
-                && app.diff.list_mode == crate::state::DiffListMode::Commits
-                && app.ui.focus == FocusPane::Diff
-            {
-                crate::commands::request_commit_list_more(app);
-                return Some(true);
-            }
-            scroll::scroll_diff_down(app, 20);
             Some(true)
         }
         _ => None,
