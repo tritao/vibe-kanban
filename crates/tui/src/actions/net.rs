@@ -425,6 +425,8 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                     Some(crate::commands::sanitize_commit_preview_text(&text));
                 app.diff.commit_preview_render_width = 0;
                 app.diff.commit_preview_loading = false;
+                app.diff.commit_preview_loading_started_at = None;
+                app.diff.commit_preview_loading_placeholder_pending = false;
             }
             true
         }
@@ -439,6 +441,8 @@ pub(super) fn reduce_net_event(app: &mut AppState, event: NetEvent) -> bool {
                 app.diff.commit_preview_lines = vec![ratatui::text::Line::from(message)];
                 app.diff.commit_preview_render_width = 0;
                 app.diff.commit_preview_loading = false;
+                app.diff.commit_preview_loading_started_at = None;
+                app.diff.commit_preview_loading_placeholder_pending = false;
             }
             true
         }

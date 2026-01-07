@@ -114,6 +114,8 @@ pub(crate) struct DiffState {
     pub(crate) commit_preview_lines: Vec<Line<'static>>,
     pub(crate) commit_preview_loading: bool,
     pub(crate) commit_preview_render_width: u16,
+    pub(crate) commit_preview_loading_started_at: Option<Instant>,
+    pub(crate) commit_preview_loading_placeholder_pending: bool,
 }
 
 pub(crate) struct UiState {
@@ -360,6 +362,8 @@ impl AppState {
                 commit_preview_lines: vec![Line::from("No commit selected")],
                 commit_preview_loading: false,
                 commit_preview_render_width: 0,
+                commit_preview_loading_started_at: None,
+                commit_preview_loading_placeholder_pending: false,
             },
 
             jobs: HashMap::new(),

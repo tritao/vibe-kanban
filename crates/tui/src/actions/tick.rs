@@ -17,6 +17,7 @@ use crate::{
 pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool {
     let mut dirty = false;
     const DIFF_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(120);
+    const COMMIT_LOADING_INDICATOR_DELAY: Duration = Duration::from_millis(120);
 
     if reap_finished_jobs(app) {
         dirty = true;
@@ -186,6 +187,26 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         if crate::commands::ensure_commit_preview_rendered(app, layout.diff_preview.width) {
             dirty = true;
         }
+    }
+
+    if job_running(app, JobKey::CommitPreview)
+        && let Some(started) = app.diff.commit_preview_loading_started_at
+        && app.diff.commit_preview_loading_placeholder_pending
+        && !app.diff.commit_preview_loading
+        && now.saturating_duration_since(started) >= COMMIT_LOADING_INDICATOR_DELAY
+    {
+        app.diff.commit_preview_loading = true;
+        app.diff.commit_preview_loading_placeholder_pending = false;
+        if app.diff.commit_preview_text.is_none()
+            && (app.diff.commit_preview_lines.is_empty()
+                || app.diff.commit_preview_lines == vec![Line::from("No commit selected")])
+        {
+            app.diff.commit_preview_lines = vec![Line::from(ratatui::text::Span::styled(
+                "Loading commit…".to_string(),
+                ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::DIM),
+            ))];
+        }
+        dirty = true;
     }
 
     dirty

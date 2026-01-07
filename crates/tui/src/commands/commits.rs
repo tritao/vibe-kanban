@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use ratatui::text::Line;
 use uuid::Uuid;
 
@@ -249,7 +251,9 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     let oid = commits[idx].oid.clone();
 
     app.diff.commit_preview_loading = true;
-    app.diff.commit_preview_lines = vec![Line::from("Loading commit…")];
+    app.diff.commit_preview_loading = false;
+    app.diff.commit_preview_loading_started_at = Some(Instant::now());
+    app.diff.commit_preview_loading_placeholder_pending = true;
     app.diff.commit_preview_text = None;
     app.diff.commit_preview_render_width = 0;
     let base_url = app.backend_url.clone();
