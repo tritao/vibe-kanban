@@ -1889,17 +1889,31 @@ fn render_diff_preview(f: &mut Frame, app: &AppState, area: Rect) {
                 }
             ),
         ),
-        crate::state::DiffListMode::Commits => (
-            &app.diff.commit_preview_lines,
+        crate::state::DiffListMode::Commits => (&app.diff.commit_preview_lines, {
+            let short = app
+                .diff
+                .repo_statuses
+                .get(app.diff.selected_repo_index)
+                .map(|r| r.repo_id)
+                .and_then(|repo_id| app.diff.commits_by_repo.get(&repo_id))
+                .and_then(|commits| {
+                    commits.get(
+                        app.diff
+                            .selected_commit_index
+                            .min(commits.len().saturating_sub(1)),
+                    )
+                })
+                .map(|c| c.short_oid.as_str())
+                .unwrap_or("—");
             format!(
-                "Commit{}",
+                "Commit {short}{}",
                 if app.diff.commit_preview_loading {
                     " (loading)"
                 } else {
                     ""
                 }
-            ),
-        ),
+            )
+        }),
     };
     let start = app.diff.diff_scroll_offset.min(lines.len());
     let height = area.height.saturating_sub(2) as usize;
