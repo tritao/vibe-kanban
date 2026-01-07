@@ -11,7 +11,7 @@ use super::UiComponent;
 use crate::{
     layout::rect_contains,
     prefs::save_prefs,
-    render::render_board_task_line,
+    ui::components::task_lines::render_board_task_line,
     selection::{BoardTaskItem, board_tasks_by_status, find_task},
     state::{
         AppState, ConfirmAction, ConfirmAltAction, ConfirmState, DeleteTaskMode, FocusPane,

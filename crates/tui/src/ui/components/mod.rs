@@ -6,6 +6,7 @@ pub(crate) mod diff_repo_bar;
 pub(crate) mod exec_input;
 pub(crate) mod exec_log;
 pub(crate) mod exec_pane;
+pub(crate) mod task_lines;
 
 use ratatui::{Frame, layout::Rect};
 
