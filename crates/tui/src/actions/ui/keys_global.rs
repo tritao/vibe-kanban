@@ -3,7 +3,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use super::{focus, modals};
 use crate::{
     prefs::save_prefs,
-    state::{AppState, FocusPane, LogMode, LogRenderMode, LogViewMode},
+    state::{AppState, LogMode},
 };
 
 pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bool, bool)> {
@@ -40,26 +40,6 @@ pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bo
             let _ = app.log_mode_tx.send(app.exec.log_mode);
             app.prefs.log_mode = app.exec.log_mode;
             save_prefs(&app.prefs);
-            return Some((false, true));
-        }
-        (KeyCode::Char('m'), _) if app.ui.focus == FocusPane::Execution => {
-            app.exec.log_render_mode = match app.exec.log_render_mode {
-                LogRenderMode::Plain => LogRenderMode::Markdown,
-                LogRenderMode::Markdown => LogRenderMode::Plain,
-            };
-            app.prefs.log_render_mode = app.exec.log_render_mode;
-            save_prefs(&app.prefs);
-            crate::logs::mark_all_log_buffers_dirty(app, 0);
-            return Some((false, true));
-        }
-        (KeyCode::Char('v'), _) if app.ui.focus == FocusPane::Execution => {
-            app.exec.log_view_mode = match app.exec.log_view_mode {
-                LogViewMode::Timeline => LogViewMode::Single,
-                LogViewMode::Single => LogViewMode::Timeline,
-            };
-            app.prefs.log_view_mode = app.exec.log_view_mode;
-            save_prefs(&app.prefs);
-            app.exec.log_view_dirty = true;
             return Some((false, true));
         }
         _ => {}

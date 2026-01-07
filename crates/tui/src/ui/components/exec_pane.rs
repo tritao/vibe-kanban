@@ -6,7 +6,10 @@ use super::{
     exec_input::{ExecInput, ExecInputEvent},
     exec_log::{ExecLog, ExecLogEvent},
 };
-use crate::state::{AppState, FocusPane};
+use crate::{
+    prefs::save_prefs,
+    state::{AppState, FocusPane, LogRenderMode, LogViewMode},
+};
 
 pub(crate) enum ExecPaneEvent {
     Key(KeyEvent),
@@ -44,9 +47,25 @@ fn handle_exec_key(app: &mut AppState, key: KeyEvent) -> bool {
         return false;
     }
 
-    match (key.code, key.modifiers) {
-        (KeyCode::Char('i'), _) => {
-            crate::ui::open_composer(app);
+    match key.code {
+        KeyCode::Char('m') => {
+            app.exec.log_render_mode = match app.exec.log_render_mode {
+                LogRenderMode::Plain => LogRenderMode::Markdown,
+                LogRenderMode::Markdown => LogRenderMode::Plain,
+            };
+            app.prefs.log_render_mode = app.exec.log_render_mode;
+            save_prefs(&app.prefs);
+            crate::logs::mark_all_log_buffers_dirty(app, 0);
+            true
+        }
+        KeyCode::Char('v') => {
+            app.exec.log_view_mode = match app.exec.log_view_mode {
+                LogViewMode::Timeline => LogViewMode::Single,
+                LogViewMode::Single => LogViewMode::Timeline,
+            };
+            app.prefs.log_view_mode = app.exec.log_view_mode;
+            save_prefs(&app.prefs);
+            app.exec.log_view_dirty = true;
             true
         }
         _ => <ExecLog as UiComponent>::on_event(app, ExecLogEvent::Key(key)),
