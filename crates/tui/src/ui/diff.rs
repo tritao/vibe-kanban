@@ -1793,17 +1793,22 @@ fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
         .and_then(|id| app.diff.commits_has_more_by_repo.get(&id).copied())
         .unwrap_or(false);
 
-    let title = format!(
-        "Commits ({}){}",
-        commits.len(),
-        if loading { ", loading" } else { "" }
-    );
-
     let selected = if commits.is_empty() {
         0
     } else {
         app.diff.selected_commit_index.min(commits.len() - 1)
     };
+
+    let selected_short = commits
+        .get(selected)
+        .map(|c| c.short_oid.as_str())
+        .unwrap_or("—");
+
+    let title = format!(
+        "{selected_short} Commits ({}){}",
+        commits.len(),
+        if loading { ", loading" } else { "" }
+    );
 
     let height = area.height.saturating_sub(2) as usize;
     let (start, end, selected_in_window) = window_for_list(commits.len(), selected, height);
