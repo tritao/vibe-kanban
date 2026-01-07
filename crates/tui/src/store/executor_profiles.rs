@@ -34,6 +34,51 @@ impl<'a> ExecutorProfilesStore<'a> {
         self.models_for_executor_key(exec_key)
     }
 
+    pub(crate) fn current_model_and_effort(
+        &self,
+        selection: &ExecutorProfileSelection,
+    ) -> (Option<String>, Option<String>) {
+        let Some(execs) = self.root.as_object() else {
+            return (None, None);
+        };
+        let exec_key = execs
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case(&selection.executor))
+            .cloned()
+            .unwrap_or_else(|| selection.executor.clone());
+        let Some(variants) = execs.get(&exec_key).and_then(|v| v.as_object()) else {
+            return (None, None);
+        };
+        let wanted_variant = selection.variant.as_deref().unwrap_or("DEFAULT");
+        let variant_key = variants
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case(wanted_variant))
+            .cloned()
+            .unwrap_or_else(|| wanted_variant.to_string());
+        let Some(variant) = variants.get(&variant_key).and_then(|v| v.as_object()) else {
+            return (None, None);
+        };
+        let nested_key = variant
+            .keys()
+            .find(|k| k.eq_ignore_ascii_case(&exec_key))
+            .cloned()
+            .unwrap_or_else(|| exec_key.clone());
+        let Some(cfg) = variant.get(&nested_key).and_then(|v| v.as_object()) else {
+            return (None, None);
+        };
+
+        let model = cfg
+            .get("model")
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+        let effort = cfg
+            .get("model_reasoning_effort")
+            .or_else(|| cfg.get("reasoning_effort"))
+            .and_then(|v| v.as_str())
+            .map(ToString::to_string);
+        (model, effort)
+    }
+
     fn models_for_executor_key(&self, exec_key: &str) -> Vec<String> {
         let Some(execs) = self.root.as_object() else {
             return vec![];

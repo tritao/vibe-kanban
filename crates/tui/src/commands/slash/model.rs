@@ -1,49 +1,7 @@
-use crate::{events::NetEvent, net::ops::update_model_settings_http, state::AppState};
-
-fn current_model_and_effort(
-    profiles_executors: &serde_json::Value,
-    selection: &crate::state::ExecutorProfileSelection,
-) -> (Option<String>, Option<String>) {
-    let Some(execs) = profiles_executors.as_object() else {
-        return (None, None);
-    };
-    let exec_key = execs
-        .keys()
-        .find(|k| k.eq_ignore_ascii_case(&selection.executor))
-        .cloned()
-        .unwrap_or_else(|| selection.executor.clone());
-    let Some(variants) = execs.get(&exec_key).and_then(|v| v.as_object()) else {
-        return (None, None);
-    };
-    let wanted_variant = selection.variant.as_deref().unwrap_or("DEFAULT");
-    let variant_key = variants
-        .keys()
-        .find(|k| k.eq_ignore_ascii_case(wanted_variant))
-        .cloned()
-        .unwrap_or_else(|| wanted_variant.to_string());
-    let Some(variant) = variants.get(&variant_key).and_then(|v| v.as_object()) else {
-        return (None, None);
-    };
-    let nested_key = variant
-        .keys()
-        .find(|k| k.eq_ignore_ascii_case(&exec_key))
-        .cloned()
-        .unwrap_or_else(|| exec_key.clone());
-    let Some(cfg) = variant.get(&nested_key).and_then(|v| v.as_object()) else {
-        return (None, None);
-    };
-
-    let model = cfg
-        .get("model")
-        .and_then(|v| v.as_str())
-        .map(ToString::to_string);
-    let effort = cfg
-        .get("model_reasoning_effort")
-        .or_else(|| cfg.get("reasoning_effort"))
-        .and_then(|v| v.as_str())
-        .map(ToString::to_string);
-    (model, effort)
-}
+use crate::{
+    events::NetEvent, net::ops::update_model_settings_http, state::AppState,
+    store::executor_profiles::ExecutorProfilesStore,
+};
 
 pub(super) fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let Some(selection) = app.ui.selected_executor_profile.clone() else {
@@ -51,7 +9,8 @@ pub(super) fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Res
     };
 
     if tokens.len() == 1 {
-        let (model, effort) = current_model_and_effort(&app.ui.executor_profiles, &selection);
+        let store = ExecutorProfilesStore::new(&app.ui.executor_profiles);
+        let (model, effort) = store.current_model_and_effort(&selection);
         let model = model.unwrap_or_else(|| "unset".to_string());
         let effort = effort.unwrap_or_else(|| "unset".to_string());
         app.ui.set_notice(format!(
