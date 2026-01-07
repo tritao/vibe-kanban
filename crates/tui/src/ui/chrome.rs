@@ -20,8 +20,7 @@ pub(crate) fn render_top_bar(app: &AppState) -> Paragraph<'static> {
             StreamStatus::Disconnected => format!("{label}:off"),
             StreamStatus::Error => format!("{label}:err"),
         };
-        let color = crate::ui::palette::stream_status_color(status);
-        Span::styled(text, ratatui::style::Style::default().fg(color))
+        Span::styled(text, crate::ui::palette::stream_status_style(status))
     }
 
     let focus = match app.ui.focus {
@@ -93,10 +92,7 @@ pub(crate) fn render_top_bar(app: &AppState) -> Paragraph<'static> {
             crate::ui::palette::chrome_meta(),
         ),
         Span::raw("  "),
-        Span::styled(
-            focus,
-            ratatui::style::Style::default().add_modifier(Modifier::DIM),
-        ),
+        Span::styled(focus, crate::ui::palette::chrome_hint()),
     ]);
 
     Paragraph::new(line)
@@ -118,13 +114,13 @@ pub(crate) fn render_bottom_bar(app: &AppState) -> Paragraph<'static> {
         let line = Line::from(vec![
             Span::styled(toast.message.clone(), Style::default().fg(toast.color)),
             Span::raw("  |  "),
-            Span::styled(text, Style::default().add_modifier(Modifier::DIM)),
+            Span::styled(text, crate::ui::palette::chrome_hint()),
         ]);
         Paragraph::new(line)
     } else {
         Paragraph::new(Line::from(Span::styled(
             text,
-            Style::default().add_modifier(Modifier::DIM),
+            crate::ui::palette::chrome_hint(),
         )))
     }
 }

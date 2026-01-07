@@ -22,6 +22,10 @@ pub(crate) fn stream_status_color(status: StreamStatus) -> Color {
     }
 }
 
+pub(crate) fn stream_status_style(status: StreamStatus) -> Style {
+    Style::default().fg(stream_status_color(status))
+}
+
 pub(crate) fn top_bar_project() -> Style {
     Style::default().fg(Color::Cyan)
 }
@@ -32,6 +36,10 @@ pub(crate) fn top_bar_branch() -> Style {
 
 pub(crate) fn chrome_meta() -> Style {
     Style::default().fg(Color::Gray)
+}
+
+pub(crate) fn chrome_hint() -> Style {
+    Style::default().add_modifier(Modifier::DIM)
 }
 
 pub(crate) fn toast_info() -> Color {
@@ -232,6 +240,22 @@ pub(crate) fn diff_repo_action_color(
         A::OpenConflict => Color::Blue,
         A::AbortConflicts => Color::Red,
     }
+}
+
+pub(crate) fn diff_repo_action_button_style(
+    action: crate::ui::components::diff_repo_bar::DiffRepoAction,
+    enabled: bool,
+    recently_done_fail: bool,
+) -> Style {
+    let color = diff_repo_action_color(action);
+    let mut style = Style::default().fg(color).add_modifier(Modifier::BOLD);
+    if !enabled {
+        style = style.add_modifier(Modifier::DIM);
+    }
+    if recently_done_fail {
+        style = Style::default().fg(error_fg()).add_modifier(Modifier::BOLD);
+    }
+    style
 }
 
 pub(crate) fn pr_merge_status_style(status: MergeStatus) -> (Color, Color) {
