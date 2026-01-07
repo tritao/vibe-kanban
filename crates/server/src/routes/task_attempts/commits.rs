@@ -146,7 +146,7 @@ pub async fn list_commits(
 pub async fn show_commit(
     axum::extract::Extension(workspace): axum::extract::Extension<db::models::workspace::Workspace>,
     State(deployment): State<DeploymentImpl>,
-    AxumPath(oid): AxumPath<String>,
+    AxumPath((_attempt_id, oid)): AxumPath<(Uuid, String)>,
     Query(q): Query<CommitShowQuery>,
 ) -> Result<ResponseJson<ApiResponse<CommitShowResponse>>, ApiError> {
     let pool = &deployment.db().pool;
