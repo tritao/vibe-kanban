@@ -6731,6 +6731,7 @@ version = "0.0.143"
 dependencies = [
  "anyhow",
  "base64",
+ "chrono",
  "clap",
  "crossterm",
  "futures-util",

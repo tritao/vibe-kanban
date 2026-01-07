@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::state::{TaskRow, TaskStatus};
+use crate::state::{TaskRow, TaskStatus, Timestamp};
 
 pub(crate) struct TasksStore<'a> {
     root: &'a serde_json::Value,
@@ -28,7 +28,7 @@ impl<'a> TasksStore<'a> {
         let updated_at = task_val
             .get("updated_at")
             .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+            .and_then(Timestamp::parse);
         let parent_task_id = task_val
             .get("parent_task_id")
             .and_then(|v| v.as_str())

@@ -4,6 +4,26 @@ use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct Timestamp {
+    pub(crate) dt: chrono::DateTime<chrono::Utc>,
+    pub(crate) raw: String,
+}
+
+impl Timestamp {
+    pub(crate) fn parse(s: &str) -> Option<Self> {
+        let raw = s.to_string();
+        let dt = chrono::DateTime::parse_from_rfc3339(s)
+            .ok()?
+            .with_timezone(&chrono::Utc);
+        Some(Self { dt, raw })
+    }
+
+    pub(crate) fn short_time(&self) -> String {
+        self.dt.format("%H:%M:%S").to_string()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UiMessageKind {
     Notice,
@@ -738,7 +758,7 @@ pub(crate) struct TaskRow {
     pub(crate) title: String,
     pub(crate) status: TaskStatus,
     pub(crate) parent_task_id: Option<Uuid>,
-    pub(crate) updated_at: Option<String>,
+    pub(crate) updated_at: Option<Timestamp>,
     pub(crate) has_in_progress_attempt: bool,
     pub(crate) last_attempt_failed: bool,
     pub(crate) executor: Option<String>,
@@ -764,7 +784,7 @@ pub(crate) struct ExecRow {
     pub(crate) session_id: Option<Uuid>,
     pub(crate) run_reason: Option<RunReason>,
     pub(crate) status: Option<ExecStatus>,
-    pub(crate) created_at: Option<String>,
+    pub(crate) created_at: Option<Timestamp>,
     pub(crate) dropped: bool,
 }
 

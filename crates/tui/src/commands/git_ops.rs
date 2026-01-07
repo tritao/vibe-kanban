@@ -109,7 +109,7 @@ pub(crate) fn on_exec_store_updated_for_branch_refresh(app: &mut AppState) {
 
     if pending.wait_new_exec {
         let mut execs = exec_list(&app.exec.exec_store);
-        execs.sort_by_key(|e| e.created_at.clone().unwrap_or_default());
+        execs.sort_by(|a, b| a.created_at.cmp(&b.created_at));
         if let Some(latest) = execs.last().map(|e| e.id) {
             if pending.prev_exec_id != Some(latest) {
                 pending.exec_id = Some(latest);

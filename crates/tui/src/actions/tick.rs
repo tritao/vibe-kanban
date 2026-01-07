@@ -43,7 +43,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         && !app.exec.log_buffers.is_empty()
     {
         let mut execs = exec_list(&app.exec.exec_store);
-        execs.sort_by_key(|e| e.created_at.clone().unwrap_or_default());
+        execs.sort_by(|a, b| a.created_at.cmp(&b.created_at));
         let primary_opt = app
             .exec
             .selected_exec_id

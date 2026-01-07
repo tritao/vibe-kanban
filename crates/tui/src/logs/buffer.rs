@@ -9,7 +9,6 @@ use uuid::Uuid;
 
 use crate::{
     events::StreamStatus,
-    fmt::short_time,
     logs::model_params::{ModelParams, extract_model_params_from_store},
     selection::exec_list,
     state::{AppState, DiffTheme, ExecRow, LogMode, LogRenderMode, LogViewMode},
@@ -549,7 +548,7 @@ pub(crate) fn maybe_attach_pending_user_log(app: &mut AppState) {
 
     let prev = app.exec.pending_user_log_prev_exec_id;
     let mut execs = exec_list(&app.exec.exec_store);
-    execs.sort_by_key(|e| e.created_at.clone().unwrap_or_default());
+    execs.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     let latest = execs.last().map(|e| e.id);
 
     let target = latest.or(app.exec.selected_exec_id);
@@ -676,7 +675,7 @@ pub(crate) fn enqueue_log_patch(
 
 fn rebuild_log_view_cache(app: &mut AppState) {
     let mut execs = exec_list(&app.exec.exec_store);
-    execs.sort_by_key(|e| e.created_at.clone().unwrap_or_default());
+    execs.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     let mut ordered: Vec<Uuid> = execs.iter().map(|e| e.id).collect();
     if let Some(attempt_id) = app.board.selected_attempt_id {
@@ -713,9 +712,9 @@ fn rebuild_log_view_cache(app: &mut AppState) {
             .map(|s| s.label())
             .unwrap_or("unknown");
         let when = meta
-            .and_then(|e| e.created_at.as_deref())
-            .and_then(short_time)
-            .unwrap_or("");
+            .and_then(|e| e.created_at.as_ref())
+            .map(|t| t.short_time())
+            .unwrap_or_default();
         let run_no = idx + 1;
         let header = if when.is_empty() {
             format!("── Run {run_no} ({status}) ──")
