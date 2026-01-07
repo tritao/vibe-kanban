@@ -39,15 +39,9 @@ fn push_flags(
         if used_flags.contains(flag.name) {
             continue;
         }
-        let name_l = flag.name.to_ascii_lowercase();
-        if current_is_empty || name_l.starts_with(current_lower) {
-            let insert = if flag.takes_value {
-                format!("{} ", flag.name)
-            } else {
-                format!("{} ", flag.name)
-            };
+        if current_is_empty || flag.name.starts_with(current_lower) {
             out.push(CompletionItem {
-                insert,
+                insert: format!("{} ", flag.name),
                 desc: flag.desc.to_string(),
             });
         }
@@ -60,20 +54,19 @@ fn push_repos(
     current: &str,
     empty: bool,
 ) {
-    for (i, repo) in repos.iter().enumerate() {
-        let name = repo.repo_name.as_str();
-        let idx = (i + 1).to_string();
-        if empty
-            || name.to_ascii_lowercase().starts_with(current)
-            || name.to_ascii_lowercase().contains(current)
-            || idx.starts_with(current)
-        {
+    for (idx, r) in repos.iter().enumerate() {
+        let name = r.repo_name.as_str();
+        let name_l = name.to_ascii_lowercase();
+        if empty || name_l.starts_with(current) || name_l.contains(current) {
             out.push(CompletionItem {
                 insert: format!("{name} "),
                 desc: "repo".to_string(),
             });
+        }
+        let n = format!("{}", idx + 1);
+        if empty || n.starts_with(current) {
             out.push(CompletionItem {
-                insert: format!("{idx} "),
+                insert: format!("{n} "),
                 desc: "repo index".to_string(),
             });
         }
@@ -94,35 +87,17 @@ pub(crate) fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
         .filter(|t| t.starts_with("--"))
         .collect();
 
-    let current_is_empty = current.trim().is_empty();
+    let current_is_empty = current.is_empty() || ends_with_space;
 
-    // Completing the command name.
     if tokens.is_empty() {
         let mut out: Vec<CompletionItem> = vec![];
         for cmd in COMMAND_SPECS {
-            if current_is_empty || cmd.name.starts_with(&current_lower) {
-                out.push(CompletionItem {
-                    insert: format!(
-                        "{}/{} ",
-                        if app.ui.composer.buffer.contains('/') {
-                            ""
-                        } else {
-                            "/"
-                        },
-                        cmd.name
-                    )
-                    .trim_start_matches('/')
-                    .to_string()
-                        + " ",
-                    desc: cmd.desc.to_string(),
-                });
-            }
-        }
-        // The above is messy due to pre-existing buffer; handle as before by just inserting cmd and space.
-        // We'll normalize below.
-        out.clear();
-        for cmd in COMMAND_SPECS {
-            if current_is_empty || cmd.name.starts_with(&current_lower) {
+            let matches_name = cmd.name.starts_with(&current_lower);
+            let matches_alias = cmd
+                .aliases
+                .iter()
+                .any(|a| a.to_ascii_lowercase().starts_with(&current_lower));
+            if current_is_empty || matches_name || matches_alias {
                 out.push(CompletionItem {
                     insert: format!("{} ", cmd.name),
                     desc: cmd.desc.to_string(),
@@ -134,10 +109,15 @@ pub(crate) fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
 
     let cmd_name = tokens[0];
     let Some(cmd_spec) = find_command_spec(cmd_name) else {
-        // Unknown command: suggest commands.
         let mut out: Vec<CompletionItem> = vec![];
+        let needle = tokens[0].to_ascii_lowercase();
         for cmd in COMMAND_SPECS {
-            if current_is_empty || cmd.name.starts_with(&current_lower) {
+            let matches_name = cmd.name.starts_with(&needle);
+            let matches_alias = cmd
+                .aliases
+                .iter()
+                .any(|a| a.to_ascii_lowercase().starts_with(&needle));
+            if matches_name || matches_alias {
                 out.push(CompletionItem {
                     insert: format!("{} ", cmd.name),
                     desc: cmd.desc.to_string(),
