@@ -3,7 +3,6 @@ use crate::{commands::git_ops::request_branch_status_refresh, state::AppState};
 pub(super) fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), String> {
     if app.diff.repo_statuses.is_empty() {
         request_branch_status_refresh(app);
-        app.ui.set_notice("Loading repos…");
         return Ok(());
     }
 

@@ -152,6 +152,30 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         dirty = true;
     }
 
+    // If repo status isn't loaded yet, show a delayed "Loading repos…" notice while the refresh
+    // job runs (prevents flicker on fast responses).
+    let branch_running =
+        job_running(app, JobKey::BranchStatus) || job_running(app, JobKey::BranchStatusAuto);
+    if app.diff.branch_status_loading_notice.pending && !branch_running {
+        app.diff.branch_status_loading_notice.stop();
+        dirty = true;
+    }
+    if app
+        .diff
+        .branch_status_loading_notice
+        .tick(now, branch_running)
+    {
+        dirty = true;
+    }
+    if app.diff.branch_status_loading_notice.visible()
+        && app.diff.branch_status_loading_notice.placeholder_pending
+        && app.diff.repo_statuses.is_empty()
+    {
+        app.diff.branch_status_loading_notice.placeholder_pending = false;
+        app.ui.set_notice("Loading repos…");
+        dirty = true;
+    }
+
     if app.diff.list_mode == crate::state::DiffListMode::Commits {
         if crate::commands::ensure_commit_preview_rendered(app, layout.diff_preview.width) {
             dirty = true;

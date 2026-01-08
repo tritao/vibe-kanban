@@ -96,6 +96,7 @@ pub(crate) struct DiffState {
     pub(crate) repo_statuses: Vec<RepoBranchStatus>,
     pub(crate) branch_status_loaded_attempt_id: Option<Uuid>,
     pub(crate) branch_status_loaded_at: Option<Instant>,
+    pub(crate) branch_status_loading_notice: super::types::LoadingState,
     pub(crate) selected_repo_index: usize,
 
     pub(crate) git_ops: HashMap<Uuid, GitOpState>,
@@ -342,6 +343,7 @@ impl AppState {
                 repo_statuses: vec![],
                 branch_status_loaded_attempt_id: None,
                 branch_status_loaded_at: None,
+                branch_status_loading_notice: super::types::LoadingState::default(),
                 selected_repo_index: 0,
 
                 git_ops: HashMap::new(),

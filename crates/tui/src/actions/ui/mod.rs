@@ -12,7 +12,6 @@ use crate::{commands::copy_to_clipboard_osc52, events::UiEvent, state::AppState}
 mod composer;
 mod confirm;
 mod copy;
-mod focus;
 mod keys;
 mod keys_global;
 mod modals;

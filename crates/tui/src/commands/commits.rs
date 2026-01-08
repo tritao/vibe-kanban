@@ -2,7 +2,7 @@ use ratatui::text::Line;
 use uuid::Uuid;
 
 use crate::{
-    commands::{run_latest_job, run_net_job},
+    commands::run_net_job,
     events::NetEvent,
     net::ops::{commit_list_http, commit_show_http},
     state::{AppState, CommitEntry, DiffListMode, JobKey, repo_scope::selected_repo_id},
@@ -251,7 +251,7 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     crate::ui::loading::start_with_default_delay(&mut app.diff.commit_preview_loading, true);
     app.diff.commit_preview_text = None;
     app.diff.commit_preview_render_width = 0;
-    run_latest_job(
+    crate::ui::async_jobs::run_latest(
         app,
         JobKey::CommitPreview,
         |app| &mut app.diff.commit_preview_gen,

@@ -1,6 +1,6 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{focus, modals};
+use super::modals;
 use crate::{
     prefs::save_prefs,
     state::{AppState, LogMode},
@@ -14,7 +14,7 @@ pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bo
             return Some((false, true));
         }
         (KeyCode::Tab, KeyModifiers::NONE) => {
-            focus::cycle_focus(app);
+            app.ui.cycle_focus();
             return Some((false, true));
         }
         (KeyCode::Char('/'), _) => {
@@ -27,7 +27,7 @@ pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bo
             return Some((false, true));
         }
         (KeyCode::Char('i'), KeyModifiers::NONE) => {
-            focus::focus_execution(app);
+            app.ui.focus_execution();
             modals::open_composer(app);
             return Some((false, true));
         }

@@ -8,6 +8,7 @@ use crate::{
         push_task_attempt_branch_http, rebase_task_attempt_http,
     },
     state::AppState,
+    store::git_status::RepoStatuses,
     ui::DiffRepoAction,
 };
 
@@ -58,13 +59,9 @@ pub(super) fn handle_resolve_command(app: &mut AppState, tokens: &[String]) -> R
 
     if let Some(arg) = repo_arg.as_deref().filter(|s| !s.trim().is_empty()) {
         let _ = resolve_repo_for_command(app, Some(arg))?;
-        let ok = app
-            .diff
-            .repo_statuses
-            .get(app.diff.selected_repo_index)
-            .is_some_and(|r| {
-                r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty()
-            });
+        let ok = RepoStatuses::new(&app.diff.repo_statuses)
+            .get_by_index(app.diff.selected_repo_index)
+            .is_some_and(|r| r.has_conflicts());
         if !ok {
             return Err(format!("repo has no conflicts: {arg}"));
         }
@@ -84,15 +81,15 @@ pub(super) fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Re
     let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
-    if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
-        if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
+    if let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) {
+        if r.has_conflicts() {
             crate::ui::toasts::warn_short(
                 app,
                 "Rebase: conflicts in progress (resolve/abort first)",
             );
             return Ok(());
         }
-        if old.is_none() && onto.is_none() && r.status.commits_behind.unwrap_or(0) == 0 {
+        if old.is_none() && onto.is_none() && r.commits_behind() == 0 {
             crate::ui::toasts::ok_short(app, "Rebase: already up to date");
             return Ok(());
         }
@@ -127,15 +124,15 @@ pub(super) fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Res
     let attempt_id = require_selected_attempt_id(app)?;
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
-    if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
-        if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
+    if let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) {
+        if r.has_conflicts() {
             crate::ui::toasts::warn_short(
                 app,
                 "Merge: conflicts in progress (resolve/abort first)",
             );
             return Ok(());
         }
-        if r.status.commits_ahead.unwrap_or(0) == 0 {
+        if r.commits_ahead() == 0 {
             crate::ui::toasts::ok_short(app, "Merge: nothing to merge (up to date)");
             return Ok(());
         }

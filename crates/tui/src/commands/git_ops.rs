@@ -14,6 +14,12 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
     let Some(attempt_id) = app.board.selected_attempt_id else {
         return;
     };
+    if app.diff.repo_statuses.is_empty() {
+        crate::ui::loading::start_with_default_delay(
+            &mut app.diff.branch_status_loading_notice,
+            true,
+        );
+    }
 
     run_net_job(
         app,
@@ -45,6 +51,12 @@ pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration
     let Some(attempt_id) = app.board.selected_attempt_id else {
         return;
     };
+    if app.diff.repo_statuses.is_empty() {
+        crate::ui::loading::start_with_default_delay(
+            &mut app.diff.branch_status_loading_notice,
+            true,
+        );
+    }
 
     run_net_job(
         app,

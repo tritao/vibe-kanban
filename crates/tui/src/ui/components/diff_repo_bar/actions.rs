@@ -231,14 +231,14 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let Some(attempt_id) = app.board.selected_attempt_id else {
                 return;
             };
-            let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) else {
+            let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) else {
                 return;
             };
-            if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
+            if r.has_conflicts() {
                 toasts::warn_seconds(app, "Merge: conflicts in progress (resolve/abort first)", 2);
                 return;
             }
-            if r.status.commits_ahead.unwrap_or(0) == 0 {
+            if r.commits_ahead() == 0 {
                 toasts::ok_seconds(app, "Merge: nothing to merge (up to date)", 2);
                 return;
             }
@@ -267,10 +267,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let Some(attempt_id) = app.board.selected_attempt_id else {
                 return;
             };
-            let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) else {
+            let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) else {
                 return;
             };
-            if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
+            if r.has_conflicts() {
                 toasts::warn_seconds(
                     app,
                     "Rebase: conflicts in progress (resolve/abort first)",
@@ -278,7 +278,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             }
-            if r.status.commits_behind.unwrap_or(0) == 0 {
+            if r.commits_behind() == 0 {
                 toasts::ok_seconds(app, "Rebase: already up to date", 2);
                 return;
             }

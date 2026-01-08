@@ -109,6 +109,7 @@ pub(super) fn branch_status_loaded(
     }
     app.ui
         .clear_error_scope(crate::state::UiMessageKey::BranchStatus);
+    app.diff.branch_status_loading_notice.stop();
     app.diff.repo_statuses = statuses;
     app.diff.branch_status_loaded_attempt_id = Some(attempt_id);
     app.diff.branch_status_loaded_at = Some(Instant::now());
