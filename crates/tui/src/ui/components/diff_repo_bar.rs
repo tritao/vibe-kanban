@@ -32,6 +32,21 @@ pub(crate) enum DiffRepoAction {
     RefreshStatus,
 }
 
+impl DiffRepoAction {
+    pub(crate) fn git_op_kind(self) -> Option<crate::events::GitOpKind> {
+        match self {
+            DiffRepoAction::RefreshStatus => Some(crate::events::GitOpKind::Status),
+            DiffRepoAction::Merge => Some(crate::events::GitOpKind::Merge),
+            DiffRepoAction::Rebase => Some(crate::events::GitOpKind::Rebase),
+            DiffRepoAction::CreatePr => Some(crate::events::GitOpKind::CreatePr),
+            DiffRepoAction::AbortConflicts => Some(crate::events::GitOpKind::Abort),
+            DiffRepoAction::ResolveConflicts
+            | DiffRepoAction::OpenConflict
+            | DiffRepoAction::OpenPr => None,
+        }
+    }
+}
+
 impl UiComponent for DiffRepoBar {
     type Event = DiffRepoBarEvent;
 

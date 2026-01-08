@@ -105,7 +105,7 @@ pub(super) fn repo_bar_button_specs(
 
     base.into_iter()
         .map(|(action, label)| {
-            let kind = shared::git_kind_for_diff_action(action);
+            let kind = action.git_op_kind();
 
             let recently_done = done.is_some_and(|(done_kind, _, done_at)| {
                 kind == Some(done_kind)
