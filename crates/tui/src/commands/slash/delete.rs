@@ -14,20 +14,24 @@ pub(super) fn handle_delete_command(app: &mut AppState, tokens: &[String]) -> Re
         Some("promote")
     };
 
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        match delete_task_http(&base_url, task_id, mode).await {
-            Ok(()) => {
-                let _ = net_tx
-                    .send(NetEvent::Notice("Deleted task.".to_string()))
-                    .await;
+    crate::commands::run_net_job(
+        app,
+        crate::state::JobKey::TaskDelete,
+        move |base_url, net_tx| async move {
+            match delete_task_http(&base_url, task_id, mode).await {
+                Ok(()) => {
+                    let _ = net_tx
+                        .send(NetEvent::Notice("Deleted task.".to_string()))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::Error(format!("delete task failed: {e}")))
+                        .await;
+                }
             }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::Error(format!("delete task failed: {e}")))
-                    .await;
-            }
-        }
-    });
+        },
+    );
 
     Ok(())
 }

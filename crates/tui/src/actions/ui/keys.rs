@@ -1,9 +1,12 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-use super::{CopyTarget, Effect, composer, confirm, copy::reduce_copy, keys_global, modals, sel};
+use super::{
+    CopyTarget, Effect, composer, confirm, copy::reduce_copy, copy_targets, keys_global, modals,
+    sel,
+};
 use crate::{
     commands::submit_composer,
-    state::{AppState, DiffFocus, FocusPane},
+    state::{AppState, FocusPane},
 };
 
 pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<Effect>) {
@@ -83,15 +86,7 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
     }
 
     if key.code == KeyCode::Char('y') {
-        let target = match app.ui.focus {
-            FocusPane::Execution => Some(CopyTarget::Execution),
-            FocusPane::Diff => Some(match app.ui.diff_focus {
-                DiffFocus::Files => CopyTarget::DiffFiles,
-                DiffFocus::Preview => CopyTarget::DiffPreview,
-            }),
-            _ => None,
-        };
-        if let Some(target) = target {
+        if let Some(target) = copy_targets::copy_target_for_focused_pane(app) {
             return (false, false, reduce_copy(app, target));
         }
     }

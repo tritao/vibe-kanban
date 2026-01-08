@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use crate::{
     actions::selection as sel,
-    commands::request_diff_reconnect,
+    commands::{after_branch_status_loaded, request_diff_reconnect},
     diff::DIFF_ALL_KEY,
     diff_preview::{
         diff_patch_touches_key, schedule_diff_preview_refresh,
@@ -10,7 +10,6 @@ use crate::{
     },
     events::StreamStatus,
     state::{AppState, RepoBranchStatus},
-    ui::sync_selected_repo_from_diff_selection,
 };
 
 pub(super) fn diff_stream_status(app: &mut AppState, status: StreamStatus) -> bool {
@@ -113,8 +112,6 @@ pub(super) fn branch_status_loaded(
     app.diff.repo_statuses = statuses;
     app.diff.branch_status_loaded_attempt_id = Some(attempt_id);
     app.diff.branch_status_loaded_at = Some(Instant::now());
-    sync_selected_repo_from_diff_selection(app);
-    crate::commands::request_stack_status_refresh(app);
-    crate::commands::request_commit_list_refresh(app);
+    after_branch_status_loaded(app);
     true
 }

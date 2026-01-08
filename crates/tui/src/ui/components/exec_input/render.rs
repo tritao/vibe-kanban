@@ -20,8 +20,7 @@ fn border_style(app: &AppState) -> Style {
 }
 
 pub(super) fn render_exec_input(f: &mut Frame, app: &AppState, area: Rect) {
-    let inner_w = area.width.saturating_sub(2) as usize;
-    let inner_h = area.height.saturating_sub(2) as usize;
+    let (inner_w, inner_h) = crate::layout::inner_wh(area);
 
     let lines: Vec<Line<'static>> = if app.ui.composer_active {
         use crate::text::edit::line_ranges;

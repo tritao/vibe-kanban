@@ -6,20 +6,29 @@ use crate::{
     state::AppState,
 };
 
-fn is_quit_slash(message: &str) -> bool {
-    let trimmed = message.trim_start();
-    let Some(cmdline) = trimmed.strip_prefix('/') else {
-        return false;
-    };
-    let tokens = crate::cli_parse::tokenize_command_line(cmdline).ok();
-    let Some(tokens) = tokens else {
-        return false;
-    };
-    let Some(first) = tokens.get(0) else {
-        return false;
-    };
-    let cmd = crate::slash::canonical_command_name(first.as_str()).unwrap_or(first.as_str());
-    cmd == "quit"
+#[derive(Debug)]
+enum ComposerSubmit {
+    Quit,
+    Slash(Vec<String>),
+    Message,
+}
+
+fn parse_composer_submit(message: &str) -> Result<ComposerSubmit, String> {
+    if crate::slash::composer_is_slash_mode(message) {
+        let cmdline = message.trim_start().trim_start_matches('/');
+        let tokens = crate::cli_parse::tokenize_command_line(cmdline)
+            .map_err(|e| format!("invalid command: {e}"))?;
+        if tokens.is_empty() {
+            return Err("invalid command: empty".to_string());
+        }
+        let first = tokens[0].as_str();
+        let cmd = crate::slash::canonical_command_name(first).unwrap_or(first);
+        if cmd == "quit" {
+            return Ok(ComposerSubmit::Quit);
+        }
+        return Ok(ComposerSubmit::Slash(tokens));
+    }
+    Ok(ComposerSubmit::Message)
 }
 
 pub(crate) fn submit_composer(app: &mut AppState) -> bool {
@@ -33,6 +42,14 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     let refresh_branch_status_after_send = app.ui.refresh_branch_status_after_send;
     app.ui.refresh_branch_status_after_send = false;
 
+    let parsed = match parse_composer_submit(&msg) {
+        Ok(p) => p,
+        Err(e) => {
+            app.ui.set_error(e);
+            return false;
+        }
+    };
+
     // Keep a local record of what the user sent in the run logs, since the backend log stream
     // does not always include user messages.
     let mut execs_for_log = exec_list(&app.exec.exec_store);
@@ -42,18 +59,22 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
         .selected_exec_id
         .or_else(|| execs_for_log.last().map(|e| e.id));
 
-    if crate::slash::composer_is_slash_mode(&msg) {
-        if is_quit_slash(&msg) {
-            app.ui.composer_active = false;
-            app.ui.composer.clear();
-            return true;
-        }
+    if matches!(parsed, ComposerSubmit::Quit) {
+        app.ui.composer_active = false;
+        app.ui.composer.clear();
+        return true;
+    }
+
+    if matches!(parsed, ComposerSubmit::Slash(_)) {
         if let Some(exec_id) = current_exec_id {
             append_local_user_message(app, exec_id, &msg);
         }
         app.ui.composer_active = false;
         app.ui.composer.clear();
-        return submit_slash_command(app, &msg);
+        let ComposerSubmit::Slash(tokens) = parsed else {
+            unreachable!();
+        };
+        return submit_slash_tokens(app, &tokens);
     }
 
     let attempt_id = app.board.selected_attempt_id;
@@ -97,7 +118,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
         }
     }
 
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
+    crate::commands::run_net_job_one_shot(app, move |base_url, net_tx| async move {
         let session_id = match session_id {
             Some(id) => Some(id),
             None => {
@@ -133,21 +154,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     false
 }
 
-fn submit_slash_command(app: &mut AppState, raw: &str) -> bool {
-    let cmdline = raw.trim_start().trim_start_matches('/');
-    let tokens = match crate::cli_parse::tokenize_command_line(cmdline) {
-        Ok(t) => t,
-        Err(e) => {
-            app.ui.set_error(format!("invalid command: {e}"));
-            return false;
-        }
-    };
-
-    if tokens.is_empty() {
-        app.ui.set_error("invalid command: empty");
-        return false;
-    }
-
+fn submit_slash_tokens(app: &mut AppState, tokens: &[String]) -> bool {
     match super::parse_slash_command(app, &tokens) {
         Ok(quit) => return quit,
         Err(e) => {

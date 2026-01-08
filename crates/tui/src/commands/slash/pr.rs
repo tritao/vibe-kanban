@@ -111,62 +111,66 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
         return Ok(());
     }
 
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        match create_pr_http(
-            &base_url,
-            attempt_id,
-            CreateGitHubPrRequest {
-                title,
-                body,
-                target_branch: base,
-                draft,
-                repo_id,
-                auto_generate_description: auto_desc,
-            },
-        )
-        .await
-        {
-            Ok(url) => {
-                let _ = net_tx
-                    .send(NetEvent::Notice(format!(
-                        "PR created for {repo_name}: {url}"
-                    )))
-                    .await;
-                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+    crate::commands::run_net_job(
+        app,
+        crate::state::JobKey::PullRequestCreate,
+        move |base_url, net_tx| async move {
+            match create_pr_http(
+                &base_url,
+                attempt_id,
+                CreateGitHubPrRequest {
+                    title,
+                    body,
+                    target_branch: base,
+                    draft,
+                    repo_id,
+                    auto_generate_description: auto_desc,
+                },
+            )
+            .await
+            {
+                Ok(url) => {
                     let _ = net_tx
-                        .send(NetEvent::BranchStatusLoaded {
-                            attempt_id,
-                            statuses,
+                        .send(NetEvent::Notice(format!(
+                            "PR created for {repo_name}: {url}"
+                        )))
+                        .await;
+                    if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+                        let _ = net_tx
+                            .send(NetEvent::BranchStatusLoaded {
+                                attempt_id,
+                                statuses,
+                            })
+                            .await;
+                    }
+                    let _ = net_tx
+                        .send(NetEvent::GitOpFinished {
+                            repo_id: Some(repo_id),
+                            kind: GitOpKind::CreatePr,
+                            ok: true,
+                            message: format!("Git: PR created ({repo_name})"),
                         })
                         .await;
                 }
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::CreatePr,
-                        ok: true,
-                        message: format!("Git: PR created ({repo_name})"),
-                    })
-                    .await;
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::ErrorKey {
+                            key: crate::state::UiMessageKey::PullRequestOp,
+                            message: format!("pr create failed: {e}"),
+                        })
+                        .await;
+                    let _ = net_tx
+                        .send(NetEvent::GitOpFinished {
+                            repo_id: Some(repo_id),
+                            kind: GitOpKind::CreatePr,
+                            ok: false,
+                            message: format!("Git: PR create failed ({repo_name})"),
+                        })
+                        .await;
+                }
             }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::ErrorKey {
-                        key: crate::state::UiMessageKey::PullRequestOp,
-                        message: format!("pr create failed: {e}"),
-                    })
-                    .await;
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::CreatePr,
-                        ok: false,
-                        message: format!("Git: PR create failed ({repo_name})"),
-                    })
-                    .await;
-            }
-        }
-    });
+        },
+    );
     Ok(())
 }
 
@@ -187,54 +191,58 @@ fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(),
         return Ok(());
     }
 
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        match attach_pr_http(&base_url, attempt_id, repo_id).await {
-            Ok(resp) => {
-                let msg = if resp.pr_attached {
-                    if let Some(url) = resp.pr_url {
-                        format!("Attached PR for {repo_name}: {url}")
+    crate::commands::run_net_job(
+        app,
+        crate::state::JobKey::PullRequestAttach,
+        move |base_url, net_tx| async move {
+            match attach_pr_http(&base_url, attempt_id, repo_id).await {
+                Ok(resp) => {
+                    let msg = if resp.pr_attached {
+                        if let Some(url) = resp.pr_url {
+                            format!("Attached PR for {repo_name}: {url}")
+                        } else {
+                            format!("Attached PR for {repo_name}.")
+                        }
                     } else {
-                        format!("Attached PR for {repo_name}.")
+                        format!("No PR found to attach for {repo_name}.")
+                    };
+                    let _ = net_tx.send(NetEvent::Notice(msg)).await;
+                    if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+                        let _ = net_tx
+                            .send(NetEvent::BranchStatusLoaded {
+                                attempt_id,
+                                statuses,
+                            })
+                            .await;
                     }
-                } else {
-                    format!("No PR found to attach for {repo_name}.")
-                };
-                let _ = net_tx.send(NetEvent::Notice(msg)).await;
-                if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
                     let _ = net_tx
-                        .send(NetEvent::BranchStatusLoaded {
-                            attempt_id,
-                            statuses,
+                        .send(NetEvent::GitOpFinished {
+                            repo_id: Some(repo_id),
+                            kind: GitOpKind::AttachPr,
+                            ok: true,
+                            message: format!("Git: attach PR finished ({repo_name})"),
                         })
                         .await;
                 }
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::AttachPr,
-                        ok: true,
-                        message: format!("Git: attach PR finished ({repo_name})"),
-                    })
-                    .await;
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::ErrorKey {
+                            key: crate::state::UiMessageKey::PullRequestOp,
+                            message: format!("pr attach failed: {e}"),
+                        })
+                        .await;
+                    let _ = net_tx
+                        .send(NetEvent::GitOpFinished {
+                            repo_id: Some(repo_id),
+                            kind: GitOpKind::AttachPr,
+                            ok: false,
+                            message: format!("Git: attach PR failed ({repo_name})"),
+                        })
+                        .await;
+                }
             }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::ErrorKey {
-                        key: crate::state::UiMessageKey::PullRequestOp,
-                        message: format!("pr attach failed: {e}"),
-                    })
-                    .await;
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::AttachPr,
-                        ok: false,
-                        message: format!("Git: attach PR failed ({repo_name})"),
-                    })
-                    .await;
-            }
-        }
-    });
+        },
+    );
     Ok(())
 }
 
@@ -255,40 +263,44 @@ fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(
         return Ok(());
     }
 
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        match get_pr_comments_http(&base_url, attempt_id, repo_id).await {
-            Ok(count) => {
-                let _ = net_tx
-                    .send(NetEvent::Notice(format!(
-                        "Fetched {count} PR comments for {repo_name}."
-                    )))
-                    .await;
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::PrComments,
-                        ok: true,
-                        message: format!("Git: PR comments fetched ({repo_name})"),
-                    })
-                    .await;
+    crate::commands::run_net_job(
+        app,
+        crate::state::JobKey::PullRequestComments,
+        move |base_url, net_tx| async move {
+            match get_pr_comments_http(&base_url, attempt_id, repo_id).await {
+                Ok(count) => {
+                    let _ = net_tx
+                        .send(NetEvent::Notice(format!(
+                            "Fetched {count} PR comments for {repo_name}."
+                        )))
+                        .await;
+                    let _ = net_tx
+                        .send(NetEvent::GitOpFinished {
+                            repo_id: Some(repo_id),
+                            kind: GitOpKind::PrComments,
+                            ok: true,
+                            message: format!("Git: PR comments fetched ({repo_name})"),
+                        })
+                        .await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::ErrorKey {
+                            key: crate::state::UiMessageKey::PullRequestOp,
+                            message: format!("pr comments failed: {e}"),
+                        })
+                        .await;
+                    let _ = net_tx
+                        .send(NetEvent::GitOpFinished {
+                            repo_id: Some(repo_id),
+                            kind: GitOpKind::PrComments,
+                            ok: false,
+                            message: format!("Git: PR comments failed ({repo_name})"),
+                        })
+                        .await;
+                }
             }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::ErrorKey {
-                        key: crate::state::UiMessageKey::PullRequestOp,
-                        message: format!("pr comments failed: {e}"),
-                    })
-                    .await;
-                let _ = net_tx
-                    .send(NetEvent::GitOpFinished {
-                        repo_id: Some(repo_id),
-                        kind: GitOpKind::PrComments,
-                        ok: false,
-                        message: format!("Git: PR comments failed ({repo_name})"),
-                    })
-                    .await;
-            }
-        }
-    });
+        },
+    );
     Ok(())
 }

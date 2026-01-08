@@ -6,8 +6,7 @@ use crate::{
     commands::run_net_job,
     events::{GitOpKind, NetEvent},
     net::ops::branch_status_http,
-    selection::exec_list,
-    state::{AppState, ExecStatus, GitOpState, JobKey, PendingExecHook},
+    state::{AppState, GitOpState, JobKey, PendingExecHook},
 };
 
 pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
@@ -45,6 +44,12 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
             }
         },
     );
+}
+
+pub(crate) fn after_branch_status_loaded(app: &mut AppState) {
+    crate::ui::sync_selected_repo_from_diff_selection(app);
+    crate::commands::request_stack_status_refresh(app);
+    crate::commands::request_commit_list_refresh(app);
 }
 
 pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration) {
@@ -118,42 +123,15 @@ pub(crate) fn clear_pending_branch_status_refresh(app: &mut AppState) {
 }
 
 pub(crate) fn on_exec_store_updated_for_branch_refresh(app: &mut AppState) {
-    // Single place to maintain the pending-refresh state machine:
-    // - If waiting for a new exec: bind to newest exec once it differs from prev.
-    // - If bound to an exec: refresh when it is no longer running, then clear.
-    let Some(mut pending) = app.exec.pending_branch_refresh else {
+    let Some(pending) = app.exec.pending_branch_refresh.take() else {
         return;
     };
 
-    if pending.wait_new_exec {
-        let mut execs = exec_list(&app.exec.exec_store);
-        execs.sort_by(|a, b| a.created_at.cmp(&b.created_at));
-        if let Some(latest) = execs.last().map(|e| e.id) {
-            if pending.prev_exec_id != Some(latest) {
-                pending.exec_id = Some(latest);
-                pending.prev_exec_id = None;
-                pending.wait_new_exec = false;
-            }
-        }
+    let update = pending.on_exec_store_updated(&app.exec.exec_store);
+    app.exec.pending_branch_refresh = update.next;
+    if update.should_refresh {
+        schedule_branch_status_refresh(app, Duration::ZERO);
     }
-
-    let Some(exec_id) = pending.exec_id else {
-        app.exec.pending_branch_refresh = Some(pending);
-        return;
-    };
-
-    let execs = exec_list(&app.exec.exec_store);
-    let is_running = execs
-        .iter()
-        .find(|e| e.id == exec_id)
-        .is_some_and(|e| e.status == Some(ExecStatus::Running));
-    if is_running {
-        app.exec.pending_branch_refresh = Some(pending);
-        return;
-    }
-
-    schedule_branch_status_refresh(app, Duration::ZERO);
-    app.exec.pending_branch_refresh = None;
 }
 
 pub(crate) fn request_diff_reconnect(app: &mut AppState) {

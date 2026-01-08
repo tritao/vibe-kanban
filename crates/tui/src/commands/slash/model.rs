@@ -67,32 +67,36 @@ pub(super) fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Res
     ));
 
     let selection2 = selection.clone();
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        match update_model_settings_http(
-            &base_url,
-            &selection2,
-            model.as_deref(),
-            effort.as_deref(),
-        )
-        .await
-        {
-            Ok(()) => {
-                let info_tx = net_tx.clone();
-                let info_url = base_url.clone();
-                let _ = net_tx
-                    .send(NetEvent::Notice("Model settings updated.".to_string()))
-                    .await;
-                tokio::spawn(crate::net::load_info_task(info_url, info_tx));
+    crate::commands::run_net_job(
+        app,
+        crate::state::JobKey::ModelSettings,
+        move |base_url, net_tx| async move {
+            match update_model_settings_http(
+                &base_url,
+                &selection2,
+                model.as_deref(),
+                effort.as_deref(),
+            )
+            .await
+            {
+                Ok(()) => {
+                    let info_tx = net_tx.clone();
+                    let info_url = base_url.clone();
+                    let _ = net_tx
+                        .send(NetEvent::Notice("Model settings updated.".to_string()))
+                        .await;
+                    tokio::spawn(crate::net::load_info_task(info_url, info_tx));
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::Error(format!(
+                            "failed to update model settings: {e}"
+                        )))
+                        .await;
+                }
             }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::Error(format!(
-                        "failed to update model settings: {e}"
-                    )))
-                    .await;
-            }
-        }
-    });
+        },
+    );
 
     Ok(())
 }

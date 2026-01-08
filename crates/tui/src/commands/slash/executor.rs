@@ -63,22 +63,26 @@ pub(super) fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> 
             .unwrap_or_default()
     ));
 
-    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        match update_executor_profile_http(&base_url, &selection).await {
-            Ok(()) => {
-                let _ = net_tx
-                    .send(NetEvent::Notice("Executor profile updated.".to_string()))
-                    .await;
+    crate::commands::run_net_job(
+        app,
+        crate::state::JobKey::ExecutorProfile,
+        move |base_url, net_tx| async move {
+            match update_executor_profile_http(&base_url, &selection).await {
+                Ok(()) => {
+                    let _ = net_tx
+                        .send(NetEvent::Notice("Executor profile updated.".to_string()))
+                        .await;
+                }
+                Err(e) => {
+                    let _ = net_tx
+                        .send(NetEvent::Error(format!(
+                            "failed to update executor profile: {e}"
+                        )))
+                        .await;
+                }
             }
-            Err(e) => {
-                let _ = net_tx
-                    .send(NetEvent::Error(format!(
-                        "failed to update executor profile: {e}"
-                    )))
-                    .await;
-            }
-        }
-    });
+        },
+    );
 
     Ok(())
 }

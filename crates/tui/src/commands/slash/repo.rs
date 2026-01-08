@@ -1,4 +1,7 @@
-use crate::{commands::git_ops::request_branch_status_refresh, state::AppState};
+use crate::{
+    commands::{git_ops::request_branch_status_refresh, resolve_repo_for_command},
+    state::AppState,
+};
 
 pub(super) fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Result<(), String> {
     if app.diff.repo_statuses.is_empty() {
@@ -24,18 +27,8 @@ pub(super) fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Resu
     let idx = if let Ok(n) = arg.parse::<usize>() {
         n.saturating_sub(1)
     } else {
-        let needle = arg.to_ascii_lowercase();
-        app.diff
-            .repo_statuses
-            .iter()
-            .position(|r| r.repo_name.to_ascii_lowercase() == needle)
-            .or_else(|| {
-                app.diff
-                    .repo_statuses
-                    .iter()
-                    .position(|r| r.repo_name.to_ascii_lowercase().contains(&needle))
-            })
-            .ok_or_else(|| format!("unknown repo: {arg}"))?
+        let _ = resolve_repo_for_command(app, Some(arg))?;
+        app.diff.selected_repo_index
     };
 
     if idx >= app.diff.repo_statuses.len() {

@@ -51,8 +51,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             app.ui.composer.set_end();
             let layout = compute_main_layout(current_terminal_rect(), FocusPane::Execution);
             let area = layout.exec_input;
-            let inner_w = area.width.saturating_sub(2) as usize;
-            let inner_h = area.height.saturating_sub(2) as usize;
+            let (inner_w, inner_h) = crate::layout::inner_wh(area);
             let prefix_w = crate::text::display_width("  ");
             let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
             app.ui

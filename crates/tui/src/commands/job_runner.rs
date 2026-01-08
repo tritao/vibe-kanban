@@ -86,3 +86,14 @@ where
     let net_tx = app.net_tx.clone();
     tokio::spawn(f(base_url, net_tx))
 }
+
+pub(crate) fn run_net_job_one_shot<F, Fut>(app: &mut AppState, f: F) -> JobKey
+where
+    F: FnOnce(String, mpsc::Sender<NetEvent>) -> Fut,
+    Fut: Future<Output = ()> + Send + 'static,
+{
+    let key = JobKey::OneShot(app.next_job_key);
+    app.next_job_key = app.next_job_key.wrapping_add(1);
+    run_net_job(app, key, f);
+    key
+}

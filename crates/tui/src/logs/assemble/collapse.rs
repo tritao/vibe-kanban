@@ -25,14 +25,10 @@ pub(crate) fn default_collapsed_for_log_entry(entry: &serde_json::Value) -> bool
         }
         "file_edit" => {
             let mut lines = 0usize;
-            let changes = action_type.changes();
-            for c in changes.into_iter().flatten() {
-                if c.get("action").and_then(|v| v.as_str()) == Some("edit") {
-                    let diff = c.get("unified_diff").and_then(|v| v.as_str()).unwrap_or("");
-                    lines = lines.saturating_add(diff.lines().count());
-                    if lines > THRESHOLD_LINES {
-                        return true;
-                    }
+            for diff in action_type.unified_diffs_for_edit_actions() {
+                lines = lines.saturating_add(diff.lines().count());
+                if lines > THRESHOLD_LINES {
+                    return true;
                 }
             }
             false

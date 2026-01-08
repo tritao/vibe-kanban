@@ -139,6 +139,21 @@ impl<'a> ActionTypeRef<'a> {
         self.v.get("changes").and_then(|v| v.as_array())
     }
 
+    pub(crate) fn unified_diffs_for_edit_actions(&self) -> Vec<&'a str> {
+        let mut diffs: Vec<&'a str> = vec![];
+        let Some(changes) = self.changes() else {
+            return diffs;
+        };
+        for c in changes {
+            if c.get("action").and_then(|v| v.as_str()) != Some("edit") {
+                continue;
+            }
+            let diff = c.get("unified_diff").and_then(|v| v.as_str()).unwrap_or("");
+            diffs.push(diff);
+        }
+        diffs
+    }
+
     pub(crate) fn result_type(&self) -> Option<&'a str> {
         self.v
             .get("result")
