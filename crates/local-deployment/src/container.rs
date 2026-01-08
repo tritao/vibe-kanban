@@ -1324,7 +1324,51 @@ impl ContainerService for LocalContainerService {
                 .and_then(|o| o.as_deref())
                 .and_then(Commit::parse)
             {
-                Some(c) => c,
+                Some(stored) => {
+                    // If the attempt branch now contains the target branch (e.g. after a manual
+                    // rebase/merge from the target), the stored baseline can become stale and
+                    // make the diff include upstream changes. In that case, refresh the baseline
+                    // to the current merge-base so the diff reflects only the attempt changes.
+                    let refreshed = (|| {
+                        let (_ahead, behind) =
+                            self.git()
+                                .get_branch_status(&repo.path, branch, target_branch)?;
+                        if behind != 0 {
+                            return Ok::<Option<Commit>, services::services::git::GitServiceError>(
+                                None,
+                            );
+                        }
+                        let current =
+                            self.git()
+                                .get_base_commit(&repo.path, branch, target_branch)?;
+                        if current.to_string() == stored.to_string() {
+                            return Ok(None);
+                        }
+                        Ok(Some(current))
+                    })();
+
+                    match refreshed {
+                        Ok(Some(current)) => {
+                            let _ = WorkspaceRepo::update_diff_base_oid(
+                                &self.db.pool,
+                                workspace.id,
+                                repo.id,
+                                &current.to_string(),
+                            )
+                            .await;
+                            current
+                        }
+                        Ok(None) => stored,
+                        Err(e) => {
+                            tracing::debug!(
+                                "Diff baseline refresh skipped for repo {}: {}",
+                                repo.name,
+                                e
+                            );
+                            stored
+                        }
+                    }
+                }
                 None => match self
                     .git()
                     .get_base_commit(&repo.path, branch, target_branch)
