@@ -1,6 +1,7 @@
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout},
+    widgets::Clear,
 };
 
 use crate::{
@@ -13,6 +14,9 @@ use crate::{
 };
 
 pub(crate) fn render(f: &mut Frame, app: &AppState) {
+    // Ensure no stale cells remain when layouts shift (e.g. diff focus zoom, resizing, etc.).
+    f.render_widget(Clear, f.area());
+
     let root = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
