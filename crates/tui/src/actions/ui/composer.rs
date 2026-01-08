@@ -45,9 +45,9 @@ pub(super) fn handle_composer_key(app: &mut AppState, key: KeyEvent) -> bool {
     app.ui.composer_suggest_index = 0;
     let layout = compute_main_layout(current_terminal_rect(), app.ui.focus);
     let area = layout.exec_input;
-    let (inner_w, inner_h) = crate::ui::geometry::inner_size(area);
+    let (_inner_w, inner_h) = crate::ui::geometry::inner_size(area);
     let prefix_w = crate::text::display_width("  ");
-    let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
+    let content_w = crate::ui::geometry::inner_content_width(area, prefix_w, 1);
     app.ui
         .composer
         .ensure_cursor_visible(content_w, inner_h.max(1));

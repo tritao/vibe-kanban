@@ -43,8 +43,7 @@ pub(crate) fn open_search(app: &mut AppState) {
     field.set_end();
     let term = current_terminal_rect();
     let area = centered_rect(80, 25, term);
-    let (inner_w, _) = crate::ui::geometry::inner_size(area);
-    let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1);
+    let content_w = crate::ui::geometry::inner_content_width(area, 1, 1);
     field.ensure_cursor_visible(content_w, 1);
     app.ui.input = Some(InputState {
         mode: InputMode::SearchTasks,
@@ -92,8 +91,7 @@ pub(crate) fn handle_search_key(app: &mut AppState, key: KeyEvent) -> bool {
     app.board.task_filter = input.field.buffer.clone();
     let term = current_terminal_rect();
     let area = centered_rect(80, 25, term);
-    let (inner_w, _) = crate::ui::geometry::inner_size(area);
-    let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1);
+    let content_w = crate::ui::geometry::inner_content_width(area, 1, 1);
     input.field.ensure_cursor_visible(content_w, 1);
     crate::actions::selection::ensure_selection_visible(app);
 
@@ -123,8 +121,7 @@ pub(crate) fn handle_search_caret_click(app: &mut AppState, mouse: MouseEvent) -
         return false;
     }
 
-    let (inner_w, _) = crate::ui::geometry::inner_size(area);
-    let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1);
+    let content_w = crate::ui::geometry::inner_content_width(area, 1, 1);
 
     let start_col = input.field.scroll_x as usize;
     let left = start_col > 0;
@@ -160,8 +157,7 @@ pub(crate) fn render_input_modal(f: &mut Frame, input: &InputState) {
     };
 
     // Single-line editor with horizontal scroll.
-    let (inner_w, _) = crate::ui::geometry::inner_size(area);
-    let content_w = inner_w.saturating_sub(1).saturating_sub(1).max(1); // "/" + free cell
+    let content_w = crate::ui::geometry::inner_content_width(area, 1, 1); // "/" + free cell
     let start_col = input.field.scroll_x as usize;
     let left = start_col > 0;
 

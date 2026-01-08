@@ -1,3 +1,4 @@
+use super::apply::{NetApplyResult, NetEffects};
 use crate::{
     commands::finish_git_op,
     events::GitOpKind,
@@ -10,7 +11,7 @@ pub(super) fn git_op_finished(
     kind: GitOpKind,
     ok: bool,
     message: String,
-) -> bool {
+) -> NetApplyResult {
     finish_git_op(app, repo_id, kind, ok, message);
     if ok
         && matches!(
@@ -21,6 +22,7 @@ pub(super) fn git_op_finished(
         app.ui
             .clear_error_scope(crate::state::UiMessageKey::PullRequestOp);
     }
+    let mut refresh_commits = false;
     if ok && app.diff.list_mode == crate::state::DiffListMode::Commits {
         let selected_repo_id = app
             .diff
@@ -28,10 +30,13 @@ pub(super) fn git_op_finished(
             .get(app.diff.selected_repo_index)
             .map(|r| r.repo_id);
         if repo_id.is_none() || repo_id == selected_repo_id {
-            crate::commands::request_commit_list_refresh(app);
+            refresh_commits = true;
         }
     }
-    true
+    NetApplyResult::changed(true).with_effects(NetEffects {
+        refresh_commit_list: refresh_commits,
+        ..NetEffects::default()
+    })
 }
 
 pub(super) fn stack_status_loaded(

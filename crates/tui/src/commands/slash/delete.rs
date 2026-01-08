@@ -2,7 +2,7 @@ use crate::{events::NetEvent, net::ops::delete_task_http, state::AppState};
 
 pub(super) fn handle_delete_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let Some(task_id) = app.board.selected_task_id else {
-        return Err("no task selected".to_string());
+        return Err(crate::ui::messages::errors::NO_TASK_SELECTED.to_string());
     };
 
     let help = crate::slash::help_syntax_for_command("delete").unwrap_or("/delete [--subtree]");

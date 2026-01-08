@@ -89,7 +89,7 @@ impl NetEvent {
                 kind,
                 ok,
                 message,
-            } => NetApplyResult::changed(git::git_op_finished(app, repo_id, kind, ok, message)),
+            } => git::git_op_finished(app, repo_id, kind, ok, message),
             NetEvent::LogStreamStatus(status) => {
                 NetApplyResult::changed(logs::log_stream_status(app, status))
             }

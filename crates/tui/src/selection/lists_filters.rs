@@ -1,11 +1,8 @@
 use uuid::Uuid;
 
 use crate::{
-    state::{AppState, ExecRow, ExecStatus, RunReason, TaskRow},
-    store::{
-        exec::ExecStore, projects::ProjectsStore, tasks::TasksStore, tasks_hierarchy,
-        tasks_hierarchy::BoardTasksByStatus,
-    },
+    state::{AppState, ExecRow, ExecStatus, RunReason},
+    store::projects_list,
 };
 
 fn contains_ci(haystack: &str, needle: &str) -> bool {
@@ -16,31 +13,13 @@ fn contains_ci(haystack: &str, needle: &str) -> bool {
     haystack.to_lowercase().contains(&needle.to_lowercase())
 }
 
-#[derive(Debug, Clone)]
-pub(crate) struct ProjectRow {
-    pub(crate) id: Uuid,
-    pub(crate) name: String,
-}
-
-pub(crate) fn filtered_projects(app: &AppState) -> Vec<ProjectRow> {
-    let mut list = projects_list(&app.board.projects_store);
+pub(crate) fn filtered_projects(app: &AppState) -> Vec<projects_list::ProjectRow> {
+    let mut list = projects_list::projects_list(&app.board.projects_store);
     let q = app.board.project_filter.trim();
     if !q.is_empty() {
         list.retain(|p| contains_ci(&p.name, q));
     }
     list
-}
-
-pub(crate) fn projects_list(store: &serde_json::Value) -> Vec<ProjectRow> {
-    ProjectsStore::new(store)
-        .projects()
-        .into_iter()
-        .map(|(id, name)| ProjectRow { id, name })
-        .collect()
-}
-
-pub(crate) fn exec_list(store: &serde_json::Value) -> Vec<ExecRow> {
-    ExecStore::new(store).execs()
 }
 
 pub(crate) fn active_exec_id(execs: &[ExecRow]) -> Option<Uuid> {
@@ -77,29 +56,4 @@ pub(crate) fn active_exec_id(execs: &[ExecRow]) -> Option<Uuid> {
     }
 
     Some(filtered[filtered.len() - 1].id)
-}
-
-pub(crate) fn board_tasks_by_status(app: &AppState) -> BoardTasksByStatus {
-    tasks_hierarchy::board_tasks_by_root_status(tasks_filtered_base(app))
-}
-
-fn tasks_list(store: &serde_json::Value) -> Vec<TaskRow> {
-    TasksStore::new(store).tasks()
-}
-
-pub(crate) fn tasks_filtered_base(app: &AppState) -> Vec<TaskRow> {
-    let mut tasks = tasks_all(&app.board.tasks_store);
-    let q = app.board.task_filter.trim();
-    if !q.is_empty() {
-        tasks.retain(|t| contains_ci(&t.title, q));
-    }
-    tasks
-}
-
-pub(crate) fn tasks_all(store: &serde_json::Value) -> Vec<TaskRow> {
-    tasks_list(store)
-}
-
-pub(crate) fn find_task(store: &serde_json::Value, task_id: Uuid) -> Option<TaskRow> {
-    TasksStore::new(store).task(task_id)
 }

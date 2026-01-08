@@ -20,7 +20,7 @@ fn border_style(app: &AppState) -> Style {
 }
 
 pub(super) fn render_exec_input(f: &mut Frame, app: &AppState, area: Rect) {
-    let (inner_w, inner_h) = crate::ui::geometry::inner_size(area);
+    let (_inner_w, inner_h) = crate::ui::geometry::inner_size(area);
 
     let lines: Vec<Line<'static>> = if app.ui.composer_active {
         use crate::text::edit::line_ranges;
@@ -29,7 +29,7 @@ pub(super) fn render_exec_input(f: &mut Frame, app: &AppState, area: Rect) {
         let inner_h = inner_h.max(1);
         let prefix = "  ";
         let prefix_w = display_width(prefix);
-        let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
+        let content_w = crate::ui::geometry::inner_content_width(area, prefix_w, 1);
 
         let ranges = line_ranges(&app.ui.composer.buffer);
         let total_lines = ranges.len().max(1);

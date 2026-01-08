@@ -2,6 +2,26 @@ use uuid::Uuid;
 
 use crate::state::{ConflictOp, Merge, MergeStatus, PullRequestInfo, RepoBranchStatus};
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum GitRepoAction {
+    Merge,
+    Rebase,
+    CreatePr,
+    OpenPr,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum GitActionBlockSeverity {
+    Ok,
+    Warn,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct GitActionBlock {
+    pub(crate) severity: GitActionBlockSeverity,
+    pub(crate) message: String,
+}
+
 pub(crate) struct RepoStatuses<'a> {
     repos: &'a [RepoBranchStatus],
 }
@@ -141,21 +161,108 @@ impl<'a> RepoStatusRef<'a> {
     }
 
     pub(crate) fn can_merge(self) -> bool {
-        self.commits_ahead() > 0 && !self.has_conflicts() && !self.is_dirty()
+        self.action_block(GitRepoAction::Merge).is_none()
     }
 
     pub(crate) fn can_rebase(self) -> bool {
-        self.commits_behind() > 0 && !self.has_conflicts() && !self.is_dirty()
+        self.action_block(GitRepoAction::Rebase).is_none()
     }
 
     pub(crate) fn can_create_pr(self) -> bool {
-        self.commits_ahead() > 0
-            && self.pr_number().is_none()
-            && !self.has_conflicts()
-            && !self.is_dirty()
+        self.action_block(GitRepoAction::CreatePr).is_none()
     }
 
     pub(crate) fn can_open_pr(self) -> bool {
-        self.pr_number().is_some() && self.pr_url().is_some_and(|u| !u.trim().is_empty())
+        self.action_block(GitRepoAction::OpenPr).is_none()
+    }
+
+    pub(crate) fn action_block(self, action: GitRepoAction) -> Option<GitActionBlock> {
+        let conflicts = self.has_conflicts();
+        let dirty = self.is_dirty();
+
+        match action {
+            GitRepoAction::Merge => {
+                if conflicts {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Warn,
+                        message: "Merge: conflicts in progress (resolve/abort first)".to_string(),
+                    });
+                }
+                if dirty {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Warn,
+                        message: "Merge: repo has uncommitted changes".to_string(),
+                    });
+                }
+                if self.commits_ahead() == 0 {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Ok,
+                        message: "Merge: nothing to merge (up to date)".to_string(),
+                    });
+                }
+            }
+            GitRepoAction::Rebase => {
+                if conflicts {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Warn,
+                        message: "Rebase: conflicts in progress (resolve/abort first)".to_string(),
+                    });
+                }
+                if dirty {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Warn,
+                        message: "Rebase: repo has uncommitted changes".to_string(),
+                    });
+                }
+                if self.commits_behind() == 0 {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Ok,
+                        message: "Rebase: already up to date".to_string(),
+                    });
+                }
+            }
+            GitRepoAction::CreatePr => {
+                if conflicts {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Warn,
+                        message: "PR: conflicts in progress (resolve/abort first)".to_string(),
+                    });
+                }
+                if dirty {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Warn,
+                        message: "PR: repo has uncommitted changes".to_string(),
+                    });
+                }
+                if self.commits_ahead() == 0 {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Ok,
+                        message: "PR: no changes to open (up to date)".to_string(),
+                    });
+                }
+                if let Some(n) = self.pr_number() {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Ok,
+                        message: format!("PR: already exists (PR#{n})"),
+                    });
+                }
+            }
+            GitRepoAction::OpenPr => {
+                if self.pr_number().is_none() {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Warn,
+                        message: "PR: none attached".to_string(),
+                    });
+                }
+                if self.pr_url().is_none_or(|u| u.trim().is_empty()) {
+                    return Some(GitActionBlock {
+                        severity: GitActionBlockSeverity::Warn,
+                        message: "PR: has no URL".to_string(),
+                    });
+                }
+            }
+        }
+
+        None
     }
 }

@@ -7,14 +7,15 @@ use ratatui::{
 };
 
 use crate::{
-    selection::{BoardTaskItem, board_tasks_by_status},
+    selection::BoardTaskItem,
     state::{AppState, FocusPane, TaskStatus},
+    store::tasks_board::board_tasks_by_status,
     ui::components::task_lines::render_board_task_line,
     util::{board_statuses, window_for_list},
 };
 
 pub(super) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
-    let by_status = board_tasks_by_status(app);
+    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
     let statuses = board_statuses(app);
     let needs = super::layout::board_section_needs(app);
     let heights = super::layout::allocate_board_section_heights(&needs, area.height);

@@ -10,8 +10,8 @@ use crate::{
     jobs::{job_running, reap_finished_jobs, replace_blocking_job},
     layout::{clamp_scroll_offsets, compute_main_layout},
     logs::flush_log_buffers,
-    selection::exec_list,
     state::{AppState, JobKey},
+    store::exec_list::exec_list,
 };
 
 pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool {

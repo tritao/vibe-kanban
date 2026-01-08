@@ -1,7 +1,7 @@
 use crate::{
     logs::{append_local_user_message, set_pending_user_log},
-    selection::exec_list,
     state::AppState,
+    store::exec_list::exec_list,
 };
 
 #[derive(Debug)]
@@ -117,10 +117,10 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     }
 
     crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
-        crate::commands::messages::send_user_message_task(
+        crate::commands::send_user_message_task(
             base_url,
             net_tx,
-            crate::commands::messages::SendUserMessage {
+            crate::commands::SendUserMessage {
                 session_id,
                 attempt_id,
                 task_id,

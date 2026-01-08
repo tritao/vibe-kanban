@@ -3,12 +3,12 @@ use uuid::Uuid;
 use super::ids::{select_attempt, select_task};
 use crate::{
     events::NetEvent,
-    selection::{board_tasks_by_status, find_task},
     state::{AppState, TaskStatus},
+    store::{tasks_board::board_tasks_by_status, tasks_list::find_task},
     ui::components::board_pane::BoardHit,
 };
 pub(in crate::actions) fn ensure_selected_task_in_active_column(app: &mut AppState) {
-    let by_status = board_tasks_by_status(app);
+    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
     let list = match app.board.tasks_active_column {
         TaskStatus::Todo => &by_status.todo,
         TaskStatus::InProgress => &by_status.inprogress,
@@ -75,7 +75,7 @@ pub(crate) fn move_active_status(app: &mut AppState, delta: i32) {
 }
 
 pub(crate) fn select_adjacent_task(app: &mut AppState, delta: i32) {
-    let by_status = board_tasks_by_status(app);
+    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
     if by_status.todo.is_empty()
         && by_status.inprogress.is_empty()
         && by_status.inreview.is_empty()

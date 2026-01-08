@@ -43,10 +43,10 @@ pub(crate) mod notices {
 }
 
 pub(crate) mod errors {
-    #[allow(dead_code)]
     pub(crate) const NO_TASK_SELECTED: &str = "no task selected";
-    #[allow(dead_code)]
     pub(crate) const NO_REPO_SELECTED: &str = "no repo selected";
+    pub(crate) const NO_ATTEMPT_SELECTED: &str = "no attempt selected";
+    pub(crate) const NO_REPO_STATUS_LOADED: &str = "no repo status loaded yet (run /status)";
     #[allow(dead_code)]
     pub(crate) const NO_EXECUTOR_SELECTED: &str = "no executor selected (try /executor)";
 }

@@ -2,11 +2,13 @@ use uuid::Uuid;
 
 use super::ids::{select_attempt, select_exec, select_project, select_task};
 use crate::{
-    selection::{
-        active_exec_id, board_tasks_by_status, exec_list, filtered_projects, find_task,
-        tasks_filtered_base,
-    },
+    selection::{active_exec_id, filtered_projects},
     state::{AppState, AttemptRow, TaskStatus},
+    store::{
+        exec_list::exec_list,
+        tasks_board::board_tasks_by_status,
+        tasks_list::{find_task, tasks_filtered},
+    },
 };
 
 pub(in crate::actions) fn reconcile_projects_selection(app: &mut AppState) {
@@ -32,7 +34,7 @@ pub(in crate::actions) fn reconcile_projects_selection(app: &mut AppState) {
 }
 
 pub(in crate::actions) fn reconcile_tasks_selection(app: &mut AppState) {
-    let tasks = tasks_filtered_base(app);
+    let tasks = tasks_filtered(&app.board.tasks_store, &app.board.task_filter);
     if tasks.is_empty() {
         select_task(app, None);
         return;
@@ -55,7 +57,7 @@ pub(in crate::actions) fn reconcile_tasks_selection(app: &mut AppState) {
         }
     }
 
-    let by_status = board_tasks_by_status(app);
+    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
     let chosen = match app.board.tasks_active_column {
         TaskStatus::Todo => by_status.todo.first().map(|i| &i.task),
         TaskStatus::InProgress => by_status.inprogress.first().map(|i| &i.task),
@@ -130,7 +132,7 @@ fn ensure_task_selection(app: &mut AppState) {
         return;
     }
 
-    let by_status = board_tasks_by_status(app);
+    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
     let list = match app.board.tasks_active_column {
         TaskStatus::Todo => &by_status.todo,
         TaskStatus::InProgress => &by_status.inprogress,
@@ -188,7 +190,7 @@ pub(in crate::actions) fn sync_tasks_active_column(app: &mut AppState) {
     let Some(task_id) = app.board.selected_task_id else {
         return;
     };
-    let by_status = board_tasks_by_status(app);
+    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
     for status in crate::util::board_statuses(app) {
         let list = match status {
             TaskStatus::Todo => &by_status.todo,

@@ -1,6 +1,7 @@
 use crate::{
     selection::BoardTaskItem,
     state::{AppState, TaskStatus},
+    store::tasks_board::board_tasks_by_status,
     util::board_statuses,
 };
 
@@ -70,7 +71,7 @@ pub(super) fn task_index_in(list: &[BoardTaskItem], task_id: Option<uuid::Uuid>)
 }
 
 pub(super) fn board_section_needs(app: &AppState) -> Vec<u16> {
-    let by_status = crate::selection::board_tasks_by_status(app);
+    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
     let statuses = board_statuses(app);
     statuses
         .iter()

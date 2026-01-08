@@ -18,8 +18,8 @@ impl<'a> DiffStore<'a> {
     pub(crate) fn rows_with_all_filtered(
         &self,
         show_untracked: bool,
-    ) -> Vec<crate::diff::model::DiffRow> {
-        crate::diff::diff_rows_with_all_filtered(self.root, show_untracked)
+    ) -> Vec<crate::store::diff_rows::DiffRow> {
+        crate::store::diff_rows::diff_rows_with_all_filtered(self.root, show_untracked)
     }
 
     pub(crate) fn entry_content(&self, key: &str) -> Option<&'a serde_json::Value> {

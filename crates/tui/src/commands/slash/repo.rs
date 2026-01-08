@@ -1,5 +1,5 @@
 use crate::{
-    commands::{git_ops::request_branch_status_refresh, resolve_repo_for_command},
+    commands::{request_branch_status_refresh, resolve_repo_for_command},
     state::AppState,
 };
 

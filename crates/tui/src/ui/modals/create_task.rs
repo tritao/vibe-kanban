@@ -8,8 +8,8 @@ use ratatui::{
 
 use super::component::ModalComponent;
 use crate::{
-    selection::{find_task, projects_list},
     state::{AppState, CreateTaskFocus, CreateTaskState, TaskStatus},
+    store::{projects_list, tasks_list::find_task},
     ui::layout::centered_rect,
 };
 
@@ -149,7 +149,7 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
     f.render_widget(Clear, area);
 
     let project_name = app.board.selected_project_id.and_then(|id| {
-        projects_list(&app.board.projects_store)
+        projects_list::projects_list(&app.board.projects_store)
             .into_iter()
             .find(|p| p.id == id)
             .map(|p| p.name)

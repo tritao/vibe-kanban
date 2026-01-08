@@ -6,9 +6,8 @@ use ratatui::{
 use crate::{
     events::StreamStatus,
     fmt::truncate,
-    selection::find_task,
     state::{AppState, FocusPane},
-    store::projects::ProjectsStore,
+    store::{projects::ProjectsStore, tasks_list::find_task},
 };
 
 pub(crate) struct TopBarVm {

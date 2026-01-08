@@ -5,13 +5,13 @@ use crate::{commands::request_branch_status_refresh, state::AppState};
 pub(crate) fn require_selected_attempt_id(app: &AppState) -> Result<Uuid, String> {
     app.board
         .selected_attempt_id
-        .ok_or_else(|| "no attempt selected".to_string())
+        .ok_or_else(|| crate::ui::messages::errors::NO_ATTEMPT_SELECTED.to_string())
 }
 
 pub(crate) fn require_repo_status_loaded(app: &mut AppState) -> Result<(), String> {
     if app.diff.repo_statuses.is_empty() {
         request_branch_status_refresh(app);
-        return Err("no repo status loaded yet (run /status)".to_string());
+        return Err(crate::ui::messages::errors::NO_REPO_STATUS_LOADED.to_string());
     }
     Ok(())
 }
@@ -53,6 +53,6 @@ pub(crate) fn resolve_repo_for_command(
         .diff
         .repo_statuses
         .get(app.diff.selected_repo_index)
-        .ok_or_else(|| "no repo selected".to_string())?;
+        .ok_or_else(|| crate::ui::messages::errors::NO_REPO_SELECTED.to_string())?;
     Ok((repo.repo_id, repo.repo_name.clone()))
 }

@@ -3,8 +3,9 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use super::BoardHit;
 use crate::{
     layout::rect_contains,
-    selection::{BoardTaskItem, board_tasks_by_status},
+    selection::BoardTaskItem,
     state::{AppState, TaskStatus},
+    store::tasks_board::board_tasks_by_status,
     util::{board_statuses, window_for_list},
 };
 
@@ -13,7 +14,7 @@ pub(super) fn board_hit_at(app: &AppState, area: Rect, col: u16, row: u16) -> Op
         return None;
     }
 
-    let by_status = board_tasks_by_status(app);
+    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
     let statuses = board_statuses(app);
     let needs = super::layout::board_section_needs(app);
     let heights = super::layout::allocate_board_section_heights(&needs, area.height);

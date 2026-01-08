@@ -1,6 +1,6 @@
 use super::super::{
+    begin_git_op,
     context::{require_selected_attempt_id, resolve_repo_for_command},
-    git_ops::begin_git_op,
 };
 use crate::{
     commands::open_url,
@@ -9,9 +9,11 @@ use crate::{
         CreateGitHubPrRequest, attach_pr_http, branch_status_http, create_pr_http,
         get_pr_comments_http,
     },
-    selection::find_task,
     state::AppState,
-    store::git_status::RepoStatuses,
+    store::{
+        git_status::{GitActionBlockSeverity, GitRepoAction, RepoStatusRef, RepoStatuses},
+        tasks_list::find_task,
+    },
 };
 
 pub(super) fn handle_pr_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
@@ -44,14 +46,14 @@ fn handle_pr_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
         .diff
         .repo_statuses
         .get(app.diff.selected_repo_index)
-        .ok_or_else(|| "no repo selected".to_string())?;
-    let pr = crate::store::git_status::RepoStatusRef::new(repo).pr_info();
-    let Some(pr) = pr else {
-        return Err("no PR attached for selected repo".to_string());
-    };
-    if pr.url.trim().is_empty() {
-        return Err("PR has no URL".to_string());
+        .ok_or_else(|| crate::ui::messages::errors::NO_REPO_SELECTED.to_string())?;
+    let repo_ref = RepoStatusRef::new(repo);
+    if let Some(block) = repo_ref.action_block(GitRepoAction::OpenPr) {
+        return Err(block.message);
     }
+    let Some(pr) = repo_ref.pr_info() else {
+        return Err("PR: none attached".to_string());
+    };
 
     match open_url(&pr.url) {
         Ok(()) => {
@@ -85,20 +87,11 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     if let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) {
-        if r.has_conflicts() {
-            crate::ui::toasts::warn_short(app, "PR: conflicts in progress (resolve/abort first)");
-            return Ok(());
-        }
-        if r.is_dirty() {
-            crate::ui::toasts::warn_short(app, "PR: repo has uncommitted changes");
-            return Ok(());
-        }
-        if r.commits_ahead() == 0 {
-            crate::ui::toasts::ok_short(app, "PR: no changes to open (up to date)");
-            return Ok(());
-        }
-        if let Some(n) = r.pr_number() {
-            crate::ui::toasts::ok_short(app, format!("PR: already exists (PR#{n})"));
+        if let Some(block) = r.action_block(GitRepoAction::CreatePr) {
+            match block.severity {
+                GitActionBlockSeverity::Ok => crate::ui::toasts::ok_short(app, block.message),
+                GitActionBlockSeverity::Warn => crate::ui::toasts::warn_short(app, block.message),
+            }
             return Ok(());
         }
     }

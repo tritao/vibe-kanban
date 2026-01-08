@@ -27,7 +27,6 @@ pub(super) fn append_tool_use(
     state: &mut LogAssemblerState,
     entry_idx: usize,
     entry_type_ref: &EntryTypeRef<'_>,
-    entry_type: &serde_json::Value,
     content_text: &str,
     width: usize,
     render_mode: LogRenderMode,
@@ -37,27 +36,20 @@ pub(super) fn append_tool_use(
     let status = tool_status(entry_type_ref);
     let (status_badge, _status_style) = crate::ui::palette::log_tool_status_badge(status);
 
-    let action_type = entry_type.get("action_type");
-    let action_type = match action_type {
-        Some(v) => v,
-        None => {
-            append_text_block(
-                lines,
-                map,
-                entry_idx,
-                "Tool",
-                crate::ui::palette::log_tool_kind("tool").1,
-                content_text,
-                width,
-                render_mode,
-            );
-            return;
-        }
+    let Some(action_type) = entry_type_ref.action_type() else {
+        append_text_block(
+            lines,
+            map,
+            entry_idx,
+            "Tool",
+            crate::ui::palette::log_tool_kind("tool").1,
+            content_text,
+            width,
+            render_mode,
+        );
+        return;
     };
-    let action = action_type
-        .get("action")
-        .and_then(|v| v.as_str())
-        .unwrap_or("other");
+    let action = action_type.action().unwrap_or("other");
 
     let action_kind = ToolUseAction::parse(action);
     let (label, accent) = crate::ui::palette::log_tool_kind(action);
@@ -77,20 +69,14 @@ pub(super) fn append_tool_use(
     // Put the most important detail in the header for scannability.
     match action_kind {
         ToolUseAction::CommandRun => {
-            let cmd = action_type
-                .get("command")
-                .and_then(|v| v.as_str())
-                .unwrap_or("command");
+            let cmd = action_type.command().unwrap_or("command");
             header_spans.push(Span::styled(
                 format!("{label} {cmd}"),
                 Style::default().add_modifier(Modifier::BOLD),
             ));
         }
         ToolUseAction::FileEdit => {
-            let path = action_type
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("file");
+            let path = action_type.path().unwrap_or("file");
             header_spans.push(Span::styled(
                 format!("{label} {path}"),
                 Style::default().add_modifier(Modifier::BOLD),
@@ -111,10 +97,7 @@ pub(super) fn append_tool_use(
 
     match action_kind {
         ToolUseAction::FileRead => {
-            let path = action_type
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("file");
+            let path = action_type.path().unwrap_or("file");
             push_line(
                 lines,
                 map,
@@ -127,10 +110,7 @@ pub(super) fn append_tool_use(
             );
         }
         ToolUseAction::Search => {
-            let query = action_type
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let query = action_type.query().unwrap_or("");
             push_line(
                 lines,
                 map,
@@ -145,37 +125,25 @@ pub(super) fn append_tool_use(
         ToolUseAction::CommandRun => {
             state.attach_to_entry = Some(entry_idx);
 
-            let exit_status = action_type.get("result").and_then(|v| v.get("exit_status"));
-            if let Some(es) = exit_status {
-                let code = es
-                    .get("code")
-                    .and_then(|v| v.as_i64())
-                    .or_else(|| es.as_i64())
-                    .or_else(|| es.as_u64().map(|v| v as i64));
-                if let Some(code) = code
-                    && code != 0
-                {
-                    push_line(
-                        lines,
-                        map,
-                        entry_idx,
-                        Line::from(vec![
-                            Span::styled("  - ", Style::default().add_modifier(Modifier::DIM)),
-                            Span::styled(
-                                format!("exit {code}"),
-                                Style::default().fg(crate::ui::palette::log_accent_error()),
-                            ),
-                        ]),
-                        width,
-                    );
-                }
+            if let Some(code) = action_type.result_exit_code()
+                && code != 0
+            {
+                push_line(
+                    lines,
+                    map,
+                    entry_idx,
+                    Line::from(vec![
+                        Span::styled("  - ", Style::default().add_modifier(Modifier::DIM)),
+                        Span::styled(
+                            format!("exit {code}"),
+                            Style::default().fg(crate::ui::palette::log_accent_error()),
+                        ),
+                    ]),
+                    width,
+                );
             }
 
-            let output = action_type
-                .get("result")
-                .and_then(|v| v.get("output"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let output = action_type.result_output().unwrap_or("");
             if !output.is_empty() {
                 if collapsed {
                     push_line(
@@ -226,6 +194,7 @@ pub(super) fn append_tool_use(
         }
         ToolUseAction::WebFetch => {
             let url = action_type
+                .raw()
                 .get("url")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
@@ -241,14 +210,8 @@ pub(super) fn append_tool_use(
             );
         }
         ToolUseAction::FileEdit => {
-            let path = action_type
-                .get("path")
-                .and_then(|v| v.as_str())
-                .unwrap_or("file");
-            let changes = action_type
-                .get("changes")
-                .and_then(|v| v.as_array())
-                .cloned();
+            let path = action_type.path().unwrap_or("file");
+            let changes = action_type.changes().cloned();
             if let Some(changes) = changes {
                 let mut has_diff = false;
                 for c in &changes {
@@ -370,6 +333,7 @@ pub(super) fn append_tool_use(
         }
         ToolUseAction::TaskCreate => {
             let description = action_type
+                .raw()
                 .get("description")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
@@ -406,6 +370,7 @@ pub(super) fn append_tool_use(
         }
         ToolUseAction::PlanPresentation => {
             let plan = action_type
+                .raw()
                 .get("plan")
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
@@ -441,7 +406,11 @@ pub(super) fn append_tool_use(
             }
         }
         ToolUseAction::TodoManagement => {
-            let todos = action_type.get("todos").and_then(|v| v.as_array()).cloned();
+            let todos = action_type
+                .raw()
+                .get("todos")
+                .and_then(|v| v.as_array())
+                .cloned();
             if let Some(todos) = todos {
                 // De-duplicate repeated identical todo lists. Some executors emit the
                 // same list multiple times (often separated by thinking/progress).
@@ -495,10 +464,11 @@ pub(super) fn append_tool_use(
         }
         ToolUseAction::Tool => {
             let tool_name = action_type
+                .raw()
                 .get("tool_name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("tool");
-            let args = action_type.get("arguments");
+            let args = action_type.raw().get("arguments");
             if let Some(args) = args {
                 if let Ok(pretty) = serde_json::to_string_pretty(args) {
                     push_line(
@@ -532,11 +502,8 @@ pub(super) fn append_tool_use(
                 }
             }
 
-            let result_ty = action_type
-                .get("result")
-                .and_then(|v| v.get("type"))
-                .and_then(|v| v.as_str());
-            let value = action_type.get("result").and_then(|v| v.get("value"));
+            let result_ty = action_type.result_type();
+            let value = action_type.result_value();
             if let (Some(result_ty), Some(value)) = (result_ty, value) {
                 if collapsed {
                     push_line(

@@ -7,9 +7,11 @@ use crate::{
         CreateGitHubPrRequest, branch_status_http, create_pr_http, merge_task_attempt_http,
         open_editor_http, rebase_task_attempt_http,
     },
-    selection::find_task,
     state::{AppState, FocusPane, build_resolve_conflicts_instructions},
-    store::git_status::{RepoStatusRef, RepoStatuses},
+    store::{
+        git_status::{GitRepoAction, RepoStatusRef, RepoStatuses},
+        tasks_list::find_task,
+    },
     ui::{guards, toasts},
 };
 
@@ -51,9 +53,9 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             app.ui.composer.set_end();
             let layout = compute_main_layout(current_terminal_rect(), FocusPane::Execution);
             let area = layout.exec_input;
-            let (inner_w, inner_h) = crate::ui::geometry::inner_size(area);
+            let (_inner_w, inner_h) = crate::ui::geometry::inner_size(area);
             let prefix_w = crate::text::display_width("  ");
-            let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
+            let content_w = crate::ui::geometry::inner_content_width(area, prefix_w, 1);
             app.ui
                 .composer
                 .ensure_cursor_visible(content_w, inner_h.max(1));
@@ -110,14 +112,15 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 toasts::warn_short(app, "PR: no repo selected");
                 return;
             };
-            let Some(pr) = RepoStatusRef::new(repo).pr_info() else {
+            let repo_ref = RepoStatusRef::new(repo);
+            if let Some(block) = repo_ref.action_block(GitRepoAction::OpenPr) {
+                toasts::warn_short(app, block.message);
+                return;
+            }
+            let Some(pr) = repo_ref.pr_info() else {
                 toasts::warn_short(app, "PR: none attached");
                 return;
             };
-            if pr.url.trim().is_empty() {
-                toasts::warn_short(app, "PR: has no URL");
-                return;
-            }
 
             match open_url(&pr.url) {
                 Ok(()) => {
@@ -237,16 +240,8 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) else {
                 return;
             };
-            if r.has_conflicts() {
-                toasts::warn_seconds(app, "Merge: conflicts in progress (resolve/abort first)", 2);
-                return;
-            }
-            if r.is_dirty() {
-                toasts::warn_seconds(app, "Merge: repo has uncommitted changes", 2);
-                return;
-            }
-            if r.commits_ahead() == 0 {
-                toasts::ok_seconds(app, "Merge: nothing to merge (up to date)", 2);
+            if let Some(block) = r.action_block(GitRepoAction::Merge) {
+                crate::ui::toast_presets::git_action_block_seconds(app, block, 2);
                 return;
             }
             crate::commands::spawn_repo_git_op(
@@ -277,20 +272,8 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) else {
                 return;
             };
-            if r.has_conflicts() {
-                toasts::warn_seconds(
-                    app,
-                    "Rebase: conflicts in progress (resolve/abort first)",
-                    2,
-                );
-                return;
-            }
-            if r.is_dirty() {
-                toasts::warn_seconds(app, "Rebase: repo has uncommitted changes", 2);
-                return;
-            }
-            if r.commits_behind() == 0 {
-                toasts::ok_seconds(app, "Rebase: already up to date", 2);
+            if let Some(block) = r.action_block(GitRepoAction::Rebase) {
+                crate::ui::toast_presets::git_action_block_seconds(app, block, 2);
                 return;
             }
             crate::commands::spawn_repo_git_op(
@@ -321,20 +304,8 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) else {
                 return;
             };
-            if r.has_conflicts() {
-                toasts::warn_seconds(app, "PR: conflicts in progress (resolve/abort first)", 2);
-                return;
-            }
-            if r.is_dirty() {
-                toasts::warn_seconds(app, "PR: repo has uncommitted changes", 2);
-                return;
-            }
-            if r.commits_ahead() == 0 {
-                toasts::ok_seconds(app, "PR: no changes to open (up to date)", 2);
-                return;
-            }
-            if let Some(n) = r.pr_number() {
-                toasts::ok_seconds(app, format!("PR: already exists (PR#{n})"), 2);
+            if let Some(block) = r.action_block(GitRepoAction::CreatePr) {
+                crate::ui::toast_presets::git_action_block_seconds(app, block, 2);
                 return;
             }
             if !begin_git_op(app, Some(repo_id), GitOpKind::CreatePr, &repo_name) {

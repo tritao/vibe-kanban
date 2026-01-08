@@ -3,8 +3,8 @@ use crossterm::event::{KeyCode, MouseEventKind};
 use super::{BoardPane, BoardPaneEvent, hit_test::board_hit_at};
 use crate::{
     prefs::save_prefs,
-    selection::find_task,
     state::{AppState, ConfirmAction, ConfirmAltAction, ConfirmState, DeleteTaskMode},
+    store::tasks_list::{find_task, tasks_all},
 };
 
 pub(super) fn handle_event(app: &mut AppState, event: BoardPaneEvent) -> bool {
@@ -101,7 +101,7 @@ impl BoardPane {
             .map(|t| t.title)
             .unwrap_or_else(|| task_id.to_string());
 
-        let all_tasks = crate::selection::tasks_all(&app.board.tasks_store);
+        let all_tasks = tasks_all(&app.board.tasks_store);
         let mut children_by_parent: std::collections::HashMap<uuid::Uuid, Vec<uuid::Uuid>> =
             std::collections::HashMap::new();
         for t in &all_tasks {

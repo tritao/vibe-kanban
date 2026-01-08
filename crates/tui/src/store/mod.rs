@@ -1,9 +1,15 @@
 pub(crate) mod diff;
+pub(crate) mod diff_rows;
 pub(crate) mod exec;
+pub(crate) mod exec_list;
 pub(crate) mod executor_profiles;
 pub(crate) mod git_status;
+pub(crate) mod log_entry;
 pub(crate) mod log_patch;
 pub(crate) mod logs;
 pub(crate) mod projects;
+pub(crate) mod projects_list;
 pub(crate) mod tasks;
+pub(crate) mod tasks_board;
 pub(crate) mod tasks_hierarchy;
+pub(crate) mod tasks_list;

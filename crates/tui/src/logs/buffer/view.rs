@@ -10,8 +10,8 @@ use super::LogSelection;
 use crate::{
     events::StreamStatus,
     logs::model_params::ModelParams,
-    selection::exec_list,
     state::{AppState, ExecRow, LogViewMode},
+    store::exec_list::exec_list,
     text::truncate_to_width,
 };
 

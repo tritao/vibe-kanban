@@ -223,7 +223,6 @@ pub(super) fn append_normalized_entry(
                 state,
                 entry_idx,
                 &entry_type_ref,
-                entry_type,
                 content_text,
                 width,
                 render_mode,

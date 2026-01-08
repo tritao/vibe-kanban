@@ -105,7 +105,7 @@ pub(super) fn projects_patch(app: &mut AppState, patch: json_patch::Patch) -> bo
 
     sel::reconcile_projects_selection(app);
     let projects_empty =
-        crate::selection::lists_filters::projects_list(&app.board.projects_store).is_empty();
+        crate::store::projects_list::projects_list(&app.board.projects_store).is_empty();
 
     if app.ui.launch_dir_explicit
         && !app.ui.launch_match_done
