@@ -269,10 +269,6 @@ pub(crate) fn stack_badge_missing() -> (Color, Color) {
     (Color::White, Color::Red)
 }
 
-pub(crate) fn stack_badge_off() -> (Color, Color) {
-    (Color::Black, Color::LightYellow)
-}
-
 pub(crate) fn stack_badge_on() -> (Color, Color) {
     (Color::Black, Color::LightGreen)
 }

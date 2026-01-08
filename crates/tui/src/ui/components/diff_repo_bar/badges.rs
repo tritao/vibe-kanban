@@ -24,8 +24,9 @@ pub(super) fn selected_stack_badge(
         ));
     }
     if !status.enabled {
-        let (fg, bg) = crate::ui::palette::stack_badge_off();
-        return Some((" Stack: off ".to_string(), badge("Stack: off", fg, bg)));
+        // Don't show a "Stack: off" badge unless the stack is actually enabled; keep the repo bar
+        // clean in normal (non-stack) mode.
+        return None;
     }
     let current = status
         .patches
