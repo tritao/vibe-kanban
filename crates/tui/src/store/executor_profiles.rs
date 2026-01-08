@@ -2,6 +2,26 @@ use serde_json::Value;
 
 use crate::state::ExecutorProfileSelection;
 
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ExecutorProfilesOwned {
+    root: Value,
+}
+
+impl ExecutorProfilesOwned {
+    pub(crate) fn new(root: Value) -> Self {
+        Self { root }
+    }
+
+    pub(crate) fn as_value(&self) -> &Value {
+        &self.root
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn store(&self) -> ExecutorProfilesStore<'_> {
+        ExecutorProfilesStore::new(&self.root)
+    }
+}
+
 pub(crate) struct ExecutorProfilesStore<'a> {
     root: &'a Value,
 }

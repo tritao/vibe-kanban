@@ -10,7 +10,7 @@ pub(super) fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Resu
     }
 
     let Some(arg) = arg.filter(|s| !s.trim().is_empty()) else {
-        let msg = crate::store::git_status::RepoStatuses::new(&app.diff.repo_statuses)
+        let msg = crate::store::repo_status::RepoStatuses::new(&app.diff.repo_statuses)
             .list_lines(app.diff.selected_repo_index)
             .join("\n");
         app.ui.set_notice(msg);

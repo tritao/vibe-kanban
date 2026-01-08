@@ -31,13 +31,13 @@ pub(crate) fn on_repo_selected(app: &mut AppState) {
 }
 
 pub(crate) fn on_diff_file_selected(app: &mut AppState) {
-    app.diff.diff_scroll_offset = 0;
+    app.diff.diff_scroll.offset = 0;
     crate::ui::sync_selected_repo_from_diff_selection(app);
     schedule_diff_preview_refresh(app, crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY);
 }
 
 pub(crate) fn on_commit_selected(app: &mut AppState) {
-    app.diff.diff_scroll_offset = 0;
+    app.diff.diff_scroll.offset = 0;
     crate::commands::request_commit_preview_refresh(app);
 }
 

@@ -9,7 +9,7 @@ use crate::{
     },
     state::{AppState, FocusPane, build_resolve_conflicts_instructions},
     store::{
-        git_status::{GitRepoAction, RepoStatusRef, RepoStatuses},
+        repo_status::{GitRepoAction, RepoStatusRef, RepoStatuses},
         tasks_list::find_task,
     },
     ui::{guards, toasts},

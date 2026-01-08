@@ -5,8 +5,7 @@ use crate::{
 };
 
 pub(super) fn tasks_stream_status(app: &mut AppState, status: StreamStatus) -> bool {
-    app.board.tasks_status = status;
-    true
+    super::stream::apply_status(&mut app.board.tasks_status, status)
 }
 
 pub(super) fn tasks_reset(app: &mut AppState) -> bool {

@@ -4,6 +4,7 @@ pub(crate) struct ScrollFromTop {
 }
 
 impl ScrollFromTop {
+    #[allow(dead_code)]
     pub(crate) fn new(offset: usize) -> Self {
         Self { offset }
     }
@@ -31,6 +32,12 @@ impl ScrollFromTop {
     }
 }
 
+impl Default for ScrollFromTop {
+    fn default() -> Self {
+        Self { offset: 0 }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ScrollFromEnd {
     pub(crate) autoscroll: bool,
@@ -38,6 +45,7 @@ pub(crate) struct ScrollFromEnd {
 }
 
 impl ScrollFromEnd {
+    #[allow(dead_code)]
     pub(crate) fn new(autoscroll: bool, offset_from_end: usize) -> Self {
         Self {
             autoscroll,
@@ -47,6 +55,9 @@ impl ScrollFromEnd {
 
     pub(crate) fn normalize(&mut self, len: usize, visible: usize) {
         self.offset_from_end = crate::ui::scroll::clamp_offset(self.offset_from_end, len, visible);
+        if self.autoscroll {
+            self.offset_from_end = 0;
+        }
         if self.offset_from_end == 0 {
             self.autoscroll = true;
         }
@@ -75,5 +86,14 @@ impl ScrollFromEnd {
             self.offset_from_end
         };
         crate::ui::scroll::visible_window_from_end(offset, len, visible)
+    }
+}
+
+impl Default for ScrollFromEnd {
+    fn default() -> Self {
+        Self {
+            autoscroll: true,
+            offset_from_end: 0,
+        }
     }
 }

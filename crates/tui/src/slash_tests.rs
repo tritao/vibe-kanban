@@ -39,16 +39,17 @@ fn model_autocomplete_offers_effort_directly() {
         executor: "CODEX".to_string(),
         variant: Some("DEFAULT".to_string()),
     });
-    app.ui.executor_profiles = serde_json::json!({
-        "CODEX": {
-            "DEFAULT": {
-                "CODEX": {
-                    "model": "gpt-5.2",
-                    "model_reasoning_effort": "high"
+    app.ui.executor_profiles =
+        crate::store::executor_profiles::ExecutorProfilesOwned::new(serde_json::json!({
+            "CODEX": {
+                "DEFAULT": {
+                    "CODEX": {
+                        "model": "gpt-5.2",
+                        "model_reasoning_effort": "high"
+                    }
                 }
             }
-        }
-    });
+        }));
 
     let items = composer_completion_items(&app);
     assert!(

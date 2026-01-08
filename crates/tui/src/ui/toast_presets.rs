@@ -1,6 +1,6 @@
 use crate::{
     state::AppState,
-    store::git_status::{GitActionBlock, GitActionBlockSeverity},
+    store::repo_status::{GitActionBlock, GitActionBlockSeverity},
     ui::toasts,
 };
 

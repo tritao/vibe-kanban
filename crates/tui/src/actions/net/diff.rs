@@ -9,8 +9,7 @@ use crate::{
 };
 
 pub(super) fn diff_stream_status(app: &mut AppState, status: StreamStatus) -> bool {
-    app.diff.diff_status = status;
-    true
+    super::stream::apply_status(&mut app.diff.diff_status, status)
 }
 
 pub(super) fn diff_reset(app: &mut AppState) -> bool {
@@ -50,7 +49,7 @@ pub(super) fn diff_preview_ready(
     width: u16,
     lines: Vec<ratatui::text::Line<'static>>,
 ) -> super::apply::NetApplyResult {
-    if generation != app.diff.diff_preview_gen {
+    if !app.diff.diff_preview_gen.is_latest(generation) {
         return super::apply::NetApplyResult::changed(false);
     }
     app.diff.diff_preview_cache_key = cache_key;

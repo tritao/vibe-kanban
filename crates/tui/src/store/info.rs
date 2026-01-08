@@ -1,11 +1,11 @@
 use serde_json::Value;
 
-use crate::state::ExecutorProfileSelection;
+use crate::{state::ExecutorProfileSelection, store::executor_profiles::ExecutorProfilesOwned};
 
 pub(crate) struct InfoExecutorProfiles {
     pub(crate) available: Vec<String>,
     pub(crate) selected: Option<ExecutorProfileSelection>,
-    pub(crate) profiles_executors: Value,
+    pub(crate) profiles_executors: ExecutorProfilesOwned,
 }
 
 pub(crate) fn extract_executor_profiles(info: &Value) -> InfoExecutorProfiles {
@@ -19,10 +19,11 @@ pub(crate) fn extract_executor_profiles(info: &Value) -> InfoExecutorProfiles {
         })
         .unwrap_or_default();
 
-    let profiles_executors = info
-        .get("executors")
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({}));
+    let profiles_executors = ExecutorProfilesOwned::new(
+        info.get("executors")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+    );
 
     let selected = info
         .get("config")

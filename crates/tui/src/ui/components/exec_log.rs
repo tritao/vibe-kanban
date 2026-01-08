@@ -58,35 +58,23 @@ impl ExecLog {
     fn scroll_older(app: &mut AppState, lines: usize) {
         let len = app.exec.log_lines.len();
         let visible = Self::exec_visible_lines();
-        let mut scroll = crate::ui::scroll_model::ScrollFromEnd::new(
-            app.exec.log_autoscroll,
-            app.exec.log_scroll_offset,
-        );
+        let mut scroll = app.exec.log_scroll;
         scroll.scroll_older(len, visible, lines);
-        app.exec.log_autoscroll = scroll.autoscroll;
-        app.exec.log_scroll_offset = scroll.offset_from_end;
+        app.exec.log_scroll = scroll;
     }
 
     fn scroll_newer(app: &mut AppState, lines: usize) {
         let len = app.exec.log_lines.len();
         let visible = Self::exec_visible_lines();
-        let mut scroll = crate::ui::scroll_model::ScrollFromEnd::new(
-            app.exec.log_autoscroll,
-            app.exec.log_scroll_offset,
-        );
+        let mut scroll = app.exec.log_scroll;
         scroll.scroll_newer(len, visible, lines);
-        app.exec.log_autoscroll = scroll.autoscroll;
-        app.exec.log_scroll_offset = scroll.offset_from_end;
+        app.exec.log_scroll = scroll;
     }
 
     fn scroll_to_end(app: &mut AppState) {
-        let mut scroll = crate::ui::scroll_model::ScrollFromEnd::new(
-            app.exec.log_autoscroll,
-            app.exec.log_scroll_offset,
-        );
+        let mut scroll = app.exec.log_scroll;
         scroll.scroll_to_end();
-        app.exec.log_autoscroll = scroll.autoscroll;
-        app.exec.log_scroll_offset = scroll.offset_from_end;
+        app.exec.log_scroll = scroll;
     }
 
     fn start_index_for_visible(app: &AppState, visible: usize) -> usize {
@@ -96,11 +84,7 @@ impl ExecLog {
         }
 
         let visible = visible.min(len);
-        let scroll = crate::ui::scroll_model::ScrollFromEnd::new(
-            app.exec.log_autoscroll,
-            app.exec.log_scroll_offset,
-        );
-        let (start, _) = scroll.visible_range(len, visible);
+        let (start, _) = app.exec.log_scroll.visible_range(len, visible);
         start
     }
 
@@ -183,11 +167,7 @@ impl UiComponent for ExecLog {
         let max_render = area.height.saturating_sub(2) as usize;
         let visible = max_render.min(len);
 
-        let scroll = crate::ui::scroll_model::ScrollFromEnd::new(
-            app.exec.log_autoscroll,
-            app.exec.log_scroll_offset,
-        );
-        let (start, end) = scroll.visible_range(len, visible);
+        let (start, end) = app.exec.log_scroll.visible_range(len, visible);
 
         let mut text: Vec<Line<'static>> = app
             .exec

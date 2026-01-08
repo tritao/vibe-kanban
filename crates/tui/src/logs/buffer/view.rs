@@ -120,8 +120,7 @@ pub(crate) fn reset_logs(app: &mut AppState, exec_id: Option<Uuid>) {
             app.exec.log_lines.clear();
             app.exec.log_line_targets.clear();
             app.exec.log_selected = None;
-            app.exec.log_autoscroll = true;
-            app.exec.log_scroll_offset = 0;
+            app.exec.log_scroll = crate::ui::scroll_model::ScrollFromEnd::default();
             app.exec.log_view_dirty = true;
         }
         Some(exec_id) => {
@@ -146,8 +145,7 @@ pub(crate) fn reset_log_view(app: &mut AppState, exec_id: Option<Uuid>) {
     }
     app.exec.log_lines.clear();
     app.exec.log_line_targets.clear();
-    app.exec.log_autoscroll = true;
-    app.exec.log_scroll_offset = 0;
+    app.exec.log_scroll = crate::ui::scroll_model::ScrollFromEnd::default();
     app.exec.log_view_dirty = true;
 }
 
@@ -337,12 +335,13 @@ pub(crate) fn flush_log_buffers(app: &mut AppState, width: usize) -> bool {
     if app.exec.log_view_dirty {
         rebuild_log_view_cache(app);
         let new_len = app.exec.log_lines.len();
-        if app.exec.log_autoscroll {
-            app.exec.log_scroll_offset = 0;
+        if app.exec.log_scroll.autoscroll {
+            app.exec.log_scroll.scroll_to_end();
         } else if new_len > prev_len {
-            app.exec.log_scroll_offset = app
+            app.exec.log_scroll.offset_from_end = app
                 .exec
-                .log_scroll_offset
+                .log_scroll
+                .offset_from_end
                 .saturating_add(new_len - prev_len);
         }
         return true;

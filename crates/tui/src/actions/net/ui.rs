@@ -1,10 +1,13 @@
-use crate::state::{AppState, ExecutorProfileSelection, GitBranchItem};
+use crate::{
+    state::{AppState, ExecutorProfileSelection, GitBranchItem},
+    store::executor_profiles::ExecutorProfilesOwned,
+};
 
 pub(super) fn executor_profiles_loaded(
     app: &mut AppState,
     available: Vec<String>,
     selected: Option<ExecutorProfileSelection>,
-    profiles_executors: serde_json::Value,
+    profiles_executors: ExecutorProfilesOwned,
 ) -> bool {
     app.ui.available_executors = available;
     app.ui.selected_executor_profile = selected;

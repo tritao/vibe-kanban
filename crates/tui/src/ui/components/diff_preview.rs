@@ -49,8 +49,7 @@ impl DiffPreview {
         };
 
         let height = area.height.saturating_sub(2) as usize;
-        let scroll = crate::ui::scroll_model::ScrollFromTop::new(app.diff.diff_scroll_offset);
-        let (start, end) = scroll.visible_range(lines.len(), height);
+        let (start, end) = app.diff.diff_scroll.visible_range(lines.len(), height);
         let visible = lines.get(start..end).unwrap_or(&[]);
 
         crate::ui::viewport::render_cleared_padded_paragraph(
@@ -73,31 +72,31 @@ impl DiffPreview {
     }
 
     fn scroll_up(app: &mut AppState, lines: usize) -> bool {
-        let before = app.diff.diff_scroll_offset;
+        let before = app.diff.diff_scroll.offset;
         let len = match app.diff.list_mode {
             crate::state::DiffListMode::Files => app.diff.diff_preview_lines.len(),
             crate::state::DiffListMode::Commits => app.diff.commit_preview_lines.len(),
         };
         let layout = compute_main_layout(current_terminal_rect(), FocusPane::Diff);
         let visible = layout.diff_preview.height.saturating_sub(2) as usize;
-        let mut scroll = crate::ui::scroll_model::ScrollFromTop::new(app.diff.diff_scroll_offset);
+        let mut scroll = app.diff.diff_scroll;
         let _ = scroll.scroll_up(len, visible, lines);
-        app.diff.diff_scroll_offset = scroll.offset;
-        app.diff.diff_scroll_offset != before
+        app.diff.diff_scroll = scroll;
+        app.diff.diff_scroll.offset != before
     }
 
     fn scroll_down(app: &mut AppState, lines: usize) -> bool {
-        let before = app.diff.diff_scroll_offset;
+        let before = app.diff.diff_scroll.offset;
         let len = match app.diff.list_mode {
             crate::state::DiffListMode::Files => app.diff.diff_preview_lines.len(),
             crate::state::DiffListMode::Commits => app.diff.commit_preview_lines.len(),
         };
         let layout = compute_main_layout(current_terminal_rect(), FocusPane::Diff);
         let visible = layout.diff_preview.height.saturating_sub(2) as usize;
-        let mut scroll = crate::ui::scroll_model::ScrollFromTop::new(app.diff.diff_scroll_offset);
+        let mut scroll = app.diff.diff_scroll;
         let _ = scroll.scroll_down(len, visible, lines);
-        app.diff.diff_scroll_offset = scroll.offset;
-        app.diff.diff_scroll_offset != before
+        app.diff.diff_scroll = scroll;
+        app.diff.diff_scroll.offset != before
     }
 
     fn on_event(app: &mut AppState, event: DiffPreviewEvent) -> bool {

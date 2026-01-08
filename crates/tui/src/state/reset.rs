@@ -5,7 +5,7 @@ use crate::state::{AppState, DiffListMode};
 pub(crate) fn reset_diff_stream_state(app: &mut AppState) {
     app.diff.diff_store = serde_json::json!({ "entries": {} });
     app.diff.selected_diff_index = 0;
-    app.diff.diff_scroll_offset = 0;
+    app.diff.diff_scroll.offset = 0;
     app.diff.invalidate_diff_preview_cache();
     app.diff.diff_preview_cache_width = 0;
     app.diff.diff_preview_lines = vec![Line::from("No diffs")];

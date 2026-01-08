@@ -6,8 +6,7 @@ use crate::{
 };
 
 pub(super) fn exec_stream_status(app: &mut AppState, status: StreamStatus) -> bool {
-    app.exec.exec_status = status;
-    true
+    super::stream::apply_status(&mut app.exec.exec_status, status)
 }
 
 pub(super) fn exec_reset(app: &mut AppState) -> bool {

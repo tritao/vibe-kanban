@@ -6,6 +6,7 @@ mod exec;
 mod git;
 mod logs;
 mod projects;
+mod stream;
 mod tasks;
 mod ui;
 

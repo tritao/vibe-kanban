@@ -76,14 +76,30 @@ pub(crate) async fn create_task_attempt_http(
     let client = http_client()?;
 
     let endpoint = url(base_url, "/api/task-attempts");
-    let body = serde_json::json!({
-        "task_id": task_id,
-        "executor_profile_id": executor_profile,
-        "repos": repos.into_iter().map(|(repo_id, target_branch)| serde_json::json!({
-            "repo_id": repo_id,
-            "target_branch": target_branch,
-        })).collect::<Vec<_>>(),
-    });
+    #[derive(Debug, serde::Serialize)]
+    struct RepoTarget {
+        repo_id: Uuid,
+        target_branch: String,
+    }
+
+    #[derive(Debug, serde::Serialize)]
+    struct CreateTaskAttemptRequest<'a> {
+        task_id: Uuid,
+        executor_profile_id: &'a ExecutorProfileSelection,
+        repos: Vec<RepoTarget>,
+    }
+
+    let body = CreateTaskAttemptRequest {
+        task_id,
+        executor_profile_id: executor_profile,
+        repos: repos
+            .into_iter()
+            .map(|(repo_id, target_branch)| RepoTarget {
+                repo_id,
+                target_branch,
+            })
+            .collect(),
+    };
 
     let resp = client.post(endpoint).json(&body).send().await?;
     let api = decode_api_response::<WorkspaceDto>(resp).await?;

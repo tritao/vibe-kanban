@@ -11,7 +11,7 @@ use ratatui::{
 use super::{badges, buttons, shared};
 use crate::{
     state::{AppState, FocusPane},
-    store::git_status::RepoStatusRef,
+    store::repo_status::RepoStatusRef,
     text::{display_width, truncate_to_width},
     ui::button_row::{button_row_plain, push_button_row_spans},
 };

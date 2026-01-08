@@ -13,6 +13,7 @@ use super::types::{
 use crate::{
     events::{NetEvent, StreamStatus},
     logs::{ExecLogBuffer, LogSelection},
+    store::executor_profiles::ExecutorProfilesOwned,
 };
 
 pub(crate) struct BoardState {
@@ -54,9 +55,8 @@ pub(crate) struct ExecState {
     pub(crate) log_render_width: u16,
     pub(crate) log_target_render_width: u16,
     pub(crate) log_prewarm_job_width: Option<u16>,
-    pub(crate) log_prewarm_gen: u64,
-    pub(crate) log_autoscroll: bool,
-    pub(crate) log_scroll_offset: usize,
+    pub(crate) log_prewarm_gen: crate::jobs::latest::LatestGen,
+    pub(crate) log_scroll: crate::ui::scroll_model::ScrollFromEnd,
 
     pub(crate) log_buffers: HashMap<Uuid, ExecLogBuffer>,
     pub(crate) log_exec_order_by_attempt: HashMap<Uuid, Vec<Uuid>>,
@@ -81,7 +81,7 @@ pub(crate) struct DiffState {
     pub(crate) diff_stats_only: bool,
     pub(crate) diff_show_untracked: bool,
     pub(crate) selected_diff_index: usize,
-    pub(crate) diff_scroll_offset: usize,
+    pub(crate) diff_scroll: crate::ui::scroll_model::ScrollFromTop,
     pub(crate) diff_preview_cache_key: Option<String>,
     pub(crate) diff_preview_cache_hash: u64,
     pub(crate) diff_preview_cache_width: u16,
@@ -90,7 +90,7 @@ pub(crate) struct DiffState {
     pub(crate) diff_wrap: bool,
     pub(crate) diff_preview_pending: bool,
     pub(crate) diff_preview_next_refresh_at: Option<Instant>,
-    pub(crate) diff_preview_gen: u64,
+    pub(crate) diff_preview_gen: crate::jobs::latest::LatestGen,
     pub(crate) diff_preview_loading: super::types::LoadingState,
 
     pub(crate) repo_statuses: Vec<RepoBranchStatus>,
@@ -103,14 +103,14 @@ pub(crate) struct DiffState {
     pub(crate) git_op_global: Option<GitOpState>,
 
     pub(crate) stack_status_by_repo: HashMap<Uuid, super::types::StackStatusResponse>,
-    pub(crate) stack_status_gen_by_repo: HashMap<Uuid, u64>,
+    pub(crate) stack_status_gen_by_repo: crate::jobs::latest::LatestByKey<Uuid>,
 
     pub(crate) list_mode: DiffListMode,
     pub(crate) commits_by_repo: HashMap<Uuid, Vec<CommitEntry>>,
     pub(crate) commits_loading_by_repo: HashMap<Uuid, super::types::LoadingState>,
     pub(crate) commits_has_more_by_repo: HashMap<Uuid, bool>,
     pub(crate) selected_commit_index: usize,
-    pub(crate) commit_preview_gen: u64,
+    pub(crate) commit_preview_gen: crate::jobs::latest::LatestGen,
     pub(crate) commit_preview_text: Option<String>,
     pub(crate) commit_preview_lines: Vec<Line<'static>>,
     pub(crate) commit_preview_render_width: u16,
@@ -150,7 +150,7 @@ pub(crate) struct UiState {
 
     pub(crate) available_executors: Vec<String>,
     pub(crate) selected_executor_profile: Option<ExecutorProfileSelection>,
-    pub(crate) executor_profiles: serde_json::Value,
+    pub(crate) executor_profiles: ExecutorProfilesOwned,
 }
 
 pub(crate) struct AppState {
@@ -262,7 +262,7 @@ impl AppState {
 
                 available_executors: vec![],
                 selected_executor_profile: None,
-                executor_profiles: serde_json::json!({}),
+                executor_profiles: ExecutorProfilesOwned::default(),
             },
 
             board: BoardState {
@@ -302,9 +302,8 @@ impl AppState {
                 log_render_width: 0,
                 log_target_render_width: 0,
                 log_prewarm_job_width: None,
-                log_prewarm_gen: 0,
-                log_autoscroll: true,
-                log_scroll_offset: 0,
+                log_prewarm_gen: crate::jobs::latest::LatestGen::default(),
+                log_scroll: crate::ui::scroll_model::ScrollFromEnd::default(),
                 log_line_targets: vec![],
                 log_selected: None,
 
@@ -330,7 +329,7 @@ impl AppState {
                 diff_stats_only: false,
                 diff_show_untracked: true,
                 selected_diff_index: 0,
-                diff_scroll_offset: 0,
+                diff_scroll: crate::ui::scroll_model::ScrollFromTop::default(),
                 diff_preview_cache_key: None,
                 diff_preview_cache_hash: 0,
                 diff_preview_cache_width: 0,
@@ -339,7 +338,7 @@ impl AppState {
                 diff_wrap: prefs.diff_wrap,
                 diff_preview_pending: false,
                 diff_preview_next_refresh_at: None,
-                diff_preview_gen: 0,
+                diff_preview_gen: crate::jobs::latest::LatestGen::default(),
                 diff_preview_loading: super::types::LoadingState::default(),
 
                 repo_statuses: vec![],
@@ -352,14 +351,14 @@ impl AppState {
                 git_op_global: None,
 
                 stack_status_by_repo: HashMap::new(),
-                stack_status_gen_by_repo: HashMap::new(),
+                stack_status_gen_by_repo: crate::jobs::latest::LatestByKey::default(),
 
                 list_mode: DiffListMode::Files,
                 commits_by_repo: HashMap::new(),
                 commits_loading_by_repo: HashMap::new(),
                 commits_has_more_by_repo: HashMap::new(),
                 selected_commit_index: 0,
-                commit_preview_gen: 0,
+                commit_preview_gen: crate::jobs::latest::LatestGen::default(),
                 commit_preview_text: None,
                 commit_preview_lines: vec![Line::from("No commit selected")],
                 commit_preview_render_width: 0,

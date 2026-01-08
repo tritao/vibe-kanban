@@ -8,7 +8,7 @@ use crate::{
         push_task_attempt_branch_http, rebase_task_attempt_http,
     },
     state::AppState,
-    store::git_status::{GitActionBlockSeverity, GitRepoAction, RepoStatuses},
+    store::repo_status::{GitActionBlockSeverity, GitRepoAction, RepoStatuses},
     ui::DiffRepoAction,
 };
 

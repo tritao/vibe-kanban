@@ -13,7 +13,13 @@ pub(crate) async fn update_task_status_http(
     let client = http_client()?;
 
     let endpoint = url(base_url, &format!("/api/tasks/{task_id}"));
-    let body = serde_json::json!({ "status": status.as_api_str() });
+    #[derive(Debug, serde::Serialize)]
+    struct UpdateTaskStatusRequest<'a> {
+        status: &'a str,
+    }
+    let body = UpdateTaskStatusRequest {
+        status: status.as_api_str(),
+    };
 
     let resp = client.put(endpoint).json(&body).send().await?;
     let api = decode_api_response::<()>(resp).await?;
@@ -54,16 +60,27 @@ pub(crate) async fn create_task_http(
     let client = http_client()?;
 
     let endpoint = url(base_url, "/api/tasks");
-    let body = serde_json::json!({
-        "project_id": project_id,
-        "title": title,
-        "description": description,
-        "status": status.as_api_str(),
-        "parent_task_id": parent_task_id,
-        "parent_workspace_id": null,
-        "image_ids": null,
-        "shared_task_id": null,
-    });
+    #[derive(Debug, serde::Serialize)]
+    struct CreateTaskRequest<'a> {
+        project_id: Uuid,
+        title: &'a str,
+        description: Option<&'a str>,
+        status: &'a str,
+        parent_task_id: Option<Uuid>,
+        parent_workspace_id: Option<Uuid>,
+        image_ids: Option<Vec<Uuid>>,
+        shared_task_id: Option<Uuid>,
+    }
+    let body = CreateTaskRequest {
+        project_id,
+        title,
+        description,
+        status: status.as_api_str(),
+        parent_task_id,
+        parent_workspace_id: None,
+        image_ids: None,
+        shared_task_id: None,
+    };
 
     #[derive(Debug, serde::Deserialize)]
     struct CreatedTaskDto {

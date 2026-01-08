@@ -1,10 +1,11 @@
-use std::{collections::HashMap, future::Future};
+use std::future::Future;
 
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::{
     events::NetEvent,
+    jobs::latest::{LatestByKey, LatestGen},
     state::{AppState, JobKey},
 };
 
@@ -15,7 +16,7 @@ pub(crate) fn run_latest<GetGen, F, Fut>(
     job: F,
 ) -> u64
 where
-    GetGen: FnOnce(&mut AppState) -> &mut u64,
+    GetGen: FnOnce(&mut AppState) -> &mut LatestGen,
     F: FnOnce(String, mpsc::Sender<NetEvent>, u64) -> Fut,
     Fut: Future<Output = ()> + Send + 'static,
 {
@@ -30,7 +31,7 @@ pub(crate) fn run_latest_for_repo<GetMap, F, Fut>(
     job: F,
 ) -> u64
 where
-    GetMap: FnOnce(&mut AppState) -> &mut HashMap<Uuid, u64>,
+    GetMap: FnOnce(&mut AppState) -> &mut LatestByKey<Uuid>,
     F: FnOnce(String, mpsc::Sender<NetEvent>, u64) -> Fut,
     Fut: Future<Output = ()> + Send + 'static,
 {

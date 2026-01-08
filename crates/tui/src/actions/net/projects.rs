@@ -48,8 +48,7 @@ pub(super) fn project_match_result(app: &mut AppState, project_id: Option<uuid::
 }
 
 pub(super) fn projects_stream_status(app: &mut AppState, status: StreamStatus) -> bool {
-    app.board.projects_status = status;
-    true
+    super::stream::apply_status(&mut app.board.projects_status, status)
 }
 
 pub(super) fn projects_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {

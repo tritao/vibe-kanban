@@ -59,7 +59,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
             || app.exec.log_prewarm_job_width != Some(target_width)
         {
             app.exec.log_prewarm_job_width = Some(target_width);
-            let generation = crate::jobs::latest::next_generation(&mut app.exec.log_prewarm_gen);
+            let generation = app.exec.log_prewarm_gen.next();
             let log_mode = app.exec.log_mode;
             let render_mode = app.exec.log_render_mode;
             let diff_theme = app.diff.diff_theme;

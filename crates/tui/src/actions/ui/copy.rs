@@ -26,14 +26,7 @@ pub(super) fn reduce_copy(app: &mut AppState, target: CopyTarget) -> Vec<Effect>
             let len = app.exec.log_lines.len();
             let max_render = area.height.saturating_sub(2) as usize;
             let visible = max_render.min(len).max(1);
-            let mut offset = if app.exec.log_autoscroll {
-                0
-            } else {
-                app.exec.log_scroll_offset
-            };
-            offset = offset.min(len.saturating_sub(visible));
-            let start = len.saturating_sub(visible + offset);
-            let end = len.saturating_sub(offset);
+            let (start, end) = app.exec.log_scroll.visible_range(len, visible);
             crate::util::lines_plain_text(app.exec.log_lines.get(start..end).unwrap_or(&[]))
         }),
         CopyTarget::DiffFiles => {

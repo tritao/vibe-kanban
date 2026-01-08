@@ -177,7 +177,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
         KeyCode::Char('d') => {
             app.diff.diff_stats_only = !app.diff.diff_stats_only;
             let _ = app.diff_stats_tx.send(app.diff.diff_stats_only);
-            app.diff.diff_scroll_offset = 0;
+            app.diff.diff_scroll.offset = 0;
             true
         }
         KeyCode::Char('K') => {

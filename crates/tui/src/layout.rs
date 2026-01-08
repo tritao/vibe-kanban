@@ -117,23 +117,12 @@ pub(crate) fn clamp_scroll_offsets(app: &mut AppState, layout: MainLayoutRects) 
         let len = app.exec.log_lines.len();
         let height = layout.exec_logs.height.saturating_sub(2) as usize;
         let visible = height.min(len);
-        let max_offset = len.saturating_sub(visible);
-
-        if app.exec.log_autoscroll {
-            if app.exec.log_scroll_offset != 0 {
-                app.exec.log_scroll_offset = 0;
-                changed = true;
-            }
-        } else {
-            let next = app.exec.log_scroll_offset.min(max_offset);
-            if next != app.exec.log_scroll_offset {
-                app.exec.log_scroll_offset = next;
-                changed = true;
-            }
-            if app.exec.log_scroll_offset == 0 && !app.exec.log_autoscroll {
-                app.exec.log_autoscroll = true;
-                changed = true;
-            }
+        let before = app.exec.log_scroll;
+        let mut next = before;
+        next.normalize(len, visible);
+        if next.offset_from_end != before.offset_from_end || next.autoscroll != before.autoscroll {
+            app.exec.log_scroll = next;
+            changed = true;
         }
     }
 
@@ -142,11 +131,11 @@ pub(crate) fn clamp_scroll_offsets(app: &mut AppState, layout: MainLayoutRects) 
         let len = app.diff.diff_preview_lines.len();
         let height = layout.diff_preview.height.saturating_sub(2) as usize;
         let visible = height.min(len);
-        let max_start = len.saturating_sub(visible);
-
-        let next = app.diff.diff_scroll_offset.min(max_start);
-        if next != app.diff.diff_scroll_offset {
-            app.diff.diff_scroll_offset = next;
+        let before = app.diff.diff_scroll;
+        let mut next = before;
+        next.normalize(len, visible);
+        if next.offset != before.offset {
+            app.diff.diff_scroll = next;
             changed = true;
         }
     }

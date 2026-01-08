@@ -11,7 +11,6 @@ pub(crate) mod list_nav;
 pub(crate) mod loading;
 pub(crate) mod loading_placeholders;
 pub(crate) mod messages;
-pub(crate) mod metrics;
 pub(crate) mod modals;
 pub(crate) mod palette;
 pub(crate) mod scroll;

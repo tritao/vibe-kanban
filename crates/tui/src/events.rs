@@ -64,7 +64,7 @@ pub(crate) enum NetEvent {
     ExecutorProfilesLoaded {
         available: Vec<String>,
         selected: Option<ExecutorProfileSelection>,
-        profiles_executors: serde_json::Value,
+        profiles_executors: crate::store::executor_profiles::ExecutorProfilesOwned,
     },
     ProjectCreated {
         project_id: Uuid,

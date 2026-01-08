@@ -22,15 +22,25 @@ pub(crate) async fn create_project_http(
     let client = http_client()?;
 
     let endpoint = url(base_url, "/api/projects");
-    let body = serde_json::json!({
-        "name": name,
-        "repositories": [
-            {
-                "display_name": display_name,
-                "git_repo_path": repo_path,
-            }
-        ],
-    });
+    #[derive(Debug, serde::Serialize)]
+    struct CreateProjectRepoSpec<'a> {
+        display_name: &'a str,
+        git_repo_path: &'a str,
+    }
+
+    #[derive(Debug, serde::Serialize)]
+    struct CreateProjectRequest<'a> {
+        name: &'a str,
+        repositories: Vec<CreateProjectRepoSpec<'a>>,
+    }
+
+    let body = CreateProjectRequest {
+        name,
+        repositories: vec![CreateProjectRepoSpec {
+            display_name,
+            git_repo_path: repo_path,
+        }],
+    };
 
     let resp = client.post(endpoint).json(&body).send().await?;
     let api = decode_api_response::<ProjectIdDto>(resp).await?;
@@ -55,10 +65,16 @@ pub(crate) async fn add_project_repository_http(
         base_url,
         &format!("/api/projects/{project_id}/repositories"),
     );
-    let body = serde_json::json!({
-        "display_name": display_name,
-        "git_repo_path": repo_path,
-    });
+    #[derive(Debug, serde::Serialize)]
+    struct AddRepoRequest<'a> {
+        display_name: &'a str,
+        git_repo_path: &'a str,
+    }
+
+    let body = AddRepoRequest {
+        display_name,
+        git_repo_path: repo_path,
+    };
 
     let resp = client.post(endpoint).json(&body).send().await?;
     let api = decode_api_response::<()>(resp).await?;
@@ -74,10 +90,7 @@ pub(crate) async fn find_project_for_repo_path_http(
 ) -> anyhow::Result<Option<Uuid>> {
     let client = http_client()?;
 
-    let target = std::fs::canonicalize(repo_path)
-        .unwrap_or_else(|_| std::path::PathBuf::from(repo_path))
-        .to_string_lossy()
-        .to_string();
+    let target = crate::util::canonicalize_path_lossy(repo_path);
 
     let endpoint = url(base_url, "/api/projects");
     let resp = client.get(endpoint).send().await?;
@@ -103,10 +116,7 @@ pub(crate) async fn find_project_for_repo_path_http(
         for r in repos {
             let path_str = r.path;
             if !path_str.trim().is_empty() {
-                let p2 = std::fs::canonicalize(&path_str)
-                    .unwrap_or_else(|_| std::path::PathBuf::from(path_str))
-                    .to_string_lossy()
-                    .to_string();
+                let p2 = crate::util::canonicalize_path_lossy(&path_str);
                 if p2 == target {
                     return Ok(Some(project_id));
                 }

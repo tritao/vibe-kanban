@@ -11,18 +11,11 @@ use crate::{
 const COMMIT_FILES_MARKER: &str = "----8<---- VK-FILES ----8<----";
 const COMMIT_LIST_PAGE_SIZE: usize = 80;
 
-fn sanitize_for_terminal(s: &str) -> String {
-    // Tabs cause cursor jumps in terminals but are treated as a single cell in ratatui buffers,
-    // which can leave visual artifacts when switching between lines of different lengths.
-    // `git show --name-status` uses tabs between status and path, so we expand them.
-    s.replace('\t', "    ").replace('\r', "")
-}
-
 pub(crate) fn sanitize_commit_preview_text(text: &str) -> String {
     // Keep this in sync with how we render the preview in the UI.
     // - Expand tabs (git name-status uses tabs).
     // - Strip CRs to avoid CRLF cursor oddities.
-    sanitize_for_terminal(text)
+    crate::text::sanitize_tui_text(text).into_owned()
 }
 
 pub(crate) fn ensure_commit_preview_rendered(app: &mut AppState, preview_width: u16) -> bool {
@@ -290,13 +283,13 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
 pub(crate) fn select_commits_mode(app: &mut AppState) {
     app.diff.list_mode = DiffListMode::Commits;
     app.diff.selected_commit_index = 0;
-    app.diff.diff_scroll_offset = 0;
+    app.diff.diff_scroll.offset = 0;
     request_commit_list_refresh(app);
 }
 
 pub(crate) fn select_files_mode(app: &mut AppState) {
     app.diff.list_mode = DiffListMode::Files;
-    app.diff.diff_scroll_offset = 0;
+    app.diff.diff_scroll.offset = 0;
 }
 
 pub(crate) fn apply_commit_list_page(

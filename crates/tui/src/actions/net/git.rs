@@ -45,7 +45,10 @@ pub(super) fn stack_status_loaded(
     status: StackStatusResponse,
     generation: u64,
 ) -> NetApplyResult {
-    if !crate::jobs::latest::is_latest_for(&app.diff.stack_status_gen_by_repo, repo_id, generation)
+    if !app
+        .diff
+        .stack_status_gen_by_repo
+        .is_latest_for(&repo_id, generation)
     {
         return NetApplyResult::changed(true);
     }
@@ -80,7 +83,7 @@ pub(super) fn commit_preview_loaded(
         .repo_statuses
         .get(app.diff.selected_repo_index)
         .map(|r| r.repo_id);
-    if selected_repo_id == Some(repo_id) && generation == app.diff.commit_preview_gen {
+    if selected_repo_id == Some(repo_id) && app.diff.commit_preview_gen.is_latest(generation) {
         app.ui
             .clear_error_scope(crate::state::UiMessageKey::CommitPreview);
         app.diff.commit_preview_text = Some(crate::commands::sanitize_commit_preview_text(&text));
@@ -101,7 +104,7 @@ pub(super) fn commit_preview_failed(
         .repo_statuses
         .get(app.diff.selected_repo_index)
         .map(|r| r.repo_id);
-    if selected_repo_id == Some(repo_id) && generation == app.diff.commit_preview_gen {
+    if selected_repo_id == Some(repo_id) && app.diff.commit_preview_gen.is_latest(generation) {
         app.diff.commit_preview_text = None;
         app.diff.commit_preview_lines = vec![ratatui::text::Line::from(message)];
         app.diff.commit_preview_render_width = 0;

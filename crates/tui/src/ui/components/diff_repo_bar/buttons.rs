@@ -6,7 +6,7 @@ use super::{DiffRepoAction, shared};
 use crate::{
     events::GitOpKind,
     state::{AppState, RepoBranchStatus},
-    store::git_status::RepoStatusRef,
+    store::repo_status::RepoStatusRef,
     ui::button_row::ButtonSpec,
 };
 

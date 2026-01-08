@@ -9,7 +9,7 @@ pub(super) fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Res
     };
 
     if tokens.len() == 1 {
-        let store = ExecutorProfilesStore::new(&app.ui.executor_profiles);
+        let store = ExecutorProfilesStore::new(app.ui.executor_profiles.as_value());
         let (model, effort) = store.current_model_and_effort(&selection);
         let model = model.unwrap_or_else(|| "unset".to_string());
         let effort = effort.unwrap_or_else(|| "unset".to_string());

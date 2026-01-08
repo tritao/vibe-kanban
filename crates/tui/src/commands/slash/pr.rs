@@ -11,7 +11,7 @@ use crate::{
     },
     state::AppState,
     store::{
-        git_status::{GitActionBlockSeverity, GitRepoAction, RepoStatusRef, RepoStatuses},
+        repo_status::{GitActionBlockSeverity, GitRepoAction, RepoStatusRef, RepoStatuses},
         tasks_list::find_task,
     },
 };

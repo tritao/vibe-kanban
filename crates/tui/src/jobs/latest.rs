@@ -1,18 +1,43 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
 
-use uuid::Uuid;
-
-pub(crate) fn next_generation(counter: &mut u64) -> u64 {
-    *counter = counter.wrapping_add(1);
-    *counter
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct LatestGen {
+    cur: u64,
 }
 
-pub(crate) fn next_generation_for(map: &mut HashMap<Uuid, u64>, key: Uuid) -> u64 {
-    let next = map.get(&key).copied().unwrap_or(0).wrapping_add(1);
-    map.insert(key, next);
-    next
+impl LatestGen {
+    pub(crate) fn next(&mut self) -> u64 {
+        self.cur = self.cur.wrapping_add(1);
+        self.cur
+    }
+
+    pub(crate) fn current(&self) -> u64 {
+        self.cur
+    }
+
+    pub(crate) fn is_latest(&self, generation: u64) -> bool {
+        self.cur == generation
+    }
 }
 
-pub(crate) fn is_latest_for(map: &HashMap<Uuid, u64>, key: Uuid, generation: u64) -> bool {
-    map.get(&key).copied().unwrap_or(0) == generation
+#[derive(Debug, Default)]
+pub(crate) struct LatestByKey<K: Eq + Hash> {
+    gens: HashMap<K, u64>,
+}
+
+impl<K: Eq + Hash> LatestByKey<K> {
+    pub(crate) fn next_for(&mut self, key: K) -> u64 {
+        let next = self.gens.get(&key).copied().unwrap_or(0).wrapping_add(1);
+        self.gens.insert(key, next);
+        next
+    }
+
+    pub(crate) fn is_latest_for(&self, key: &K, generation: u64) -> bool {
+        self.gens.get(key).copied().unwrap_or(0) == generation
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn current_for(&self, key: &K) -> u64 {
+        self.gens.get(key).copied().unwrap_or(0)
+    }
 }

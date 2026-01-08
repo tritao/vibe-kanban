@@ -200,7 +200,7 @@ pub(crate) fn composer_completion_items(app: &AppState) -> Vec<CompletionItem> {
         }
         "model" => {
             let selection = app.ui.selected_executor_profile.as_ref();
-            let store = ExecutorProfilesStore::new(&app.ui.executor_profiles);
+            let store = ExecutorProfilesStore::new(app.ui.executor_profiles.as_value());
             let exec_key = store
                 .resolve_executor_key(selection)
                 .unwrap_or("")

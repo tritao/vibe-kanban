@@ -5,12 +5,12 @@ use crate::{
 };
 
 pub(super) fn log_stream_status(app: &mut AppState, status: StreamStatus) -> bool {
-    app.exec.log_status = status;
-    if matches!(status, StreamStatus::Connected | StreamStatus::Completed) {
-        app.ui
-            .clear_error_scope(crate::state::UiMessageKey::LogStreamConnect);
-    }
-    true
+    super::stream::apply_status_clear_error_on_connected(
+        &mut app.ui,
+        &mut app.exec.log_status,
+        status,
+        crate::state::UiMessageKey::LogStreamConnect,
+    )
 }
 
 pub(super) fn log_reset(app: &mut AppState, exec_id: Option<uuid::Uuid>) -> bool {
@@ -34,7 +34,7 @@ pub(super) fn log_prewarm_ready(
     generation: u64,
     cache: crate::logs::PreparedLogCache,
 ) -> bool {
-    if generation != app.exec.log_prewarm_gen {
+    if !app.exec.log_prewarm_gen.is_latest(generation) {
         return false;
     }
     if width != app.exec.log_target_render_width {

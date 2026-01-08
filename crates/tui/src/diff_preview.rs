@@ -94,7 +94,7 @@ pub(crate) fn diff_preview_refresh_ready(app: &AppState, now: Instant) -> bool {
 }
 
 pub(crate) fn cancel_diff_preview_job(app: &mut AppState) {
-    crate::jobs::latest::next_generation(&mut app.diff.diff_preview_gen);
+    app.diff.diff_preview_gen.next();
     cancel_job(app, JobKey::DiffPreview);
     app.diff.diff_preview_loading.stop();
 }
@@ -102,7 +102,7 @@ pub(crate) fn cancel_diff_preview_job(app: &mut AppState) {
 pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
     cancel_diff_preview_job(app);
 
-    let generation = app.diff.diff_preview_gen;
+    let generation = app.diff.diff_preview_gen.current();
     let width_u16 = (width.min(u16::MAX as usize)) as u16;
     let req = build_diff_preview_request(
         &app.diff.diff_store,

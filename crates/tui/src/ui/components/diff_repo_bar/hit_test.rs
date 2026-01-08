@@ -6,7 +6,7 @@ use super::{DiffRepoAction, badges, buttons, shared};
 use crate::{
     layout::rect_contains,
     state::AppState,
-    store::git_status::RepoStatusRef,
+    store::repo_status::RepoStatusRef,
     text::{display_width, truncate_to_width},
     ui::button_row::{button_row_plain, hit_test_button_row},
 };

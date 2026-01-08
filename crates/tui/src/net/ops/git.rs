@@ -221,10 +221,15 @@ pub(crate) async fn change_target_branch_http(
         base_url,
         &format!("/api/task-attempts/{attempt_id}/change-target-branch"),
     );
-    let body = serde_json::json!({
-        "repo_id": repo_id,
-        "new_target_branch": new_target_branch,
-    });
+    #[derive(Debug, serde::Serialize)]
+    struct ChangeTargetBranchRequest<'a> {
+        repo_id: Uuid,
+        new_target_branch: &'a str,
+    }
+    let body = ChangeTargetBranchRequest {
+        repo_id,
+        new_target_branch,
+    };
     let resp = client.post(endpoint).json(&body).send().await?;
     let api = decode_api_response::<()>(resp).await?;
     if !api.is_success() {
@@ -244,10 +249,15 @@ pub(crate) async fn checkout_attempt_branch_http(
         base_url,
         &format!("/api/task-attempts/{attempt_id}/checkout-branch"),
     );
-    let body = serde_json::json!({
-        "branch": branch,
-        "force": false,
-    });
+    #[derive(Debug, serde::Serialize)]
+    struct CheckoutAttemptBranchRequest<'a> {
+        branch: &'a str,
+        force: bool,
+    }
+    let body = CheckoutAttemptBranchRequest {
+        branch,
+        force: false,
+    };
     let resp = client.post(endpoint).json(&body).send().await?;
     let api = decode_api_response::<()>(resp).await?;
     if !api.is_success() {

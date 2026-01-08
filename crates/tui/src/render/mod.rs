@@ -36,5 +36,4 @@ pub(crate) fn render(f: &mut Frame, app: &AppState) {
     render_composer_autocomplete(f, app, layout.exec_input);
 
     crate::ui::modals::render_overlays(f, app);
-    crate::ui::metrics::render_debug_overlay(f, app);
 }

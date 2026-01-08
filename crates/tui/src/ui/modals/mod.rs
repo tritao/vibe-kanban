@@ -7,6 +7,7 @@ mod branch_picker;
 mod component;
 mod confirm;
 mod create_task;
+mod debug_overlay;
 mod help;
 mod input;
 mod project_setup;
@@ -33,6 +34,9 @@ static RENDER_ORDER: [&dyn ModalComponent; 6] = [
     &project_setup::MODAL,
     &branch_picker::MODAL,
 ];
+
+// Non-interactive overlays (render-only).
+static OVERLAY_ORDER: [&dyn ModalComponent; 1] = [&debug_overlay::OVERLAY];
 
 pub(crate) fn open_help(app: &mut AppState) {
     app.ui.show_help = true;
@@ -84,6 +88,11 @@ pub(crate) fn render_overlays(f: &mut Frame, app: &AppState) {
     for m in RENDER_ORDER {
         if m.is_open(app) {
             m.render(f, app);
+        }
+    }
+    for o in OVERLAY_ORDER {
+        if o.is_open(app) {
+            o.render(f, app);
         }
     }
 }

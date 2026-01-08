@@ -3,7 +3,6 @@ pub(crate) mod diff_rows;
 pub(crate) mod exec;
 pub(crate) mod exec_list;
 pub(crate) mod executor_profiles;
-pub(crate) mod git_status;
 pub(crate) mod info;
 pub(crate) mod log_entry;
 pub(crate) mod log_patch;

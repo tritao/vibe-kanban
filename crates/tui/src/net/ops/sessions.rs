@@ -58,7 +58,15 @@ pub(crate) async fn queue_follow_up_http(
     let client = http_client()?;
 
     let endpoint = url(base_url, &format!("/api/sessions/{session_id}/queue"));
-    let body = serde_json::json!({ "message": message, "variant": null });
+    #[derive(Debug, serde::Serialize)]
+    struct QueueFollowUpRequest<'a> {
+        message: &'a str,
+        variant: Option<&'a str>,
+    }
+    let body = QueueFollowUpRequest {
+        message,
+        variant: None,
+    };
 
     let resp = client.post(endpoint).json(&body).send().await?;
     let status = resp.status();
@@ -82,13 +90,21 @@ pub(crate) async fn follow_up_http(
     let client = http_client()?;
 
     let endpoint = url(base_url, &format!("/api/sessions/{session_id}/follow-up"));
-    let body = serde_json::json!({
-        "prompt": prompt,
-        "variant": null,
-        "retry_process_id": null,
-        "force_when_dirty": null,
-        "perform_git_reset": null,
-    });
+    #[derive(Debug, serde::Serialize)]
+    struct FollowUpRequest<'a> {
+        prompt: &'a str,
+        variant: Option<&'a str>,
+        retry_process_id: Option<Uuid>,
+        force_when_dirty: Option<bool>,
+        perform_git_reset: Option<bool>,
+    }
+    let body = FollowUpRequest {
+        prompt,
+        variant: None,
+        retry_process_id: None,
+        force_when_dirty: None,
+        perform_git_reset: None,
+    };
 
     let resp = client.post(endpoint).json(&body).send().await?;
     let status = resp.status();

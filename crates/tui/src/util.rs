@@ -55,3 +55,10 @@ pub(crate) fn window_for_list(len: usize, selected: usize, height: usize) -> (us
     let end = (start + height).min(len);
     (start, end, selected.saturating_sub(start))
 }
+
+pub(crate) fn canonicalize_path_lossy(path: &str) -> String {
+    std::fs::canonicalize(path)
+        .unwrap_or_else(|_| std::path::PathBuf::from(path))
+        .to_string_lossy()
+        .to_string()
+}
