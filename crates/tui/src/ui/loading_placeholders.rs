@@ -39,3 +39,30 @@ pub(crate) fn tick_with_placeholder(
     }
     dirty
 }
+
+pub(crate) struct NoticePlaceholder {
+    pub(crate) dirty: bool,
+    pub(crate) show_notice: bool,
+}
+
+pub(crate) fn tick_notice_placeholder(
+    now: Instant,
+    state: &mut LoadingState,
+    is_running: bool,
+    should_show: bool,
+) -> NoticePlaceholder {
+    let mut dirty = false;
+    if state.pending && !is_running {
+        state.stop();
+        dirty = true;
+    }
+    if state.tick(now, is_running) {
+        dirty = true;
+    }
+    let show_notice = state.visible() && state.placeholder_pending && should_show;
+    if show_notice {
+        state.placeholder_pending = false;
+        dirty = true;
+    }
+    NoticePlaceholder { dirty, show_notice }
+}

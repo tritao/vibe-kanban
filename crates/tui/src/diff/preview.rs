@@ -67,32 +67,15 @@ pub(crate) fn build_diff_preview_request(
     if selected.key == DIFF_ALL_KEY {
         let mut items: Vec<DiffPreviewItem> = vec![];
         for row in rows.iter().skip(1) {
-            let Some(content) = store.entry_content(&row.key) else {
+            let Some(content) = store.entry_content_info(&row.key) else {
                 continue;
             };
 
-            let omitted = content
-                .get("contentOmitted")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let adds = content
-                .get("additions")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let dels = content
-                .get("deletions")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
-            let old = content
-                .get("oldContent")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            let new = content
-                .get("newContent")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+            let omitted = content.omitted();
+            let adds = content.additions();
+            let dels = content.deletions();
+            let old = content.old_content().to_string();
+            let new = content.new_content().to_string();
             let highlight_path = row
                 .new_path
                 .as_deref()
@@ -112,7 +95,7 @@ pub(crate) fn build_diff_preview_request(
         return DiffPreviewRequest::All { items };
     }
 
-    let content = store.entry_content(&selected.key);
+    let content = store.entry_content_info(&selected.key);
     let Some(content) = content else {
         return DiffPreviewRequest::Single {
             key: selected.key.clone(),
@@ -130,28 +113,11 @@ pub(crate) fn build_diff_preview_request(
         };
     };
 
-    let omitted = content
-        .get("contentOmitted")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    let adds = content
-        .get("additions")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    let dels = content
-        .get("deletions")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    let old = content
-        .get("oldContent")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    let new = content
-        .get("newContent")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+    let omitted = content.omitted();
+    let adds = content.additions();
+    let dels = content.deletions();
+    let old = content.old_content().to_string();
+    let new = content.new_content().to_string();
     let highlight_path = selected
         .new_path
         .as_deref()

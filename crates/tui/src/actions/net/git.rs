@@ -44,15 +44,15 @@ pub(super) fn stack_status_loaded(
     repo_id: uuid::Uuid,
     status: StackStatusResponse,
     generation: u64,
-) -> bool {
+) -> NetApplyResult {
     if !crate::jobs::latest::is_latest_for(&app.diff.stack_status_gen_by_repo, repo_id, generation)
     {
-        return true;
+        return NetApplyResult::changed(true);
     }
     app.ui
         .clear_error_scope(crate::state::UiMessageKey::StackOp);
     app.diff.stack_status_by_repo.insert(repo_id, status);
-    true
+    NetApplyResult::changed(true)
 }
 
 pub(super) fn commit_list_loaded(
@@ -61,11 +61,11 @@ pub(super) fn commit_list_loaded(
     commits: Vec<crate::state::CommitEntry>,
     append: bool,
     has_more: bool,
-) -> bool {
+) -> NetApplyResult {
     app.ui
         .clear_error_scope(crate::state::UiMessageKey::CommitList);
     crate::commands::apply_commit_list_page(app, repo_id, commits, append, has_more);
-    true
+    NetApplyResult::changed(true)
 }
 
 pub(super) fn commit_preview_loaded(
@@ -73,7 +73,7 @@ pub(super) fn commit_preview_loaded(
     repo_id: uuid::Uuid,
     text: String,
     generation: u64,
-) -> bool {
+) -> NetApplyResult {
     // Only update the preview if we're still looking at this repo.
     let selected_repo_id = app
         .diff
@@ -87,7 +87,7 @@ pub(super) fn commit_preview_loaded(
         app.diff.commit_preview_render_width = 0;
         app.diff.commit_preview_loading.stop();
     }
-    true
+    NetApplyResult::changed(true)
 }
 
 pub(super) fn commit_preview_failed(
@@ -95,7 +95,7 @@ pub(super) fn commit_preview_failed(
     repo_id: uuid::Uuid,
     message: String,
     generation: u64,
-) -> bool {
+) -> NetApplyResult {
     let selected_repo_id = app
         .diff
         .repo_statuses
@@ -107,14 +107,14 @@ pub(super) fn commit_preview_failed(
         app.diff.commit_preview_render_width = 0;
         app.diff.commit_preview_loading.stop();
     }
-    true
+    NetApplyResult::changed(true)
 }
 
-pub(super) fn commit_list_failed(app: &mut AppState, repo_id: uuid::Uuid) -> bool {
+pub(super) fn commit_list_failed(app: &mut AppState, repo_id: uuid::Uuid) -> NetApplyResult {
     app.diff
         .commits_loading_by_repo
         .entry(repo_id)
         .or_default()
         .stop();
-    true
+    NetApplyResult::changed(true)
 }

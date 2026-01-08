@@ -156,22 +156,16 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     // job runs (prevents flicker on fast responses).
     let branch_running =
         job_running(app, JobKey::BranchStatus) || job_running(app, JobKey::BranchStatusAuto);
-    if app.diff.branch_status_loading_notice.pending && !branch_running {
-        app.diff.branch_status_loading_notice.stop();
+    let placeholder = crate::ui::loading_placeholders::tick_notice_placeholder(
+        now,
+        &mut app.diff.branch_status_loading_notice,
+        branch_running,
+        app.diff.repo_statuses.is_empty(),
+    );
+    if placeholder.dirty {
         dirty = true;
     }
-    if app
-        .diff
-        .branch_status_loading_notice
-        .tick(now, branch_running)
-    {
-        dirty = true;
-    }
-    if app.diff.branch_status_loading_notice.visible()
-        && app.diff.branch_status_loading_notice.placeholder_pending
-        && app.diff.repo_statuses.is_empty()
-    {
-        app.diff.branch_status_loading_notice.placeholder_pending = false;
+    if placeholder.show_notice {
         app.ui.set_notice("Loading repos…");
         dirty = true;
     }

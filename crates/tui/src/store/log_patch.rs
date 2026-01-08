@@ -25,17 +25,12 @@ pub(crate) fn entries_array_mut(store: &mut Value) -> &mut Vec<Value> {
         .expect("entries array")
 }
 
-pub(crate) fn parse_entries_index_and_suffix(path: &str) -> Option<(usize, &str)> {
+pub(crate) fn parse_entries_index_and_is_exact_entry(path: &str) -> Option<(usize, bool)> {
     let rest = path.strip_prefix("/entries/")?;
-    let (idx, suffix) = match rest.split_once('/') {
-        Some((a, b)) => (a, Some(b)),
-        None => (rest, None),
+    let (idx, has_suffix) = match rest.split_once('/') {
+        Some((a, _b)) => (a, true),
+        None => (rest, false),
     };
     let i = idx.parse::<usize>().ok()?;
-    let suffix = suffix.map(|s| {
-        // Re-add leading slash so callers can reuse it as a JSON pointer suffix.
-        // SAFETY: stored for the duration of this function call chain.
-        Box::leak(format!("/{s}").into_boxed_str()) as &str
-    });
-    Some((i, suffix.unwrap_or("")))
+    Some((i, !has_suffix))
 }

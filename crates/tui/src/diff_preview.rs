@@ -22,6 +22,44 @@ pub(crate) fn diff_patch_touches_key(patch: &json_patch::Patch, key: &str) -> bo
     })
 }
 
+pub(crate) fn on_diff_entries_patched(app: &mut AppState, patch: &json_patch::Patch) {
+    use crate::diff::DIFF_ALL_KEY;
+
+    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+        .rows_with_all_filtered(app.diff.diff_show_untracked);
+    if rows.is_empty() {
+        return;
+    }
+
+    let selected_index = app
+        .diff
+        .selected_diff_index
+        .min(rows.len().saturating_sub(1));
+    let selected_key = rows
+        .get(selected_index)
+        .map(|r| r.key.as_str())
+        .unwrap_or(DIFF_ALL_KEY);
+
+    let should_refresh = if selected_key == DIFF_ALL_KEY {
+        true
+    } else {
+        diff_patch_touches_key(patch, selected_key)
+    };
+    if !should_refresh {
+        return;
+    }
+
+    app.diff.invalidate_diff_preview_cache();
+    // The diff stream can send many patches during initial load (one per file). Rebuilding the
+    // combined "__ALL__" preview on every patch is very expensive and looks like the view is
+    // “growing” line-by-line. Debounce in ALL mode.
+    if selected_key == DIFF_ALL_KEY {
+        schedule_diff_preview_refresh_debounced(app, crate::ui::constants::DIFF_ALL_DEBOUNCE_DELAY);
+    } else {
+        schedule_diff_preview_refresh(app, crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY);
+    }
+}
+
 pub(crate) fn schedule_diff_preview_refresh(app: &mut AppState, delay: Duration) {
     // Cancel any in-flight diff preview generation; a newer one will replace it.
     cancel_diff_preview_job(app);

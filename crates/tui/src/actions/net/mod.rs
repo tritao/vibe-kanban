@@ -73,9 +73,7 @@ impl NetEvent {
                 cache_hash,
                 width,
                 lines,
-            } => NetApplyResult::changed(diff::diff_preview_ready(
-                app, generation, cache_key, cache_hash, width, lines,
-            )),
+            } => diff::diff_preview_ready(app, generation, cache_key, cache_hash, width, lines),
             NetEvent::LogPrewarmReady {
                 exec_id,
                 width,
@@ -105,34 +103,24 @@ impl NetEvent {
                 repo_id,
                 status,
                 generation,
-            } => {
-                NetApplyResult::changed(git::stack_status_loaded(app, repo_id, status, generation))
-            }
+            } => git::stack_status_loaded(app, repo_id, status, generation),
             NetEvent::CommitListLoaded {
                 repo_id,
                 commits,
                 append,
                 has_more,
-            } => NetApplyResult::changed(git::commit_list_loaded(
-                app, repo_id, commits, append, has_more,
-            )),
+            } => git::commit_list_loaded(app, repo_id, commits, append, has_more),
             NetEvent::CommitPreviewLoaded {
                 repo_id,
                 text,
                 generation,
-            } => {
-                NetApplyResult::changed(git::commit_preview_loaded(app, repo_id, text, generation))
-            }
+            } => git::commit_preview_loaded(app, repo_id, text, generation),
             NetEvent::CommitPreviewFailed {
                 repo_id,
                 message,
                 generation,
-            } => NetApplyResult::changed(git::commit_preview_failed(
-                app, repo_id, message, generation,
-            )),
-            NetEvent::CommitListFailed { repo_id } => {
-                NetApplyResult::changed(git::commit_list_failed(app, repo_id))
-            }
+            } => git::commit_preview_failed(app, repo_id, message, generation),
+            NetEvent::CommitListFailed { repo_id } => git::commit_list_failed(app, repo_id),
             NetEvent::TaskCreated { task_id, status } => {
                 NetApplyResult::changed(tasks::task_created(app, task_id, status))
             }

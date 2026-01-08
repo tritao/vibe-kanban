@@ -13,8 +13,10 @@ pub(super) fn apply_log_patch_resilient(
     let has_replay_add = patch.iter().any(|op| {
         if let json_patch::PatchOperation::Add(add) = op {
             let p = add.path.to_string();
-            if let Some((idx, suffix)) = log_patch::parse_entries_index_and_suffix(&p) {
-                return suffix.is_empty() && idx < existing_len;
+            if let Some((idx, is_exact_entry)) =
+                log_patch::parse_entries_index_and_is_exact_entry(&p)
+            {
+                return is_exact_entry && idx < existing_len;
             }
         }
         false
@@ -30,10 +32,12 @@ pub(super) fn apply_log_patch_resilient(
         match op {
             PatchOperation::Add(AddOperation { path, value }) => {
                 let p = path.to_string();
-                if let Some((idx, suffix)) = log_patch::parse_entries_index_and_suffix(&p) {
+                if let Some((idx, is_exact_entry)) =
+                    log_patch::parse_entries_index_and_is_exact_entry(&p)
+                {
                     log_patch::ensure_entries_array(store);
                     let entries = log_patch::entries_array_mut(store);
-                    if suffix.is_empty() {
+                    if is_exact_entry {
                         let v = value.clone();
                         // Idempotent semantics: if the index already exists (replay/reconnect),
                         // treat Add as Replace; otherwise append/insert.
@@ -55,10 +59,12 @@ pub(super) fn apply_log_patch_resilient(
             }
             PatchOperation::Replace(ReplaceOperation { path, value }) => {
                 let p = path.to_string();
-                if let Some((idx, suffix)) = log_patch::parse_entries_index_and_suffix(&p) {
+                if let Some((idx, is_exact_entry)) =
+                    log_patch::parse_entries_index_and_is_exact_entry(&p)
+                {
                     log_patch::ensure_entries_array(store);
                     let entries = log_patch::entries_array_mut(store);
-                    if suffix.is_empty() {
+                    if is_exact_entry {
                         let v = value.clone();
                         if idx < entries.len() {
                             entries[idx] = v;
@@ -78,10 +84,12 @@ pub(super) fn apply_log_patch_resilient(
             }
             PatchOperation::Remove(RemoveOperation { path }) => {
                 let p = path.to_string();
-                if let Some((idx, suffix)) = log_patch::parse_entries_index_and_suffix(&p) {
+                if let Some((idx, is_exact_entry)) =
+                    log_patch::parse_entries_index_and_is_exact_entry(&p)
+                {
                     log_patch::ensure_entries_array(store);
                     let entries = log_patch::entries_array_mut(store);
-                    if suffix.is_empty() {
+                    if is_exact_entry {
                         if idx < entries.len() {
                             entries.remove(idx);
                         }

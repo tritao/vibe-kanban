@@ -4,11 +4,7 @@ use super::apply::{NetApplyResult, NetEffects};
 use crate::{
     actions::selection as sel,
     commands::request_diff_reconnect,
-    diff::DIFF_ALL_KEY,
-    diff_preview::{
-        diff_patch_touches_key, schedule_diff_preview_refresh,
-        schedule_diff_preview_refresh_debounced,
-    },
+    diff_preview::on_diff_entries_patched,
     events::StreamStatus,
     state::{AppState, RepoBranchStatus},
 };
@@ -37,40 +33,7 @@ pub(super) fn diff_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
     if !touches_entries {
         return true;
     }
-
-    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
-        .rows_with_all_filtered(app.diff.diff_show_untracked);
-    if rows.is_empty() {
-        return true;
-    }
-    let sel = app
-        .diff
-        .selected_diff_index
-        .min(rows.len().saturating_sub(1));
-    let sel_key = rows
-        .get(sel)
-        .map(|r| r.key.as_str())
-        .unwrap_or(DIFF_ALL_KEY);
-
-    let should_refresh = if sel_key == DIFF_ALL_KEY {
-        true
-    } else {
-        diff_patch_touches_key(&patch, sel_key)
-    };
-    if should_refresh {
-        app.diff.invalidate_diff_preview_cache();
-        // The diff stream can send many patches during initial load (one per file).
-        // Rebuilding the combined "__ALL__" preview on every patch is very expensive and
-        // looks like the view is “growing” line-by-line. Debounce in ALL mode.
-        if sel_key == DIFF_ALL_KEY {
-            schedule_diff_preview_refresh_debounced(
-                app,
-                crate::ui::constants::DIFF_ALL_DEBOUNCE_DELAY,
-            );
-        } else {
-            schedule_diff_preview_refresh(app, crate::ui::constants::DIFF_PREVIEW_REFRESH_DELAY);
-        }
-    }
+    on_diff_entries_patched(app, &patch);
     true
 }
 
@@ -87,16 +50,16 @@ pub(super) fn diff_preview_ready(
     cache_hash: u64,
     width: u16,
     lines: Vec<ratatui::text::Line<'static>>,
-) -> bool {
+) -> super::apply::NetApplyResult {
     if generation != app.diff.diff_preview_gen {
-        return false;
+        return super::apply::NetApplyResult::changed(false);
     }
     app.diff.diff_preview_cache_key = cache_key;
     app.diff.diff_preview_cache_hash = cache_hash;
     app.diff.diff_preview_cache_width = width;
     app.diff.diff_preview_lines = lines;
     app.diff.diff_preview_loading.stop();
-    true
+    super::apply::NetApplyResult::changed(true)
 }
 
 pub(super) fn branch_status_loaded(
