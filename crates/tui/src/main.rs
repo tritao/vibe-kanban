@@ -95,9 +95,7 @@ fn spawn_tick(ui_tx: mpsc::Sender<UiEvent>, period: Duration) {
 fn handle_confirm_action(app: &mut AppState, action: ConfirmAction) {
     match action {
         ConfirmAction::StopExec { exec_id } => {
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match stop_exec_http(&base_url, exec_id).await {
                     Ok(()) => {}
                     Err(e) => {
@@ -112,13 +110,11 @@ fn handle_confirm_action(app: &mut AppState, action: ConfirmAction) {
             task_id,
             delete_mode,
         } => {
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
             let mode = match delete_mode {
                 crate::state::DeleteTaskMode::Promote => Some("promote"),
                 crate::state::DeleteTaskMode::Subtree => Some("subtree"),
             };
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match crate::net::ops::delete_task_http(&base_url, task_id, mode).await {
                     Ok(()) => {
                         let _ = net_tx

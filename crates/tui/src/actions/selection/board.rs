@@ -229,9 +229,7 @@ pub(crate) fn request_move_selected_task(app: &mut AppState, direction: i32) {
         return;
     };
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         if let Err(e) = crate::net::ops::update_task_status_http(&base_url, task_id, next).await {
             let _ = net_tx
                 .send(NetOpError::new("update task status", e).into_event())

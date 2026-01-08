@@ -101,10 +101,8 @@ pub(super) fn projects_patch(app: &mut AppState, patch: json_patch::Patch) -> bo
         && !app.ui.project_setup_dismissed
     {
         app.ui.launch_match_done = true;
-        let base_url = app.backend_url.clone();
-        let net_tx = app.net_tx.clone();
         let repo_path = app.ui.launch_repo_path.clone().unwrap_or_default();
-        tokio::spawn(async move {
+        crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
             let matched = find_project_for_repo_path_http(&base_url, &repo_path).await;
             match matched {
                 Ok(project_id) => {

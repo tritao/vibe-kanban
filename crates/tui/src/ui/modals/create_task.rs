@@ -477,9 +477,7 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
 
     crate::ui::toasts::info_short(app, "Creating task…");
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match crate::net::ops::create_task_http(
             &base_url,
             project_id,

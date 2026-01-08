@@ -103,12 +103,10 @@ pub(crate) fn handle_project_setup_key(app: &mut AppState, key: KeyEvent) -> boo
             };
             state.busy = true;
 
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
             let name = state.suggested_project_name.clone();
             let display_name = name.clone();
 
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match crate::net::ops::create_project_http(
                     &base_url,
                     &name,
@@ -156,10 +154,8 @@ pub(crate) fn handle_project_setup_key(app: &mut AppState, key: KeyEvent) -> boo
             };
 
             state.busy = true;
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
             let display_name = state.suggested_project_name.clone();
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match crate::net::ops::add_project_repository_http(
                     &base_url,
                     project_id,

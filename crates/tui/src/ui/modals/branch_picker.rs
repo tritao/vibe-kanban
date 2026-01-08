@@ -48,9 +48,7 @@ pub(crate) fn open_branch_picker(
         error: None,
     });
 
-    let base_url = app.backend_url.clone();
-    let net_tx = app.net_tx.clone();
-    tokio::spawn(async move {
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
         match crate::net::ops::repo_branches_http(&base_url, repo_id).await {
             Ok(branches) => {
                 let _ = net_tx
@@ -227,9 +225,7 @@ pub(crate) fn handle_branch_picker_key(app: &mut AppState, key: KeyEvent) -> boo
             let mode = state.mode;
             state.busy = true;
 
-            let base_url = app.backend_url.clone();
-            let net_tx = app.net_tx.clone();
-            tokio::spawn(async move {
+            crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 let result = match mode {
                     BranchPickerMode::Checkout => {
                         crate::net::ops::checkout_attempt_branch_http(

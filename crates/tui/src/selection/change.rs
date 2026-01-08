@@ -64,9 +64,7 @@ pub(crate) fn select_task(app: &mut AppState, task_id: Option<Uuid>) {
     select_attempt(app, None);
 
     if let Some(task_id) = task_id {
-        let base_url = app.backend_url.clone();
-        let net_tx = app.net_tx.clone();
-        tokio::spawn(async move {
+        crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
             tokio::time::sleep(Duration::from_millis(200)).await;
             net::load_attempts_task(base_url, task_id, net_tx).await;
         });
