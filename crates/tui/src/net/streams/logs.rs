@@ -20,10 +20,12 @@ pub(crate) async fn logs_stream_task(
 ) {
     let max_backoff = Duration::from_secs(8);
     let mut backoff = Duration::from_millis(250);
+    let mut connect_failures: u32 = 0;
 
     loop {
         let exec_id = *exec_rx.borrow();
         let Some(exec_id) = exec_id else {
+            connect_failures = 0;
             let _ = net_tx.send(NetEvent::LogReset(None)).await;
             let _ = net_tx
                 .send(NetEvent::LogStreamStatus(StreamStatus::Disconnected))
@@ -66,6 +68,7 @@ pub(crate) async fn logs_stream_task(
                     .send(NetEvent::LogStreamStatus(StreamStatus::Connected))
                     .await;
                 backoff = Duration::from_millis(250);
+                connect_failures = 0;
 
                 let mut finished = false;
                 loop {
@@ -167,18 +170,31 @@ pub(crate) async fn logs_stream_task(
                     .send(NetEvent::LogStreamStatus(StreamStatus::Disconnected))
                     .await;
                 backoff = Duration::from_millis(250);
+                connect_failures = 0;
             }
             Err(e) => {
+                // Startup is a common case where the backend isn't ready yet; avoid flashing a
+                // scary "connect failed" message for transient failures. After a few consecutive
+                // failures, surface the error normally.
+                connect_failures = connect_failures.saturating_add(1);
+                let report = connect_failures >= 3;
+
                 let _ = net_tx
-                    .send(NetEvent::LogStreamStatus(StreamStatus::Error))
+                    .send(NetEvent::LogStreamStatus(if report {
+                        StreamStatus::Error
+                    } else {
+                        StreamStatus::Disconnected
+                    }))
                     .await;
-                let _ = net_tx
-                    .send(
-                        NetOpError::new("log stream connect", anyhow::Error::new(e))
-                            .with_key(UiMessageKey::LogStreamConnect)
-                            .into_event(),
-                    )
-                    .await;
+                if report {
+                    let _ = net_tx
+                        .send(
+                            NetOpError::new("log stream connect", anyhow::Error::new(e))
+                                .with_key(UiMessageKey::LogStreamConnect)
+                                .into_event(),
+                        )
+                        .await;
+                }
             }
         }
 
