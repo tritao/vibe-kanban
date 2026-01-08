@@ -51,11 +51,16 @@ pub(crate) async fn logs_stream_task(
         };
 
         let log_mode = *log_mode_rx.borrow();
-        let endpoint = format!(
-            "{}/api/executions/{exec_id}/logs/ws?mode={}",
-            base_url.trim_end_matches('/'),
-            log_mode.label()
-        );
+        let endpoint = match log_mode {
+            LogMode::Raw => format!(
+                "{}/api/execution-processes/{exec_id}/raw-logs/ws",
+                base_url.trim_end_matches('/')
+            ),
+            LogMode::Normalized => format!(
+                "{}/api/execution-processes/{exec_id}/normalized-logs/ws",
+                base_url.trim_end_matches('/')
+            ),
+        };
 
         let _ = net_tx.send(NetEvent::LogReset(Some(exec_id))).await;
         let _ = net_tx
