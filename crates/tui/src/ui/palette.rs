@@ -278,3 +278,61 @@ pub(crate) fn stack_badge_off() -> (Color, Color) {
 pub(crate) fn stack_badge_on() -> (Color, Color) {
     (Color::Black, Color::LightGreen)
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    fn walk_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = std::fs::read_dir(root) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                walk_rs_files(&path, out);
+                continue;
+            }
+            if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    #[test]
+    fn no_hardcoded_fg_colors_outside_palette_and_diff_highlight() {
+        let crate_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let src_root = crate_root.join("src");
+
+        let mut files = vec![];
+        walk_rs_files(&src_root, &mut files);
+
+        let banned = ".fg(Color::";
+        let allowlist: [&str; 2] = ["src/ui/palette.rs", "src/diff/highlight.rs"];
+
+        let mut offenders: Vec<String> = vec![];
+        for file in files {
+            let rel = file
+                .strip_prefix(crate_root)
+                .ok()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|| file.to_string_lossy().replace('\\', "/"));
+
+            if allowlist.iter().any(|a| rel.ends_with(a)) {
+                continue;
+            }
+
+            let Ok(content) = std::fs::read_to_string(&file) else {
+                continue;
+            };
+            if content.contains(banned) {
+                offenders.push(rel);
+            }
+        }
+
+        assert!(
+            offenders.is_empty(),
+            "Found hardcoded .fg(Color::...) outside palette/diff highlight: {offenders:?}"
+        );
+    }
+}
