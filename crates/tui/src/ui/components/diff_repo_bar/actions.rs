@@ -8,7 +8,8 @@ use crate::{
         open_editor_http, rebase_task_attempt_http,
     },
     selection::find_task,
-    state::{AppState, FocusPane, Merge, build_resolve_conflicts_instructions},
+    state::{AppState, FocusPane, build_resolve_conflicts_instructions},
+    store::git_status::{RepoStatusRef, RepoStatuses},
     ui::{guards, toasts},
 };
 
@@ -31,14 +32,15 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 Some(r) => r,
                 None => return,
             };
+            let repo_ref = RepoStatusRef::new(repo);
 
             let attempt_branch = shared::selected_attempt_branch(app);
             let instructions = build_resolve_conflicts_instructions(
                 Some(&attempt_branch),
-                Some(&repo.status.target_branch_name),
-                &repo.status.conflicted_files,
-                repo.status.conflict_op,
-                Some(&repo.repo_name),
+                Some(repo_ref.target_branch_name()),
+                repo_ref.conflicted_files(),
+                repo_ref.conflict_op(),
+                Some(repo_ref.repo_name()),
             );
 
             app.ui.focus_execution();
@@ -78,12 +80,13 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let Some(repo) = app.diff.repo_statuses.get(idx) else {
                 return;
             };
-            let Some(first) = repo.status.conflicted_files.first().cloned() else {
+            let repo_ref = RepoStatusRef::new(repo);
+            let Some(first) = repo_ref.conflicted_files().first().cloned() else {
                 toasts::warn_short(app, "Open: no conflicted files listed");
                 return;
             };
 
-            let repo_name = repo.repo_name.clone();
+            let repo_name = repo_ref.repo_name().to_string();
             crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match open_editor_http(&base_url, attempt_id, Some(first.clone())).await {
                     Ok(url) => {
@@ -108,10 +111,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 toasts::warn_short(app, "PR: no repo selected");
                 return;
             };
-            let Some(pr) = repo.status.merges.iter().find_map(|m| match m {
-                Merge::Pr(pr) => Some(&pr.pr_info),
-                _ => None,
-            }) else {
+            let Some(pr) = RepoStatusRef::new(repo).pr_info() else {
                 toasts::warn_short(app, "PR: none attached");
                 return;
             };
@@ -307,22 +307,18 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let Some(attempt_id) = app.board.selected_attempt_id else {
                 return;
             };
-            let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) else {
+            let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) else {
                 return;
             };
-            if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
+            if r.has_conflicts() {
                 toasts::warn_seconds(app, "PR: conflicts in progress (resolve/abort first)", 2);
                 return;
             }
-            if r.status.commits_ahead.unwrap_or(0) == 0 {
+            if r.commits_ahead() == 0 {
                 toasts::ok_seconds(app, "PR: no changes to open (up to date)", 2);
                 return;
             }
-            let pr_open = r.status.merges.iter().find_map(|m| match m {
-                Merge::Pr(pr) => Some(pr.pr_info.number),
-                _ => None,
-            });
-            if let Some(n) = pr_open {
+            if let Some(n) = r.pr_number() {
                 toasts::ok_seconds(app, format!("PR: already exists (PR#{n})"), 2);
                 return;
             }

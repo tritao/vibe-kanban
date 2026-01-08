@@ -132,23 +132,16 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     }
 
     // Show loading indicators only if the async job takes long enough to be noticeable.
-    if app
-        .diff
-        .diff_preview_loading
-        .tick(now, job_running(app, JobKey::DiffPreview))
-    {
-        dirty = true;
-    }
-    if app.diff.diff_preview_loading.visible()
-        && app.diff.diff_preview_loading.placeholder_pending
-        && (app.diff.diff_preview_lines.is_empty()
-            || app.diff.diff_preview_lines == vec![Line::from("No diffs")])
-    {
-        app.diff.diff_preview_loading.placeholder_pending = false;
-        app.diff.diff_preview_lines = vec![Line::from(ratatui::text::Span::styled(
-            "Loading diff…".to_string(),
-            ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::DIM),
-        ))];
+    let diff_preview_running = job_running(app, JobKey::DiffPreview);
+    if crate::ui::loading_placeholders::tick_with_placeholder(
+        now,
+        &mut app.diff.diff_preview_loading,
+        diff_preview_running,
+        &mut app.diff.diff_preview_lines,
+        "Loading diff…",
+        false,
+        |lines| lines.is_empty() || (lines.len() == 1 && lines[0] == Line::from("No diffs")),
+    ) {
         dirty = true;
     }
 
@@ -180,26 +173,21 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         }
     }
 
-    if app
-        .diff
-        .commit_preview_loading
-        .tick(now, job_running(app, JobKey::CommitPreview))
-    {
-        dirty = true;
-    }
-    if app.diff.commit_preview_loading.visible()
-        && app.diff.commit_preview_loading.placeholder_pending
-    {
-        app.diff.commit_preview_loading.placeholder_pending = false;
-        if app.diff.commit_preview_text.is_none()
-            && (app.diff.commit_preview_lines.is_empty()
-                || app.diff.commit_preview_lines == vec![Line::from("No commit selected")])
-        {
-            app.diff.commit_preview_lines = vec![Line::from(ratatui::text::Span::styled(
-                "Loading commit…".to_string(),
-                ratatui::style::Style::default().add_modifier(ratatui::style::Modifier::DIM),
-            ))];
-        }
+    let commit_preview_missing = app.diff.commit_preview_text.is_none();
+    let commit_preview_running = job_running(app, JobKey::CommitPreview);
+    if crate::ui::loading_placeholders::tick_with_placeholder(
+        now,
+        &mut app.diff.commit_preview_loading,
+        commit_preview_running,
+        &mut app.diff.commit_preview_lines,
+        "Loading commit…",
+        true,
+        |lines| {
+            commit_preview_missing
+                && (lines.is_empty()
+                    || (lines.len() == 1 && lines[0] == Line::from("No commit selected")))
+        },
+    ) {
         dirty = true;
     }
 

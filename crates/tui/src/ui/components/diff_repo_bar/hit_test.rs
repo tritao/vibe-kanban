@@ -5,7 +5,8 @@ use ratatui::layout::Rect;
 use super::{DiffRepoAction, badges, buttons, shared};
 use crate::{
     layout::rect_contains,
-    state::{AppState, Merge},
+    state::AppState,
+    store::git_status::RepoStatusRef,
     text::{display_width, truncate_to_width},
     ui::button_row::{button_row_plain, hit_test_button_row},
 };
@@ -45,21 +46,19 @@ pub(super) fn diff_repo_bar_action_at(
         pr_open,
         stack_badge_plain,
     ) = if let Some(r) = repo {
-        let ahead = r.status.commits_ahead.unwrap_or(0);
-        let behind = r.status.commits_behind.unwrap_or(0);
-        let remote_ahead = r.status.remote_commits_ahead.unwrap_or(0);
-        let remote_behind = r.status.remote_commits_behind.unwrap_or(0);
-        let dirty = r.status.uncommitted_count.unwrap_or(0);
-        let untracked = r.status.untracked_count.unwrap_or(0);
-        let conflicts = r.status.conflicted_files.len();
-        let pr_open = r.status.merges.iter().find_map(|m| match m {
-            Merge::Pr(pr) => Some(pr.pr_info.number),
-            _ => None,
-        });
+        let r = RepoStatusRef::new(r);
+        let ahead = r.commits_ahead();
+        let behind = r.commits_behind();
+        let remote_ahead = r.remote_commits_ahead();
+        let remote_behind = r.remote_commits_behind();
+        let dirty = r.uncommitted_count();
+        let untracked = r.untracked_count();
+        let conflicts = r.conflicts_count();
+        let pr_open = r.pr_number();
         let stack_badge_plain = badges::selected_stack_badge(app, repo).map(|(plain, _)| plain);
         (
-            r.repo_name.clone(),
-            r.status.target_branch_name.clone(),
+            r.repo_name().to_string(),
+            r.target_branch_name().to_string(),
             ahead,
             behind,
             remote_ahead,

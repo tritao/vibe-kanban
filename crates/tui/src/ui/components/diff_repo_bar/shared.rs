@@ -2,6 +2,7 @@ use super::DiffRepoAction;
 use crate::{
     events::GitOpKind,
     state::{AppState, RepoBranchStatus},
+    store::git_status::RepoStatuses,
 };
 
 pub(super) fn selected_attempt_branch(app: &AppState) -> String {
@@ -14,15 +15,10 @@ pub(super) fn selected_attempt_branch(app: &AppState) -> String {
 
 pub(super) fn repo_index_with_conflicts(app: &AppState) -> Option<usize> {
     let selected = crate::state::repo_scope::selected_repo(app);
-    if selected
-        .is_some_and(|r| r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty())
-    {
+    if selected.is_some_and(|r| crate::store::git_status::RepoStatusRef::new(r).has_conflicts()) {
         return crate::state::repo_scope::selected_repo_index_clamped(app);
     }
-    app.diff
-        .repo_statuses
-        .iter()
-        .position(|r| r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty())
+    RepoStatuses::new(&app.diff.repo_statuses).first_conflicts_index()
 }
 
 pub(super) fn git_kind_for_diff_action(action: DiffRepoAction) -> Option<GitOpKind> {

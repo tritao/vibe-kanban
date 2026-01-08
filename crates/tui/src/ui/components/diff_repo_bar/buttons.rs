@@ -5,7 +5,8 @@ use crossterm::event::KeyCode;
 use super::{DiffRepoAction, shared};
 use crate::{
     events::GitOpKind,
-    state::{AppState, Merge, RepoBranchStatus},
+    state::{AppState, RepoBranchStatus},
+    store::git_status::RepoStatusRef,
     ui::button_row::ButtonSpec,
 };
 
@@ -57,33 +58,26 @@ pub(super) fn repo_bar_button_specs(
     let has_conflicts = shared::repo_index_with_conflicts(app).is_some();
 
     let attempt_selected = app.board.selected_attempt_id.is_some();
-    let (ahead, behind, selected_has_conflicts, pr_open, pr_url, is_dirty) = if let Some(r) = repo {
-        let ahead = r.status.commits_ahead.unwrap_or(0);
-        let behind = r.status.commits_behind.unwrap_or(0);
-        let selected_has_conflicts =
-            r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty();
-        let is_dirty = r.status.has_uncommitted_changes.unwrap_or(false)
-            || r.status.uncommitted_count.unwrap_or(0) > 0
-            || r.status.untracked_count.unwrap_or(0) > 0;
-        let pr_open = r.status.merges.iter().find_map(|m| match m {
-            Merge::Pr(pr) => Some(pr.pr_info.number),
-            _ => None,
-        });
-        let pr_url = r.status.merges.iter().find_map(|m| match m {
-            Merge::Pr(pr) => Some(pr.pr_info.url.clone()),
-            _ => None,
-        });
-        (
-            ahead,
-            behind,
-            selected_has_conflicts,
-            pr_open,
-            pr_url,
-            is_dirty,
-        )
-    } else {
-        (0, 0, false, None, None, false)
-    };
+    let (ahead, behind, selected_has_conflicts, pr_open, pr_url_ok, is_dirty) =
+        if let Some(r) = repo {
+            let r = RepoStatusRef::new(r);
+            let ahead = r.commits_ahead();
+            let behind = r.commits_behind();
+            let selected_has_conflicts = r.has_conflicts();
+            let is_dirty = r.is_dirty();
+            let pr_open = r.pr_number();
+            let pr_url_ok = r.pr_url().is_some_and(|u| !u.trim().is_empty());
+            (
+                ahead,
+                behind,
+                selected_has_conflicts,
+                pr_open,
+                pr_url_ok,
+                is_dirty,
+            )
+        } else {
+            (0, 0, false, None, false, false)
+        };
 
     let is_applicable = |action: DiffRepoAction| -> bool {
         match action {
@@ -114,10 +108,7 @@ pub(super) fn repo_bar_button_specs(
                     && !is_dirty
             }
             DiffRepoAction::OpenPr => {
-                attempt_selected
-                    && repo.is_some()
-                    && pr_open.is_some()
-                    && pr_url.as_ref().is_some_and(|u| !u.trim().is_empty())
+                attempt_selected && repo.is_some() && pr_open.is_some() && pr_url_ok
             }
         }
     };
