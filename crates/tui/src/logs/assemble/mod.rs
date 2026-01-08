@@ -102,8 +102,7 @@ pub(crate) fn append_log_entry(
                 return;
             }
 
-            let entry_type_tag = content.entry_type().map(|t| t.tag()).unwrap_or("unknown");
-            let is_progress = matches!(entry_type_tag, "thinking" | "loading");
+            let is_progress = content.is_progress();
 
             // Visual separation between "cards"/blocks, but don't spam blank lines for
             // ephemeral progress entries (thinking/loading).

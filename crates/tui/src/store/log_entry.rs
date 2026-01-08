@@ -59,8 +59,23 @@ impl<'a> NormalizedContentRef<'a> {
         Some(EntryTypeRef::new(self.v.get("entry_type")?))
     }
 
+    pub(crate) fn entry_type_tag(&self) -> &'a str {
+        self.entry_type().map(|t| t.tag()).unwrap_or("unknown")
+    }
+
+    pub(crate) fn is_progress(&self) -> bool {
+        matches!(self.entry_type_tag(), "thinking" | "loading")
+    }
+
     pub(crate) fn content_text(&self) -> &'a str {
         self.v.get("content").and_then(|v| v.as_str()).unwrap_or("")
+    }
+
+    pub(crate) fn is_model_params_system_message(&self) -> bool {
+        if self.entry_type_tag() != "system_message" {
+            return false;
+        }
+        crate::logs::model_params::is_model_params_system_message(self.content_text().trim())
     }
 }
 
@@ -83,6 +98,15 @@ impl<'a> EntryTypeRef<'a> {
             .get("type")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
+    }
+
+    pub(crate) fn tool_use_summary(&self) -> Option<String> {
+        if self.tag() != "tool_use" {
+            return None;
+        }
+        let tool = self.tool_name().unwrap_or("tool");
+        let status = self.tool_status_str().unwrap_or("created");
+        Some(format!("{tool} ({status})"))
     }
 
     pub(crate) fn denied_tool(&self) -> Option<&'a str> {

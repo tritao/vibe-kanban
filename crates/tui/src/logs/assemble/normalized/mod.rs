@@ -11,7 +11,7 @@ use super::{
     push_line,
 };
 use crate::{
-    logs::{model_params::is_model_params_system_message, types::NormalizedEntryType},
+    logs::types::NormalizedEntryType,
     state::{DiffTheme, LogRenderMode},
     store::logs::NormalizedContentRef,
     text::truncate_to_width,
@@ -105,7 +105,7 @@ pub(super) fn append_normalized_entry(
                 return;
             }
             // Move model/effort system messages into the run header metadata line.
-            if is_model_params_system_message(trimmed) {
+            if content.is_model_params_system_message() {
                 return;
             }
             let (h, len) = fnv1a64(trimmed);
@@ -308,11 +308,9 @@ pub(super) fn normalized_entry_text(entry: &serde_json::Value) -> Option<String>
     let ty = entry_type.tag();
     let kind = NormalizedEntryType::parse(ty);
     let label = match kind {
-        NormalizedEntryType::ToolUse => {
-            let tool = entry_type.tool_name().unwrap_or("tool");
-            let status = entry_type.tool_status_str().unwrap_or("created");
-            format!("{tool} ({status})")
-        }
+        NormalizedEntryType::ToolUse => entry_type
+            .tool_use_summary()
+            .unwrap_or_else(|| "tool (created)".to_string()),
         NormalizedEntryType::NextAction => "next action".to_string(),
         NormalizedEntryType::Loading => "loading…".to_string(),
         NormalizedEntryType::Thinking => "thinking…".to_string(),
