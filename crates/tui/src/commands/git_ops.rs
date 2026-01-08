@@ -1,20 +1,13 @@
 use std::time::Instant;
 
-use uuid::Uuid;
-
 use crate::{
     events::GitOpKind,
     state::{AppState, GitOpState},
 };
 
-pub(crate) fn request_diff_reconnect(app: &mut AppState) {
-    let next = *app.diff_reconnect_tx.borrow() + 1;
-    let _ = app.diff_reconnect_tx.send(next);
-}
-
 pub(crate) fn begin_git_op(
     app: &mut AppState,
-    repo_id: Option<Uuid>,
+    repo_id: Option<uuid::Uuid>,
     kind: GitOpKind,
     repo_name: &str,
 ) -> bool {
@@ -64,7 +57,7 @@ pub(crate) fn begin_git_op(
 
 pub(crate) fn finish_git_op(
     app: &mut AppState,
-    repo_id: Option<Uuid>,
+    repo_id: Option<uuid::Uuid>,
     kind: GitOpKind,
     ok: bool,
     message: String,

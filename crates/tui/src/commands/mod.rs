@@ -8,6 +8,7 @@ mod git_runner;
 mod job_runner;
 mod messages;
 mod open_url;
+mod reconnect;
 mod slash;
 mod stack_ops;
 
@@ -28,13 +29,12 @@ pub(crate) use context::{
     ensure_attempt_selected, ensure_repo_status_loaded, require_repo_status_loaded,
     require_selected_attempt_id, resolve_repo_for_command,
 };
-pub(crate) use git_ops::{
-    begin_git_op, finish_git_op, request_diff_reconnect, update_git_activity_indicators,
-};
+pub(crate) use git_ops::{begin_git_op, finish_git_op, update_git_activity_indicators};
 pub(crate) use git_runner::{GitOpOutcome, spawn_repo_git_op};
 pub(crate) use job_runner::{run_latest_job, run_latest_job_for_repo, run_net_job, spawn_net_task};
 pub(crate) use messages::{SendUserMessage, send_user_message_task};
 pub(crate) use open_url::open_url;
+pub(crate) use reconnect::{request_diff_reconnect, request_reconnect_all};
 pub(crate) use slash::{submit_composer, trigger_abort_conflicts};
 pub(crate) use stack_ops::{
     request_stack_status_refresh, trigger_stack_disable, trigger_stack_enable, trigger_stack_new,

@@ -22,8 +22,7 @@ pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bo
             return Some((false, true));
         }
         (KeyCode::Char('r'), _) => {
-            let next = *app.reconnect_tx.borrow() + 1;
-            let _ = app.reconnect_tx.send(next);
+            crate::commands::request_reconnect_all(app);
             return Some((false, true));
         }
         (KeyCode::Char('i'), KeyModifiers::NONE) => {
