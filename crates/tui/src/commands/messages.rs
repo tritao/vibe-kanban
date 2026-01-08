@@ -50,7 +50,11 @@ pub(crate) async fn send_user_message_task(
 
     if let Err(e) = result {
         let _ = net_tx
-            .send(NetEvent::Error(crate::fmt::op_failed("follow-up", e)))
+            .send(
+                crate::events::NetOpError::new("follow-up", e)
+                    .with_key(crate::state::UiMessageKey::FollowUp)
+                    .into_event(),
+            )
             .await;
     }
 }

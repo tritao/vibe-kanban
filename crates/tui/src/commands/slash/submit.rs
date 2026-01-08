@@ -89,15 +89,15 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     let is_running = active.is_some_and(|e| e.status == Some(crate::state::ExecStatus::Running));
 
     if session_id.is_none() && attempt_id.is_none() && task_id.is_none() {
-        app.ui.set_error(
-            "No task/attempt selected. Create/select a task first (press `n` to create a task)."
-                .to_string(),
-        );
+        app.ui
+            .set_error(crate::ui::messages::errors::COMPOSER_NEEDS_TASK.to_string());
         return false;
     }
 
     app.ui.composer_active = false;
     app.ui.composer.clear();
+    app.ui
+        .clear_error_scope(crate::state::UiMessageKey::FollowUp);
 
     if let Some(exec_id) = current_exec_id {
         if is_running {

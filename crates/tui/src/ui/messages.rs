@@ -63,6 +63,9 @@ pub(crate) mod errors {
         "Branches: load repo status first (press S)";
     pub(crate) const TARGET_BRANCH_NEEDS_REPO_STATUS: &str =
         "Target branch: load repo status first (press S)";
+
+    pub(crate) const COMPOSER_NEEDS_TASK: &str =
+        "No task/attempt selected. Create/select a task first (press `n` to create a task).";
 }
 
 pub(crate) mod placeholders {

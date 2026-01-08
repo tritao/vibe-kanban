@@ -9,6 +9,7 @@ pub(crate) enum UiMessageKey {
     LogStreamConnect,
     BranchStatus,
     GitOp,
+    FollowUp,
     CommitList,
     CommitPreview,
     StackOp,
