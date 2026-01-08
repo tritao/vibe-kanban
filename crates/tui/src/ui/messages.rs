@@ -64,3 +64,12 @@ pub(crate) mod errors {
     pub(crate) const TARGET_BRANCH_NEEDS_REPO_STATUS: &str =
         "Target branch: load repo status first (press S)";
 }
+
+pub(crate) mod placeholders {
+    pub(crate) const NO_DIFFS: &str = "No diffs";
+    pub(crate) const NO_COMMITS: &str = "No commits";
+    pub(crate) const NO_COMMIT_SELECTED: &str = "No commit selected";
+    pub(crate) const NO_DIFF_CONTENT: &str = "No diff content";
+    pub(crate) const LOADING_DIFF: &str = "Loading diff…";
+    pub(crate) const LOADING_COMMIT: &str = "Loading commit…";
+}

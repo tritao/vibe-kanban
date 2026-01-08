@@ -149,7 +149,11 @@ pub(crate) fn compute_diff_preview(
     const MAX_DIFF_PREVIEW_LINES: usize = 20_000;
 
     match req {
-        DiffPreviewRequest::None => (None, 0, vec![Line::from("No diffs")]),
+        DiffPreviewRequest::None => (
+            None,
+            0,
+            vec![Line::from(crate::ui::messages::placeholders::NO_DIFFS)],
+        ),
         DiffPreviewRequest::Single {
             key,
             highlight_path,
@@ -177,7 +181,9 @@ pub(crate) fn compute_diff_preview(
             let diff = utils::diff::create_unified_diff(&key, &old, &new);
             let mut lines = highlight_unified_diff(&highlight_path, &diff, width, theme, wrap);
             if lines.is_empty() {
-                lines = vec![Line::from("No diff content")];
+                lines = vec![Line::from(
+                    crate::ui::messages::placeholders::NO_DIFF_CONTENT,
+                )];
             }
             (Some(key), h, lines)
         }
@@ -221,7 +227,7 @@ pub(crate) fn compute_diff_preview(
                 }
             }
             if lines.is_empty() {
-                lines.push(Line::from("No diffs"));
+                lines.push(Line::from(crate::ui::messages::placeholders::NO_DIFFS));
             }
             (Some(DIFF_ALL_KEY.to_string()), hasher.finish(), lines)
         }

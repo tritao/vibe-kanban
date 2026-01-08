@@ -56,7 +56,9 @@ pub(super) fn render_files_list(f: &mut Frame, app: &AppState, area: Rect) {
     let visible = &rows[start..end];
 
     let items: Vec<ListItem> = if visible.is_empty() {
-        vec![ListItem::new(Line::from("No diffs"))]
+        vec![ListItem::new(Line::from(
+            crate::ui::messages::placeholders::NO_DIFFS,
+        ))]
     } else {
         visible
             .iter()
@@ -210,7 +212,9 @@ pub(super) fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
     let visible = commits.get(start..end).unwrap_or(&[]);
 
     let mut items: Vec<ListItem> = if visible.is_empty() {
-        vec![ListItem::new(Line::from("No commits"))]
+        vec![ListItem::new(Line::from(
+            crate::ui::messages::placeholders::NO_COMMITS,
+        ))]
     } else {
         visible
             .iter()

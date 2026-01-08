@@ -13,6 +13,9 @@ pub(super) fn git_op_finished(
     message: String,
 ) -> NetApplyResult {
     finish_git_op(app, repo_id, kind, ok, message);
+    if ok {
+        app.ui.clear_error_scope(crate::state::UiMessageKey::GitOp);
+    }
     if ok
         && matches!(
             kind,

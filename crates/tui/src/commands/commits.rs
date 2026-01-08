@@ -101,7 +101,9 @@ pub(crate) fn ensure_commit_preview_rendered(app: &mut AppState, preview_width: 
     }
 
     if out.is_empty() {
-        out.push(Line::from("No commit selected"));
+        out.push(Line::from(
+            crate::ui::messages::placeholders::NO_COMMIT_SELECTED,
+        ));
     }
     app.diff.commit_preview_lines = out;
     app.diff.commit_preview_render_width = preview_width;

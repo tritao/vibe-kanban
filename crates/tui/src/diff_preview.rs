@@ -119,7 +119,8 @@ pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
     crate::ui::loading::start_with_default_delay(
         &mut app.diff.diff_preview_loading,
         app.diff.diff_preview_lines.is_empty()
-            || app.diff.diff_preview_lines == vec![Line::from("No diffs")],
+            || app.diff.diff_preview_lines
+                == vec![Line::from(crate::ui::messages::placeholders::NO_DIFFS)],
     );
 
     replace_blocking_job(app, JobKey::DiffPreview, move || {

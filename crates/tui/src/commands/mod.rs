@@ -1,4 +1,5 @@
 mod attempts;
+mod branch_status;
 mod clipboard;
 mod commits;
 mod context;
@@ -11,6 +12,12 @@ mod slash;
 mod stack_ops;
 
 pub(crate) use attempts::{ensure_attempt_id_for_repo_ops, ensure_session_id_for_message};
+pub(crate) use branch_status::{
+    arm_branch_status_refresh_after_next_exec, arm_branch_status_refresh_for_exec,
+    clear_pending_branch_status_refresh, on_exec_store_updated_for_branch_refresh,
+    request_branch_status_refresh, schedule_branch_status_refresh_debounced,
+    tick_branch_status_auto_refresh, tick_branch_status_loading_notice,
+};
 pub(crate) use clipboard::copy_to_clipboard_osc52;
 pub(crate) use commits::{
     apply_commit_list_page, ensure_commit_preview_rendered, request_commit_list_more,
@@ -22,10 +29,7 @@ pub(crate) use context::{
     require_selected_attempt_id, resolve_repo_for_command,
 };
 pub(crate) use git_ops::{
-    arm_branch_status_refresh_after_next_exec, arm_branch_status_refresh_for_exec, begin_git_op,
-    clear_pending_branch_status_refresh, finish_git_op, on_exec_store_updated_for_branch_refresh,
-    request_branch_status_refresh, request_diff_reconnect,
-    schedule_branch_status_refresh_debounced, update_git_activity_indicators,
+    begin_git_op, finish_git_op, request_diff_reconnect, update_git_activity_indicators,
 };
 pub(crate) use git_runner::{GitOpOutcome, spawn_repo_git_op};
 pub(crate) use job_runner::{run_latest_job, run_latest_job_for_repo, run_net_job, spawn_net_task};

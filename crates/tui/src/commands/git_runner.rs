@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::{begin_git_op, spawn_net_task},
-    events::{GitOpKind, NetEvent},
+    events::{GitOpKind, NetEvent, NetOpError},
     net::ops::branch_status_http,
     state::AppState,
 };
@@ -90,11 +90,23 @@ pub(crate) fn spawn_repo_git_op<F, Fut, E>(
                             .await;
                     }
                 }
+                let op = match kind {
+                    GitOpKind::Status => "git status",
+                    GitOpKind::Merge => "git merge",
+                    GitOpKind::Rebase => "git rebase",
+                    GitOpKind::CreatePr => "git create pr",
+                    GitOpKind::Abort => "git abort",
+                    GitOpKind::Push => "git push",
+                    GitOpKind::ForcePush => "git force push",
+                    GitOpKind::AttachPr => "git attach pr",
+                    GitOpKind::PrComments => "git pr comments",
+                };
                 let _ = net_tx
-                    .send(NetEvent::Error(crate::fmt::op_failed(
-                        kind.label().to_lowercase().as_str(),
-                        e,
-                    )))
+                    .send(
+                        NetOpError::new(op, anyhow::anyhow!("{e}"))
+                            .with_key(crate::state::UiMessageKey::GitOp)
+                            .into_event(),
+                    )
                     .await;
                 let _ = net_tx
                     .send(NetEvent::GitOpFinished {

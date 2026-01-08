@@ -1,16 +1,19 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use ratatui::{layout::Rect, text::Line};
 
 use crate::{
-    commands::update_git_activity_indicators,
+    commands::{
+        tick_branch_status_auto_refresh, tick_branch_status_loading_notice,
+        update_git_activity_indicators,
+    },
     diff_preview::{
         diff_preview_refresh_ready, request_diff_preview_async, schedule_diff_preview_refresh,
     },
     jobs::{job_running, reap_finished_jobs, replace_blocking_job},
     layout::{clamp_scroll_offsets, compute_main_layout},
     logs::flush_log_buffers,
-    state::{AppState, FocusPane, JobKey},
+    state::{AppState, JobKey},
     store::exec_list::exec_list,
 };
 
@@ -123,8 +126,11 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         if has_diffs {
             request_diff_preview_async(app, diff_inner_width);
             dirty = true;
-        } else if app.diff.diff_preview_lines != vec![Line::from("No diffs")] {
-            app.diff.diff_preview_lines = vec![Line::from("No diffs")];
+        } else if app.diff.diff_preview_lines
+            != vec![Line::from(crate::ui::messages::placeholders::NO_DIFFS)]
+        {
+            app.diff.diff_preview_lines =
+                vec![Line::from(crate::ui::messages::placeholders::NO_DIFFS)];
             app.diff.diff_preview_loading.stop();
             dirty = true;
         }
@@ -139,9 +145,13 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         &mut app.diff.diff_preview_loading,
         diff_preview_running,
         &mut app.diff.diff_preview_lines,
-        "Loading diff…",
+        crate::ui::messages::placeholders::LOADING_DIFF,
         false,
-        |lines| lines.is_empty() || (lines.len() == 1 && lines[0] == Line::from("No diffs")),
+        |lines| {
+            lines.is_empty()
+                || (lines.len() == 1
+                    && lines[0] == Line::from(crate::ui::messages::placeholders::NO_DIFFS))
+        },
     ) {
         dirty = true;
     }
@@ -153,47 +163,10 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         dirty = true;
     }
 
-    // While the diff pane is focused, keep repo status reasonably fresh so action enablement and
-    // conflict indicators remain accurate without requiring manual `S`.
-    if app.ui.focus == FocusPane::Diff
-        && app.board.selected_attempt_id.is_some()
-        && !app.diff.repo_statuses.is_empty()
-        && !job_running(app, JobKey::BranchStatus)
-        && !job_running(app, JobKey::BranchStatusAuto)
-    {
-        let stale = app
-            .diff
-            .branch_status_loaded_at
-            .map(|t| now.saturating_duration_since(t))
-            .unwrap_or(crate::ui::constants::BRANCH_STATUS_AUTO_REFRESH_INTERVAL);
-        let due = app
-            .diff
-            .branch_status_auto_next_at
-            .map(|t| now >= t)
-            .unwrap_or(stale >= crate::ui::constants::BRANCH_STATUS_AUTO_REFRESH_INTERVAL);
-        if due {
-            app.diff.branch_status_auto_next_at =
-                Some(now + crate::ui::constants::BRANCH_STATUS_AUTO_REFRESH_INTERVAL);
-            crate::commands::schedule_branch_status_refresh_debounced(app, Duration::ZERO);
-        }
-    }
-
-    // If repo status isn't loaded yet, show a delayed "Loading repos…" notice while the refresh
-    // job runs (prevents flicker on fast responses).
-    let branch_running =
-        job_running(app, JobKey::BranchStatus) || job_running(app, JobKey::BranchStatusAuto);
-    let placeholder = crate::ui::loading_placeholders::tick_notice_placeholder(
-        now,
-        &mut app.diff.branch_status_loading_notice,
-        branch_running,
-        app.diff.repo_statuses.is_empty(),
-    );
-    if placeholder.dirty {
+    if tick_branch_status_auto_refresh(app, now) {
         dirty = true;
     }
-    if placeholder.show_notice {
-        app.ui
-            .set_notice(crate::ui::messages::notices::LOADING_REPOS);
+    if tick_branch_status_loading_notice(app, now) {
         dirty = true;
     }
 
@@ -227,12 +200,14 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         &mut app.diff.commit_preview_loading,
         commit_preview_running,
         &mut app.diff.commit_preview_lines,
-        "Loading commit…",
+        crate::ui::messages::placeholders::LOADING_COMMIT,
         true,
         |lines| {
             commit_preview_missing
                 && (lines.is_empty()
-                    || (lines.len() == 1 && lines[0] == Line::from("No commit selected")))
+                    || (lines.len() == 1
+                        && lines[0]
+                            == Line::from(crate::ui::messages::placeholders::NO_COMMIT_SELECTED)))
         },
     ) {
         dirty = true;
