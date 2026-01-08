@@ -5,12 +5,11 @@ use crate::{
         resolve_repo_for_command, trigger_abort_conflicts,
     },
     events::{GitOpKind, NetEvent, NetOpError},
-    layout::{compute_main_layout, current_terminal_rect},
     net::ops::{
         CreateGitHubPrRequest, branch_status_http, create_pr_http, merge_task_attempt_http,
         open_editor_http, rebase_task_attempt_http,
     },
-    state::{AppState, FocusPane, build_resolve_conflicts_instructions},
+    state::AppState,
     store::{
         repo_status::{GitRepoAction, RepoStatusRef, RepoStatuses},
         tasks_list::find_task,
@@ -32,40 +31,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 toasts::ok_short(app, "Conflicts: none detected");
                 return;
             };
-            crate::selection::change::set_selected_repo_index(app, idx);
-            let repo = match app.diff.repo_statuses.get(idx) {
-                Some(r) => r,
-                None => return,
-            };
-            let repo_ref = RepoStatusRef::new(repo);
-
-            let attempt_branch = shared::selected_attempt_branch(app);
-            let instructions = build_resolve_conflicts_instructions(
-                Some(&attempt_branch),
-                Some(repo_ref.target_branch_name()),
-                repo_ref.conflicted_files(),
-                repo_ref.conflict_op(),
-                Some(repo_ref.repo_name()),
-            );
-
-            app.ui.focus_execution();
-            app.ui.composer_active = true;
-            app.ui.composer_suggest_index = 0;
-            app.ui.refresh_branch_status_after_send = true;
-            app.ui.composer.buffer = instructions;
-            app.ui.composer.set_end();
-            let layout = compute_main_layout(current_terminal_rect(), FocusPane::Execution);
-            let area = layout.exec_input;
-            let (_inner_w, inner_h) = crate::ui::geometry::inner_size(area);
-            let prefix_w = crate::text::display_width("  ");
-            let content_w = crate::ui::geometry::inner_content_width(area, prefix_w, 1);
-            app.ui
-                .composer
-                .ensure_cursor_visible(content_w, inner_h.max(1));
-            toasts::info_short(
-                app,
-                format!("Conflicts: drafted resolution request ({})", repo.repo_name),
-            );
+            crate::commands::draft_conflict_resolution_for_repo_index(app, idx);
         }
         DiffRepoAction::OpenConflict => {
             let Some(attempt_id) = ensure_attempt_selected(app, "Open") else {

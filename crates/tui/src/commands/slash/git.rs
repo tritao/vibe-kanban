@@ -9,7 +9,6 @@ use crate::{
     },
     state::AppState,
     store::repo_status::{GitActionBlockSeverity, GitRepoAction, RepoStatuses},
-    ui::DiffRepoAction,
 };
 
 pub(crate) fn trigger_abort_conflicts(
@@ -59,14 +58,28 @@ pub(super) fn handle_resolve_command(app: &mut AppState, tokens: &[String]) -> R
 
     if let Some(arg) = repo_arg.as_deref().filter(|s| !s.trim().is_empty()) {
         let _ = resolve_repo_for_command(app, Some(arg))?;
-        let ok = RepoStatuses::new(&app.diff.repo_statuses)
-            .get_by_index(app.diff.selected_repo_index)
-            .is_some_and(|r| r.has_conflicts());
-        if !ok {
+        let idx = crate::state::repo_scope::selected_repo_index_clamped(app).unwrap_or(0);
+        let statuses = RepoStatuses::new(&app.diff.repo_statuses);
+        if !statuses
+            .get_by_index(idx)
+            .is_some_and(|r| r.has_conflicts())
+        {
             return Err(format!("repo has no conflicts: {arg}"));
         }
-    }
-    crate::ui::trigger_diff_repo_action(app, DiffRepoAction::ResolveConflicts);
+        crate::commands::draft_conflict_resolution_for_repo_index(app, idx);
+        return Ok(());
+    };
+
+    let statuses = RepoStatuses::new(&app.diff.repo_statuses);
+    let selected = crate::state::repo_scope::selected_repo_index_clamped(app);
+    let idx = selected
+        .filter(|&i| statuses.get_by_index(i).is_some_and(|r| r.has_conflicts()))
+        .or_else(|| statuses.first_conflicts_index());
+    let Some(idx) = idx else {
+        crate::ui::toasts::ok_short(app, "Conflicts: none detected");
+        return Ok(());
+    };
+    crate::commands::draft_conflict_resolution_for_repo_index(app, idx);
     Ok(())
 }
 

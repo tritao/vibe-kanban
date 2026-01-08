@@ -2,6 +2,7 @@ mod attempts;
 mod branch_status;
 mod clipboard;
 mod commits;
+mod conflicts;
 mod context;
 mod git_ops;
 mod git_runner;
@@ -25,6 +26,7 @@ pub(crate) use commits::{
     request_commit_list_refresh, request_commit_preview_refresh, sanitize_commit_preview_text,
     select_commits_mode, select_files_mode,
 };
+pub(crate) use conflicts::draft_conflict_resolution_for_repo_index;
 pub(crate) use context::{
     ensure_attempt_selected, ensure_repo_status_loaded, require_repo_status_loaded,
     require_selected_attempt_id, resolve_repo_for_command,
