@@ -9,8 +9,6 @@ mod input;
 mod layout;
 mod render;
 
-pub(crate) use render::render_board_pane;
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct BoardHit {
     pub(crate) status: TaskStatus,
@@ -29,7 +27,7 @@ impl UiComponent for BoardPane {
     type Event = BoardPaneEvent;
 
     fn render(f: &mut Frame, app: &AppState, area: Rect) {
-        render_board_pane(f, app, area);
+        render::render_board_pane(f, app, area);
     }
 
     fn on_event(app: &mut AppState, event: Self::Event) -> bool {

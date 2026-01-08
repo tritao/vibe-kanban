@@ -11,16 +11,16 @@ use crate::{
     state::{AppState, DiffFocus, FocusPane},
 };
 
-pub(crate) enum DiffPreviewEvent {
+pub(super) enum DiffPreviewEvent {
     Key(KeyEvent),
     WheelDelta(i32),
     Click,
 }
 
-pub(crate) struct DiffPreview;
+pub(super) struct DiffPreview;
 
 impl DiffPreview {
-    pub(crate) fn render(f: &mut Frame, app: &AppState, area: Rect) {
+    fn render(f: &mut Frame, app: &AppState, area: Rect) {
         let border_style = crate::ui::widgets::focused_border(
             app.ui.focus == FocusPane::Diff && app.ui.diff_focus == DiffFocus::Preview,
         );
@@ -100,7 +100,7 @@ impl DiffPreview {
         app.diff.diff_scroll_offset != before
     }
 
-    pub(crate) fn on_event(app: &mut AppState, event: DiffPreviewEvent) -> bool {
+    fn on_event(app: &mut AppState, event: DiffPreviewEvent) -> bool {
         if app.ui.focus != FocusPane::Diff {
             return false;
         }

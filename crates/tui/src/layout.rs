@@ -59,13 +59,6 @@ pub(crate) fn rect_contains(r: Rect, col: u16, row: u16) -> bool {
         && row < r.y.saturating_add(r.height)
 }
 
-pub(crate) fn inner_wh(area: Rect) -> (usize, usize) {
-    (
-        area.width.saturating_sub(2) as usize,
-        area.height.saturating_sub(2) as usize,
-    )
-}
-
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MainLayoutRects {
     pub(crate) board: Rect,

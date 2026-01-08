@@ -17,20 +17,20 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ExecLogHitKind {
+pub(super) enum ExecLogHitKind {
     Left,
     Right,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct ExecLogHit {
-    pub(crate) selection: Option<LogSelection>,
-    pub(crate) line_idx: Option<usize>,
-    pub(crate) click_chevron: bool,
+pub(super) struct ExecLogHit {
+    pub(super) selection: Option<LogSelection>,
+    pub(super) line_idx: Option<usize>,
+    pub(super) click_chevron: bool,
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum ExecLogEvent {
+pub(super) enum ExecLogEvent {
     Key(KeyEvent),
     WheelDelta(i32),
     Hit(ExecLogHitKind, ExecLogHit),
@@ -38,7 +38,7 @@ pub(crate) enum ExecLogEvent {
     DragEnd,
 }
 
-pub(crate) struct ExecLog;
+pub(super) struct ExecLog;
 
 impl ExecLog {
     fn border_style(app: &AppState) -> Style {

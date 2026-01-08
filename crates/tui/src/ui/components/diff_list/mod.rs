@@ -36,16 +36,16 @@ pub(super) fn commit_footer(app: &AppState) -> CommitFooter {
     CommitFooter { loading, has_more }
 }
 
-pub(crate) enum DiffListEvent {
+pub(super) enum DiffListEvent {
     Key(KeyEvent),
     ClickIndex(usize),
     WheelDelta(i32),
 }
 
-pub(crate) struct DiffList;
+pub(super) struct DiffList;
 
 impl DiffList {
-    pub(crate) fn render(f: &mut Frame, app: &AppState, area: Rect) {
+    fn render(f: &mut Frame, app: &AppState, area: Rect) {
         f.render_widget(Clear, area);
         match app.diff.list_mode {
             crate::state::DiffListMode::Commits => render::render_commit_list(f, app, area),
@@ -53,7 +53,7 @@ impl DiffList {
         }
     }
 
-    pub(crate) fn on_event(app: &mut AppState, event: DiffListEvent) -> bool {
+    fn on_event(app: &mut AppState, event: DiffListEvent) -> bool {
         if app.ui.focus != FocusPane::Diff || app.ui.diff_focus != DiffFocus::Files {
             return false;
         }

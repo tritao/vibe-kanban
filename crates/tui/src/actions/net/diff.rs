@@ -1,8 +1,9 @@
 use std::time::Instant;
 
+use super::apply::{NetApplyResult, NetEffects};
 use crate::{
     actions::selection as sel,
-    commands::{after_branch_status_loaded, request_diff_reconnect},
+    commands::request_diff_reconnect,
     diff::DIFF_ALL_KEY,
     diff_preview::{
         diff_patch_touches_key, schedule_diff_preview_refresh,
@@ -102,9 +103,9 @@ pub(super) fn branch_status_loaded(
     app: &mut AppState,
     attempt_id: uuid::Uuid,
     statuses: Vec<RepoBranchStatus>,
-) -> bool {
+) -> NetApplyResult {
     if app.board.selected_attempt_id != Some(attempt_id) {
-        return true;
+        return NetApplyResult::changed(true);
     }
     app.ui
         .clear_error_scope(crate::state::UiMessageKey::BranchStatus);
@@ -112,6 +113,9 @@ pub(super) fn branch_status_loaded(
     app.diff.repo_statuses = statuses;
     app.diff.branch_status_loaded_attempt_id = Some(attempt_id);
     app.diff.branch_status_loaded_at = Some(Instant::now());
-    after_branch_status_loaded(app);
-    true
+    NetApplyResult::changed(true).with_effects(NetEffects {
+        sync_selected_repo: true,
+        refresh_stack_status: true,
+        refresh_commit_list: true,
+    })
 }

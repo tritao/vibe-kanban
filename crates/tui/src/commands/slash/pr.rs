@@ -89,6 +89,10 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
             crate::ui::toasts::warn_short(app, "PR: conflicts in progress (resolve/abort first)");
             return Ok(());
         }
+        if r.is_dirty() {
+            crate::ui::toasts::warn_short(app, "PR: repo has uncommitted changes");
+            return Ok(());
+        }
         if r.commits_ahead() == 0 {
             crate::ui::toasts::ok_short(app, "PR: no changes to open (up to date)");
             return Ok(());

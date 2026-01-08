@@ -46,12 +46,6 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
     );
 }
 
-pub(crate) fn after_branch_status_loaded(app: &mut AppState) {
-    crate::ui::sync_selected_repo_from_diff_selection(app);
-    crate::commands::request_stack_status_refresh(app);
-    crate::commands::request_commit_list_refresh(app);
-}
-
 pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration) {
     let Some(attempt_id) = app.board.selected_attempt_id else {
         return;

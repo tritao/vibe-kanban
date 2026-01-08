@@ -13,7 +13,7 @@ use crate::{
     util::{board_statuses, window_for_list},
 };
 
-pub(crate) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
+pub(super) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
     let by_status = board_tasks_by_status(app);
     let statuses = board_statuses(app);
     let needs = super::layout::board_section_needs(app);

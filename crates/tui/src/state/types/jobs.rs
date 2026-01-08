@@ -18,7 +18,6 @@ pub(crate) enum JobKey {
     PullRequestAttach,
     PullRequestComments,
     TaskDelete,
-    OneShot(u64),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

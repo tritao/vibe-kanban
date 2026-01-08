@@ -89,6 +89,10 @@ pub(super) fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Re
             );
             return Ok(());
         }
+        if r.is_dirty() {
+            crate::ui::toasts::warn_short(app, "Rebase: repo has uncommitted changes");
+            return Ok(());
+        }
         if old.is_none() && onto.is_none() && r.commits_behind() == 0 {
             crate::ui::toasts::ok_short(app, "Rebase: already up to date");
             return Ok(());
@@ -130,6 +134,10 @@ pub(super) fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Res
                 app,
                 "Merge: conflicts in progress (resolve/abort first)",
             );
+            return Ok(());
+        }
+        if r.is_dirty() {
+            crate::ui::toasts::warn_short(app, "Merge: repo has uncommitted changes");
             return Ok(());
         }
         if r.commits_ahead() == 0 {

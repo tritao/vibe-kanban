@@ -28,6 +28,15 @@ impl<'a> RepoStatuses<'a> {
             .iter()
             .position(|r| RepoStatusRef::new(r).has_conflicts())
     }
+
+    pub(crate) fn list_lines(&self, selected_idx: usize) -> Vec<String> {
+        let mut lines = vec!["Repos:".to_string()];
+        for (idx, repo) in self.repos.iter().enumerate() {
+            let marker = if idx == selected_idx { "*" } else { " " };
+            lines.push(format!("  {marker} {}. {}", idx + 1, repo.repo_name));
+        }
+        lines
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -129,5 +138,24 @@ impl<'a> RepoStatusRef<'a> {
 
     pub(crate) fn pr_badge(self) -> Option<(i64, MergeStatus)> {
         self.pr_number().zip(self.pr_status())
+    }
+
+    pub(crate) fn can_merge(self) -> bool {
+        self.commits_ahead() > 0 && !self.has_conflicts() && !self.is_dirty()
+    }
+
+    pub(crate) fn can_rebase(self) -> bool {
+        self.commits_behind() > 0 && !self.has_conflicts() && !self.is_dirty()
+    }
+
+    pub(crate) fn can_create_pr(self) -> bool {
+        self.commits_ahead() > 0
+            && self.pr_number().is_none()
+            && !self.has_conflicts()
+            && !self.is_dirty()
+    }
+
+    pub(crate) fn can_open_pr(self) -> bool {
+        self.pr_number().is_some() && self.pr_url().is_some_and(|u| !u.trim().is_empty())
     }
 }

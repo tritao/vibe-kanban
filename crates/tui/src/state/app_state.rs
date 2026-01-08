@@ -165,7 +165,6 @@ pub(crate) struct AppState {
     pub(crate) diff: DiffState,
 
     pub(crate) jobs: HashMap<JobKey, tokio::task::JoinHandle<()>>,
-    pub(crate) next_job_key: u64,
 
     pub(crate) net_tx: mpsc::Sender<NetEvent>,
     pub(crate) project_sel_tx: watch::Sender<Option<Uuid>>,
@@ -366,7 +365,6 @@ impl AppState {
             },
 
             jobs: HashMap::new(),
-            next_job_key: 0,
 
             net_tx,
             project_sel_tx,

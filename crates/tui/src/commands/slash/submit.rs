@@ -1,7 +1,5 @@
 use crate::{
-    events::NetEvent,
     logs::{append_local_user_message, set_pending_user_log},
-    net::ops::{follow_up_http, queue_follow_up_http},
     selection::exec_list,
     state::AppState,
 };
@@ -118,37 +116,21 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
         }
     }
 
-    crate::commands::run_net_job_one_shot(app, move |base_url, net_tx| async move {
-        let session_id = match session_id {
-            Some(id) => Some(id),
-            None => {
-                crate::commands::ensure_session_id_for_message(
-                    &base_url,
-                    &net_tx,
-                    attempt_id,
-                    task_id,
-                    project_id,
-                    executor_profile,
-                )
-                .await
-            }
-        };
-
-        let Some(session_id) = session_id else {
-            return;
-        };
-
-        let result = if is_running {
-            queue_follow_up_http(&base_url, session_id, &msg).await
-        } else {
-            follow_up_http(&base_url, session_id, &msg).await
-        };
-
-        if let Err(e) = result {
-            let _ = net_tx
-                .send(NetEvent::Error(crate::fmt::op_failed("follow-up", e)))
-                .await;
-        }
+    crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
+        crate::commands::messages::send_user_message_task(
+            base_url,
+            net_tx,
+            crate::commands::messages::SendUserMessage {
+                session_id,
+                attempt_id,
+                task_id,
+                project_id,
+                executor_profile,
+                text: msg,
+                queue_if_running: is_running,
+            },
+        )
+        .await;
     });
 
     false

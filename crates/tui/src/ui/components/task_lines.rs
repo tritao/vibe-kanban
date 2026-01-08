@@ -5,7 +5,7 @@ use ratatui::{
 
 use crate::selection::BoardTaskItem;
 
-pub(crate) fn render_board_task_line(item: &BoardTaskItem) -> Line<'static> {
+pub(super) fn render_board_task_line(item: &BoardTaskItem) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = vec![];
 
     if item.indent > 0 {

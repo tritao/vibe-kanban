@@ -51,7 +51,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             app.ui.composer.set_end();
             let layout = compute_main_layout(current_terminal_rect(), FocusPane::Execution);
             let area = layout.exec_input;
-            let (inner_w, inner_h) = crate::layout::inner_wh(area);
+            let (inner_w, inner_h) = crate::ui::geometry::inner_size(area);
             let prefix_w = crate::text::display_width("  ");
             let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);
             app.ui
@@ -114,6 +114,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 toasts::warn_short(app, "PR: none attached");
                 return;
             };
+            if pr.url.trim().is_empty() {
+                toasts::warn_short(app, "PR: has no URL");
+                return;
+            }
 
             match open_url(&pr.url) {
                 Ok(()) => {
@@ -237,6 +241,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 toasts::warn_seconds(app, "Merge: conflicts in progress (resolve/abort first)", 2);
                 return;
             }
+            if r.is_dirty() {
+                toasts::warn_seconds(app, "Merge: repo has uncommitted changes", 2);
+                return;
+            }
             if r.commits_ahead() == 0 {
                 toasts::ok_seconds(app, "Merge: nothing to merge (up to date)", 2);
                 return;
@@ -277,6 +285,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 );
                 return;
             }
+            if r.is_dirty() {
+                toasts::warn_seconds(app, "Rebase: repo has uncommitted changes", 2);
+                return;
+            }
             if r.commits_behind() == 0 {
                 toasts::ok_seconds(app, "Rebase: already up to date", 2);
                 return;
@@ -311,6 +323,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             };
             if r.has_conflicts() {
                 toasts::warn_seconds(app, "PR: conflicts in progress (resolve/abort first)", 2);
+                return;
+            }
+            if r.is_dirty() {
+                toasts::warn_seconds(app, "PR: repo has uncommitted changes", 2);
                 return;
             }
             if r.commits_ahead() == 0 {

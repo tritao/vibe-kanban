@@ -58,26 +58,8 @@ pub(super) fn repo_bar_button_specs(
     let has_conflicts = shared::repo_index_with_conflicts(app).is_some();
 
     let attempt_selected = app.board.selected_attempt_id.is_some();
-    let (ahead, behind, selected_has_conflicts, pr_open, pr_url_ok, is_dirty) =
-        if let Some(r) = repo {
-            let r = RepoStatusRef::new(r);
-            let ahead = r.commits_ahead();
-            let behind = r.commits_behind();
-            let selected_has_conflicts = r.has_conflicts();
-            let is_dirty = r.is_dirty();
-            let pr_open = r.pr_number();
-            let pr_url_ok = r.pr_url().is_some_and(|u| !u.trim().is_empty());
-            (
-                ahead,
-                behind,
-                selected_has_conflicts,
-                pr_open,
-                pr_url_ok,
-                is_dirty,
-            )
-        } else {
-            (0, 0, false, None, false, false)
-        };
+    let repo_ref = repo.map(RepoStatusRef::new);
+    let pr_open = repo_ref.and_then(|r| r.pr_number());
 
     let is_applicable = |action: DiffRepoAction| -> bool {
         match action {
@@ -85,31 +67,12 @@ pub(super) fn repo_bar_button_specs(
             DiffRepoAction::ResolveConflicts
             | DiffRepoAction::OpenConflict
             | DiffRepoAction::AbortConflicts => attempt_selected && has_conflicts,
-            DiffRepoAction::Merge => {
-                attempt_selected
-                    && repo.is_some()
-                    && ahead > 0
-                    && !selected_has_conflicts
-                    && !is_dirty
-            }
-            DiffRepoAction::Rebase => {
-                attempt_selected
-                    && repo.is_some()
-                    && behind > 0
-                    && !selected_has_conflicts
-                    && !is_dirty
-            }
+            DiffRepoAction::Merge => attempt_selected && repo_ref.is_some_and(|r| r.can_merge()),
+            DiffRepoAction::Rebase => attempt_selected && repo_ref.is_some_and(|r| r.can_rebase()),
             DiffRepoAction::CreatePr => {
-                attempt_selected
-                    && repo.is_some()
-                    && ahead > 0
-                    && pr_open.is_none()
-                    && !selected_has_conflicts
-                    && !is_dirty
+                attempt_selected && repo_ref.is_some_and(|r| r.can_create_pr())
             }
-            DiffRepoAction::OpenPr => {
-                attempt_selected && repo.is_some() && pr_open.is_some() && pr_url_ok
-            }
+            DiffRepoAction::OpenPr => attempt_selected && repo_ref.is_some_and(|r| r.can_open_pr()),
         }
     };
 

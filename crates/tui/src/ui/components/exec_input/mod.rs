@@ -10,7 +10,7 @@ mod hit_test;
 mod render;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum ExecInputEvent {
+pub(super) enum ExecInputEvent {
     ClickTo {
         cursor: usize,
         content_w: usize,
@@ -18,7 +18,7 @@ pub(crate) enum ExecInputEvent {
     },
 }
 
-pub(crate) struct ExecInput;
+pub(super) struct ExecInput;
 
 impl UiComponent for ExecInput {
     type Event = ExecInputEvent;

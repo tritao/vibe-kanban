@@ -28,7 +28,7 @@ fn parse_slash_command(app: &mut AppState, tokens: &[String]) -> Result<bool, St
     match cmd {
         "help" => {
             app.ui.show_help = true;
-            app.ui.set_notice("Opened help. (Press Esc to close)");
+            app.ui.set_notice(crate::ui::messages::notices::HELP_OPENED);
             Ok(false)
         }
         "quit" => Ok(true),

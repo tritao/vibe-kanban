@@ -22,7 +22,8 @@ pub(super) fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Res
             }
             let _ = resolve_repo_for_command(app, parsed.get_value("--repo"))?;
             crate::commands::request_stack_status_refresh(app);
-            app.ui.set_notice("Stack: refreshing…");
+            app.ui
+                .set_notice(crate::ui::messages::notices::STACK_REFRESHING);
             Ok(())
         }
         "enable" => {
@@ -40,7 +41,7 @@ pub(super) fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Res
             let (repo_id, repo_name) = resolve_repo_for_command(app, parsed.get_value("--repo"))?;
             crate::commands::trigger_stack_enable(app, attempt_id, repo_id);
             app.ui
-                .set_notice(format!("Stack: enabling for {repo_name}…"));
+                .set_notice(crate::ui::messages::notices::stack_enabling(&repo_name));
             Ok(())
         }
         "disable" => {
@@ -58,10 +59,10 @@ pub(super) fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Res
             let (repo_id, repo_name) = resolve_repo_for_command(app, parsed.get_value("--repo"))?;
             let force = parsed.get_bool("--force");
             crate::commands::trigger_stack_disable(app, attempt_id, repo_id, force);
-            app.ui.set_notice(format!(
-                "Stack: disabling for {repo_name}{}…",
-                if force { " (force)" } else { "" }
-            ));
+            app.ui
+                .set_notice(crate::ui::messages::notices::stack_disabling(
+                    &repo_name, force,
+                ));
             Ok(())
         }
         "new" => {
@@ -82,7 +83,8 @@ pub(super) fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Res
             let (repo_id, repo_name) = resolve_repo_for_command(app, parsed.get_value("--repo"))?;
             let name = parsed.get_value("--name").map(ToString::to_string);
             crate::commands::trigger_stack_new(app, attempt_id, repo_id, name, message);
-            app.ui.set_notice(format!("Stack: new ({repo_name})…"));
+            app.ui
+                .set_notice(crate::ui::messages::notices::stack_new(&repo_name));
             Ok(())
         }
         "refresh" => {
@@ -115,7 +117,8 @@ pub(super) fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Res
                 paths,
                 allow_dirty_index,
             );
-            app.ui.set_notice(format!("Stack: refresh ({repo_name})…"));
+            app.ui
+                .set_notice(crate::ui::messages::notices::stack_refresh(&repo_name));
             Ok(())
         }
         "push" => {
@@ -132,7 +135,8 @@ pub(super) fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Res
             }
             let (repo_id, repo_name) = resolve_repo_for_command(app, parsed.get_value("--repo"))?;
             crate::commands::trigger_stack_push(app, attempt_id, repo_id);
-            app.ui.set_notice(format!("Stack: push ({repo_name})…"));
+            app.ui
+                .set_notice(crate::ui::messages::notices::stack_push(&repo_name));
             Ok(())
         }
         "pop" => {
@@ -149,7 +153,8 @@ pub(super) fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Res
             }
             let (repo_id, repo_name) = resolve_repo_for_command(app, parsed.get_value("--repo"))?;
             crate::commands::trigger_stack_pop(app, attempt_id, repo_id);
-            app.ui.set_notice(format!("Stack: pop ({repo_name})…"));
+            app.ui
+                .set_notice(crate::ui::messages::notices::stack_pop(&repo_name));
             Ok(())
         }
         "undo" => {
@@ -166,7 +171,8 @@ pub(super) fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Res
             }
             let (repo_id, repo_name) = resolve_repo_for_command(app, parsed.get_value("--repo"))?;
             crate::commands::trigger_stack_undo(app, attempt_id, repo_id);
-            app.ui.set_notice(format!("Stack: undo ({repo_name})…"));
+            app.ui
+                .set_notice(crate::ui::messages::notices::stack_undo(&repo_name));
             Ok(())
         }
         "redo" => {
@@ -183,7 +189,8 @@ pub(super) fn handle_stack_command(app: &mut AppState, tokens: &[String]) -> Res
             }
             let (repo_id, repo_name) = resolve_repo_for_command(app, parsed.get_value("--repo"))?;
             crate::commands::trigger_stack_redo(app, attempt_id, repo_id);
-            app.ui.set_notice(format!("Stack: redo ({repo_name})…"));
+            app.ui
+                .set_notice(crate::ui::messages::notices::stack_redo(&repo_name));
             Ok(())
         }
         other => Err(format!("unknown stack subcommand: {other}")),

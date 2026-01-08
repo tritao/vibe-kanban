@@ -9,7 +9,7 @@ pub(super) fn compute_click_cursor(
     col: u16,
     row: u16,
 ) -> ExecInputEvent {
-    let (inner_w, _) = crate::layout::inner_wh(area);
+    let (inner_w, _) = crate::ui::geometry::inner_size(area);
     let inner_h = area.height.saturating_sub(2) as usize;
     let prefix_w = display_width("  ");
     let content_w = inner_w.saturating_sub(prefix_w).saturating_sub(1).max(1);

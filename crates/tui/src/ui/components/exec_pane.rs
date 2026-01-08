@@ -4,7 +4,7 @@ use ratatui::layout::Rect;
 use super::{
     UiComponent,
     exec_input::{ExecInput, ExecInputEvent},
-    exec_log::{ExecLog, ExecLogEvent},
+    exec_log::{ExecLog, ExecLogEvent, ExecLogHitKind},
 };
 use crate::{
     prefs::save_prefs,
@@ -150,7 +150,7 @@ fn handle_exec_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
                 };
                 return <ExecLog as UiComponent>::on_event(
                     app,
-                    ExecLogEvent::Hit(crate::ui::components::exec_log::ExecLogHitKind::Right, hit),
+                    ExecLogEvent::Hit(ExecLogHitKind::Right, hit),
                 );
             }
             false

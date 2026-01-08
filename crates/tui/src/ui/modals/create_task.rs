@@ -185,7 +185,7 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
 
     // Title
     let title_border = create_task_focus_border(state.focus, CreateTaskFocus::Title);
-    let (title_inner_w, _) = crate::layout::inner_wh(chunks[0]);
+    let (title_inner_w, _) = crate::ui::geometry::inner_size(chunks[0]);
     let (_, title_scroll_x) = state.title.ensured_scroll(title_inner_w.max(1), 1);
     let title_p = Paragraph::new(Line::from(state.title.buffer.clone()))
         .block(
@@ -201,7 +201,7 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
     // Description (auto-scroll to keep the cursor visible)
     let desc_border = create_task_focus_border(state.focus, CreateTaskFocus::Description);
     let desc_inner_h = chunks[1].height.saturating_sub(2) as usize;
-    let (desc_inner_w, _) = crate::layout::inner_wh(chunks[1]);
+    let (desc_inner_w, _) = crate::ui::geometry::inner_size(chunks[1]);
     let (desc_scroll_y, desc_scroll_x) = state
         .description
         .ensured_scroll(desc_inner_w.max(1), desc_inner_h.max(1));
@@ -344,7 +344,7 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
             f.set_cursor_position((x, y));
         }
         CreateTaskFocus::Description => {
-            let (inner_w, _) = crate::layout::inner_wh(chunks[1]);
+            let (inner_w, _) = crate::ui::geometry::inner_size(chunks[1]);
             let inner_h = chunks[1].height.saturating_sub(2) as usize;
             if inner_w == 0 || inner_h == 0 {
                 return;
@@ -415,7 +415,7 @@ fn prev_focus(f: CreateTaskFocus) -> CreateTaskFocus {
 fn create_task_modal_desc_inner_dims(term: ratatui::layout::Rect) -> (usize, usize) {
     // Keep this in sync with `render_create_task_modal`.
     let area = crate::ui::layout::centered_rect(75, 80, term);
-    let (inner_w, _) = crate::layout::inner_wh(area);
+    let (inner_w, _) = crate::ui::geometry::inner_size(area);
     let inner_h = area.height.saturating_sub(2) as usize;
     // Layout in render_create_task_modal:
     // - Title field: 3
@@ -434,7 +434,7 @@ fn create_task_modal_desc_inner_dims(term: ratatui::layout::Rect) -> (usize, usi
 
 fn create_task_modal_title_inner_w(term: ratatui::layout::Rect) -> usize {
     let area = crate::ui::layout::centered_rect(75, 80, term);
-    let (inner_w, _) = crate::layout::inner_wh(area);
+    let (inner_w, _) = crate::ui::geometry::inner_size(area);
     inner_w.saturating_sub(2).max(1)
 }
 

@@ -10,17 +10,10 @@ pub(super) fn handle_repo_command(app: &mut AppState, arg: Option<&str>) -> Resu
     }
 
     let Some(arg) = arg.filter(|s| !s.trim().is_empty()) else {
-        let mut msg = String::new();
-        msg.push_str("Repos:\n");
-        for (idx, repo) in app.diff.repo_statuses.iter().enumerate() {
-            let marker = if idx == app.diff.selected_repo_index {
-                "*"
-            } else {
-                " "
-            };
-            msg.push_str(&format!("  {marker} {}. {}\n", idx + 1, repo.repo_name));
-        }
-        app.ui.set_notice(msg.trim_end().to_string());
+        let msg = crate::store::git_status::RepoStatuses::new(&app.diff.repo_statuses)
+            .list_lines(app.diff.selected_repo_index)
+            .join("\n");
+        app.ui.set_notice(msg);
         return Ok(());
     };
 

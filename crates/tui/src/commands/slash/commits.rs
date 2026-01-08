@@ -18,11 +18,13 @@ pub(super) fn handle_commits_command(app: &mut AppState) -> Result<(), String> {
 
     if app.diff.list_mode == crate::state::DiffListMode::Commits {
         crate::commands::request_commit_list_refresh(app);
-        app.ui.set_notice("Commits: refreshing…");
+        app.ui
+            .set_notice(crate::ui::messages::notices::COMMITS_REFRESHING);
         return Ok(());
     }
 
     crate::commands::select_commits_mode(app);
-    app.ui.set_notice("Commits: loaded.");
+    app.ui
+        .set_notice(crate::ui::messages::notices::COMMITS_LOADED);
     Ok(())
 }
