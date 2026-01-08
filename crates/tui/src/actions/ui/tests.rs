@@ -44,7 +44,7 @@ fn copy_diff_files_emits_copy_effect() {
     app.diff.selected_diff_index = 1; // 0 is ALL
     crate::selection::change::on_diff_file_selected(&mut app);
 
-    let (quit, _dirty, effects) = super::reduce_ui(
+    let res = super::reduce_ui(
         &mut app,
         UiEvent::Crossterm(Event::Key(KeyEvent::new_with_kind(
             KeyCode::Char('y'),
@@ -53,9 +53,9 @@ fn copy_diff_files_emits_copy_effect() {
         ))),
     )
     .unwrap();
-    assert!(!quit);
+    assert!(!res.should_quit);
     assert!(
-        effects
+        res.effects
             .iter()
             .any(|e| matches!(e, super::Effect::CopyOsc52(s) if s == "a.txt"))
     );
@@ -71,7 +71,7 @@ fn composer_left_moves_cursor() {
     app.ui.composer.buffer = "hey".to_string();
     app.ui.composer.set_end();
 
-    let (_quit, dirty, _effects) = super::reduce_ui(
+    let res = super::reduce_ui(
         &mut app,
         UiEvent::Crossterm(Event::Key(KeyEvent::new_with_kind(
             KeyCode::Left,
@@ -80,7 +80,7 @@ fn composer_left_moves_cursor() {
         ))),
     )
     .unwrap();
-    assert!(dirty);
+    assert!(res.changed);
     assert_eq!(app.ui.composer.cursor, 2);
 }
 
@@ -99,7 +99,7 @@ fn search_char_updates_filter() {
         original: app.board.task_filter.clone(),
     });
 
-    let (_quit, dirty, _effects) = super::reduce_ui(
+    let res = super::reduce_ui(
         &mut app,
         UiEvent::Crossterm(Event::Key(KeyEvent::new_with_kind(
             KeyCode::Char('c'),
@@ -108,7 +108,7 @@ fn search_char_updates_filter() {
         ))),
     )
     .unwrap();
-    assert!(dirty);
+    assert!(res.changed);
     assert_eq!(app.board.task_filter, "abc");
 }
 
@@ -122,7 +122,7 @@ fn composer_enter_applies_slash_autocomplete_instead_of_submit() {
     app.ui.composer.buffer = "/he".to_string();
     app.ui.composer.set_end();
 
-    let (quit, dirty, _effects) = super::reduce_ui(
+    let res = super::reduce_ui(
         &mut app,
         UiEvent::Crossterm(Event::Key(KeyEvent::new_with_kind(
             KeyCode::Enter,
@@ -132,8 +132,8 @@ fn composer_enter_applies_slash_autocomplete_instead_of_submit() {
     )
     .unwrap();
 
-    assert!(!quit);
-    assert!(dirty);
+    assert!(!res.should_quit);
+    assert!(res.changed);
     assert_eq!(app.ui.composer.buffer, "/help ");
     assert!(app.ui.composer_active);
 }
@@ -150,7 +150,7 @@ fn composer_enter_with_no_attempt_keeps_composer_open() {
     app.board.selected_attempt_id = None;
     app.exec.exec_store = serde_json::json!({ "execution_processes": {} });
 
-    let (quit, dirty, _effects) = super::reduce_ui(
+    let res = super::reduce_ui(
         &mut app,
         UiEvent::Crossterm(Event::Key(KeyEvent::new_with_kind(
             KeyCode::Enter,
@@ -160,8 +160,8 @@ fn composer_enter_with_no_attempt_keeps_composer_open() {
     )
     .unwrap();
 
-    assert!(!quit);
-    assert!(dirty);
+    assert!(!res.should_quit);
+    assert!(res.changed);
     assert!(app.ui.composer_active);
     assert_eq!(app.ui.composer.buffer, "hello");
     assert!(
@@ -191,7 +191,7 @@ fn text_field_allows_shift_char_insertion() {
     let state = app.ui.create_task.as_mut().unwrap();
     state.focus = crate::state::CreateTaskFocus::Description;
 
-    let (_quit, dirty, _effects) = super::reduce_ui(
+    let res = super::reduce_ui(
         &mut app,
         UiEvent::Crossterm(Event::Key(KeyEvent::new_with_kind(
             KeyCode::Char('N'),
@@ -201,7 +201,7 @@ fn text_field_allows_shift_char_insertion() {
     )
     .unwrap();
 
-    assert!(dirty);
+    assert!(res.changed);
     let state = app.ui.create_task.as_ref().unwrap();
     assert_eq!(state.description.buffer, "N");
 }

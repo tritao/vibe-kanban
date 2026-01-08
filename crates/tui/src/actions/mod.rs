@@ -53,11 +53,11 @@ pub(crate) fn dispatch(app: &mut AppState, action: Action) -> anyhow::Result<Dis
     }
     match action {
         Action::Ui(evt) => {
-            let (quit, dirty, effects) = ui::reduce_ui(app, evt)?;
-            let effects_dirty = ui::run_effects(app, effects);
+            let res = ui::reduce_ui(app, evt)?;
+            let effects_dirty = ui::run_effects(app, res.effects);
             Ok(DispatchOutcome {
-                quit,
-                dirty: dirty || effects_dirty,
+                quit: res.should_quit,
+                dirty: res.changed || effects_dirty,
             })
         }
         Action::Net(evt) => Ok(DispatchOutcome {

@@ -2,7 +2,6 @@ use std::time::Instant;
 
 use super::apply::{NetApplyResult, NetEffects};
 use crate::{
-    actions::selection as sel,
     commands::request_diff_reconnect,
     diff_preview::on_diff_entries_patched,
     events::StreamStatus,
@@ -15,7 +14,7 @@ pub(super) fn diff_stream_status(app: &mut AppState, status: StreamStatus) -> bo
 }
 
 pub(super) fn diff_reset(app: &mut AppState) -> bool {
-    sel::reset_diff_stream_state(app);
+    crate::state::reset::reset_diff_stream_state(app);
     true
 }
 
@@ -38,7 +37,7 @@ pub(super) fn diff_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
 }
 
 pub(super) fn diff_reconnect(app: &mut AppState) -> bool {
-    sel::reset_diff_stream_state(app);
+    crate::state::reset::reset_diff_stream_state(app);
     request_diff_reconnect(app);
     true
 }

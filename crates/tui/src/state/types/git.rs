@@ -41,8 +41,10 @@ pub(crate) struct PrMerge {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub(crate) enum Merge {
+    // We don't currently use any payload from "direct" merges; keep it as a unit struct so serde
+    // can ignore any additional fields from the backend without storing untyped JSON.
     #[allow(dead_code)]
-    Direct(serde_json::Value),
+    Direct {},
     Pr(PrMerge),
 }
 

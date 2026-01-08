@@ -19,6 +19,7 @@ mod modals;
 mod mouse;
 mod slash;
 
+#[derive(Debug)]
 pub(super) enum Effect {
     CopyOsc52(String),
     SetMouseCapture(bool),
@@ -27,6 +28,44 @@ pub(super) enum Effect {
         color: Color,
         expires_at: Option<Instant>,
     },
+}
+
+#[derive(Debug, Default)]
+pub(super) struct UiApplyResult {
+    pub(super) changed: bool,
+    pub(super) should_quit: bool,
+    pub(super) effects: Vec<Effect>,
+}
+
+impl UiApplyResult {
+    pub(super) fn none() -> Self {
+        Self::default()
+    }
+
+    pub(super) fn changed(changed: bool) -> Self {
+        Self {
+            changed,
+            ..Self::default()
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(super) fn quit() -> Self {
+        Self {
+            should_quit: true,
+            ..Self::default()
+        }
+    }
+
+    pub(super) fn with_effects(mut self, effects: Vec<Effect>) -> Self {
+        self.effects = effects;
+        self
+    }
+
+    pub(super) fn with_effect(mut self, effect: Effect) -> Self {
+        self.effects.push(effect);
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -38,25 +77,22 @@ pub(super) enum CopyTarget {
     AttemptCheckoutPath,
 }
 
-pub(super) fn reduce_ui(
-    app: &mut AppState,
-    evt: UiEvent,
-) -> anyhow::Result<(bool, bool, Vec<Effect>)> {
+pub(super) fn reduce_ui(app: &mut AppState, evt: UiEvent) -> anyhow::Result<UiApplyResult> {
     match evt {
-        UiEvent::Tick => Ok((false, false, vec![])),
+        UiEvent::Tick => Ok(UiApplyResult::none()),
         UiEvent::Crossterm(Event::Key(key)) => {
             if key.kind != KeyEventKind::Press {
-                return Ok((false, false, vec![]));
+                return Ok(UiApplyResult::none());
             }
             Ok(keys::reduce_key(app, key))
         }
         UiEvent::Crossterm(Event::Mouse(mouse)) => {
             if !app.ui.mouse_capture_enabled {
-                return Ok((false, false, vec![]));
+                return Ok(UiApplyResult::none());
             }
-            Ok((false, mouse::reduce_mouse(app, mouse), vec![]))
+            Ok(UiApplyResult::changed(mouse::reduce_mouse(app, mouse)))
         }
-        _ => Ok((false, false, vec![])),
+        _ => Ok(UiApplyResult::none()),
     }
 }
 

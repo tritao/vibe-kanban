@@ -12,5 +12,3 @@ pub(crate) use reconcile::ensure_selection_visible;
 pub(in crate::actions) use reconcile::{
     ensure_exec_selection, reconcile_projects_selection, reconcile_tasks_selection, set_attempts,
 };
-
-pub(in crate::actions) use crate::selection::change::reset_diff_stream_state;

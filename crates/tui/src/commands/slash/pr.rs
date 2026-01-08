@@ -51,17 +51,23 @@ fn handle_pr_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
     if let Some(block) = repo_ref.action_block(GitRepoAction::OpenPr) {
         return Err(block.message);
     }
-    let Some(pr) = repo_ref.pr_info() else {
+    let Some(pr) = repo_ref.pr() else {
         return Err("PR: none attached".to_string());
     };
+    let Some(url) = pr.url() else {
+        return Err("PR: has no URL".to_string());
+    };
 
-    match open_url(&pr.url) {
+    match open_url(url) {
         Ok(()) => {
-            crate::ui::toasts::ok_short(app, format!("PR: opened (PR#{}, {repo_name})", pr.number));
+            crate::ui::toasts::ok_short(
+                app,
+                format!("PR: opened (PR#{}, {repo_name})", pr.number()),
+            );
             Ok(())
         }
         Err(e) => {
-            app.ui.set_notice(format!("PR URL: {}", pr.url));
+            app.ui.set_notice(format!("PR URL: {url}"));
             Err(format!("failed to open PR URL: {e}"))
         }
     }

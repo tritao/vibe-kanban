@@ -11,6 +11,7 @@ pub(crate) mod list_nav;
 pub(crate) mod loading;
 pub(crate) mod loading_placeholders;
 pub(crate) mod messages;
+pub(crate) mod metrics;
 pub(crate) mod modals;
 pub(crate) mod palette;
 pub(crate) mod scroll;
@@ -23,8 +24,7 @@ pub(crate) mod widgets;
 
 pub(crate) use chrome::{render_bottom_bar, render_top_bar};
 pub(crate) use components::{
-    diff_pane::sync_selected_repo_from_diff_selection,
-    diff_repo_bar::{DiffRepoAction, trigger_diff_repo_action},
+    DiffRepoAction, sync_selected_repo_from_diff_selection, trigger_diff_repo_action,
 };
 pub(crate) use execution::{close_composer, open_composer, render_composer_autocomplete};
 pub(crate) use modals::open_create_task_modal;

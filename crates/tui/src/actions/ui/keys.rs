@@ -9,21 +9,22 @@ use crate::{
     state::{AppState, FocusPane},
 };
 
-pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<Effect>) {
+pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> super::UiApplyResult {
     // Alt+S toggles mouse capture (enables terminal text selection).
     if matches!(
         (key.code, key.modifiers),
         (KeyCode::Char('s'), KeyModifiers::ALT)
     ) {
-        return (
-            false,
-            true,
-            vec![Effect::SetMouseCapture(!app.ui.mouse_capture_enabled)],
-        );
+        return super::UiApplyResult::changed(false)
+            .with_effect(Effect::SetMouseCapture(!app.ui.mouse_capture_enabled));
     }
 
     if let Some(res) = crate::ui::modals::reduce_modal_key(app, key) {
-        return (res.quit, res.dirty, vec![]);
+        return super::UiApplyResult {
+            changed: res.dirty,
+            should_quit: res.quit,
+            effects: vec![],
+        };
     }
 
     // Composer editing.
@@ -31,41 +32,49 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) => {
                 modals::close_composer(app);
-                return (false, true, vec![]);
+                return super::UiApplyResult::changed(true);
             }
             (KeyCode::Enter, _) => {
                 if crate::slash::apply_composer_autocomplete(app) {
-                    return (false, true, vec![]);
+                    return super::UiApplyResult::changed(true);
                 }
                 let quit = submit_composer(app);
-                return (quit, true, vec![]);
+                return super::UiApplyResult {
+                    changed: true,
+                    should_quit: quit,
+                    effects: vec![],
+                };
             }
             _ => {}
         }
         if composer::handle_composer_key(app, key) {
-            return (false, true, vec![]);
+            return super::UiApplyResult::changed(true);
         }
-        return (false, false, vec![]);
+        return super::UiApplyResult::none();
     }
 
     // Keymap dispatch.
     if let Some((quit, dirty)) = keys_global::handle_global_key(app, key) {
-        return (quit, dirty, vec![]);
+        return super::UiApplyResult {
+            changed: dirty,
+            should_quit: quit,
+            effects: vec![],
+        };
     }
 
     // Common selection shortcuts (independent of focus).
     match key.code {
         KeyCode::Char('[') => {
             sel::select_adjacent_attempt(app, -1);
-            return (false, true, vec![]);
+            return super::UiApplyResult::changed(true);
         }
         KeyCode::Char(']') => {
             sel::select_adjacent_attempt(app, 1);
-            return (false, true, vec![]);
+            return super::UiApplyResult::changed(true);
         }
         KeyCode::Char('x') => {
             if confirm::open_stop_exec_confirm(app) {
-                return (false, true, vec![]);
+                return super::UiApplyResult::changed(true);
             }
         }
         _ => {}
@@ -73,47 +82,45 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> (bool, bool, Vec<
 
     // Shift+Y copies the worktree/repo root path (independent of focus).
     if key.code == KeyCode::Char('Y') {
-        return (false, false, reduce_copy(app, CopyTarget::WorktreePath));
+        return super::UiApplyResult::none()
+            .with_effects(reduce_copy(app, CopyTarget::WorktreePath));
     }
 
     // Shift+W copies the selected attempt's checkout path (for the selected repo).
     if key.code == KeyCode::Char('W') {
-        return (
-            false,
-            false,
-            reduce_copy(app, CopyTarget::AttemptCheckoutPath),
-        );
+        return super::UiApplyResult::none()
+            .with_effects(reduce_copy(app, CopyTarget::AttemptCheckoutPath));
     }
 
     if key.code == KeyCode::Char('y') {
         if let Some(target) = copy_targets::copy_target_for_focused_pane(app) {
-            return (false, false, reduce_copy(app, target));
+            return super::UiApplyResult::none().with_effects(reduce_copy(app, target));
         }
     }
 
     let handled = match app.ui.focus {
         FocusPane::Board => {
-            <crate::ui::components::board_pane::BoardPane as crate::ui::components::UiComponent>::on_event(
+            <crate::ui::components::BoardPane as crate::ui::components::UiComponent>::on_event(
                 app,
-                crate::ui::components::board_pane::BoardPaneEvent::Key(key),
+                crate::ui::components::BoardPaneEvent::Key(key),
             )
         }
         FocusPane::Diff => {
-            <crate::ui::components::diff_pane::DiffPane as crate::ui::components::UiComponent>::on_event(
+            <crate::ui::components::DiffPane as crate::ui::components::UiComponent>::on_event(
                 app,
-                crate::ui::components::diff_pane::DiffPaneEvent::Key(key),
+                crate::ui::components::DiffPaneEvent::Key(key),
             )
         }
         FocusPane::Execution => {
-            <crate::ui::components::exec_pane::ExecPane as crate::ui::components::UiComponent>::on_event(
+            <crate::ui::components::ExecPane as crate::ui::components::UiComponent>::on_event(
                 app,
-                crate::ui::components::exec_pane::ExecPaneEvent::Key(key),
+                crate::ui::components::ExecPaneEvent::Key(key),
             )
         }
     };
     if handled {
-        return (false, true, vec![]);
+        return super::UiApplyResult::changed(true);
     }
 
-    (false, false, vec![])
+    super::UiApplyResult::none()
 }

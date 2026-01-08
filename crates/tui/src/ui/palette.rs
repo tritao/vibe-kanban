@@ -228,10 +228,8 @@ pub(crate) fn diff_repo_bar_conflicts_badge() -> (Color, Color) {
     (Color::White, Color::Red)
 }
 
-pub(crate) fn diff_repo_action_color(
-    action: crate::ui::components::diff_repo_bar::DiffRepoAction,
-) -> Color {
-    use crate::ui::components::diff_repo_bar::DiffRepoAction as A;
+pub(crate) fn diff_repo_action_color(action: crate::ui::components::DiffRepoAction) -> Color {
+    use crate::ui::components::DiffRepoAction as A;
     match action {
         A::Merge => Color::Green,
         A::CreatePr | A::OpenPr => Color::Blue,
@@ -243,7 +241,7 @@ pub(crate) fn diff_repo_action_color(
 }
 
 pub(crate) fn diff_repo_action_button_style(
-    action: crate::ui::components::diff_repo_bar::DiffRepoAction,
+    action: crate::ui::components::DiffRepoAction,
     enabled: bool,
     recently_done_fail: bool,
 ) -> Style {

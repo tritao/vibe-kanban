@@ -121,6 +121,7 @@ pub(crate) struct UiState {
     pub(crate) focus: FocusPane,
     pub(crate) diff_focus: DiffFocus,
     pub(crate) show_help: bool,
+    pub(crate) debug_overlay: bool,
 
     pub(crate) input: Option<InputState>,
     pub(crate) confirm: Option<ConfirmState>,
@@ -235,6 +236,7 @@ impl AppState {
                 focus: FocusPane::Board,
                 diff_focus: DiffFocus::Files,
                 show_help: false,
+                debug_overlay: false,
 
                 input: None,
                 confirm: None,

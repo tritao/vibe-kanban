@@ -16,7 +16,7 @@ pub(crate) async fn update_task_status_http(
     let body = serde_json::json!({ "status": status.as_api_str() });
 
     let resp = client.put(endpoint).json(&body).send().await?;
-    let api = decode_api_response::<serde_json::Value>(resp).await?;
+    let api = decode_api_response::<()>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected status update");
     }
@@ -36,7 +36,7 @@ pub(crate) async fn delete_task_http(
     }
 
     let resp = client.delete(endpoint).send().await?;
-    let api = decode_api_response::<serde_json::Value>(resp).await?;
+    let api = decode_api_response::<()>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected delete task");
     }

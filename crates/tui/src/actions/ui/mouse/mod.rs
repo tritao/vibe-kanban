@@ -4,10 +4,7 @@ use crate::{
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     state::AppState,
     ui::components::{
-        UiComponent,
-        board_pane::{BoardPane, BoardPaneEvent},
-        diff_pane::{DiffPane, DiffPaneEvent},
-        exec_pane::{ExecPane, ExecPaneEvent},
+        BoardPane, BoardPaneEvent, DiffPane, DiffPaneEvent, ExecPane, ExecPaneEvent, UiComponent,
     },
 };
 

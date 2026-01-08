@@ -42,6 +42,10 @@ pub(super) fn handle_global_key(app: &mut AppState, key: KeyEvent) -> Option<(bo
             save_prefs(&app.prefs);
             return Some((false, true));
         }
+        (KeyCode::F(2), _) => {
+            app.ui.debug_overlay = !app.ui.debug_overlay;
+            return Some((false, true));
+        }
         _ => {}
     }
 

@@ -5,7 +5,7 @@ use crate::{
     events::NetEvent,
     state::{AppState, TaskStatus},
     store::{tasks_board::board_tasks_by_status, tasks_list::find_task},
-    ui::components::board_pane::BoardHit,
+    ui::components::BoardHit,
 };
 pub(in crate::actions) fn ensure_selected_task_in_active_column(app: &mut AppState) {
     let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
@@ -39,24 +39,21 @@ pub(in crate::actions) fn select_adjacent_attempt(app: &mut AppState, delta: i32
         return;
     }
 
-    let cur = app
-        .board
-        .selected_attempt_id
-        .and_then(|id| app.board.attempts.iter().position(|a| a.id == id))
-        .unwrap_or(
-            app.board
-                .selected_attempt_index
-                .min(app.board.attempts.len() - 1),
-        );
-
-    let next = crate::selection::clamp_index(cur, delta, app.board.attempts.len());
-    if next == cur {
-        return;
+    if let Some(id) = app.board.selected_attempt_id
+        && let Some(idx) = app.board.attempts.iter().position(|a| a.id == id)
+    {
+        app.board.selected_attempt_index = idx;
     }
 
-    app.board.selected_attempt_index = next;
-    let id = app.board.attempts.get(next).map(|a| a.id);
-    select_attempt(app, id);
+    let mut idx = app
+        .board
+        .selected_attempt_index
+        .min(app.board.attempts.len() - 1);
+    if !crate::ui::list_nav::select_delta(&mut idx, delta, app.board.attempts.len()) {
+        return;
+    }
+    app.board.selected_attempt_index = idx;
+    select_attempt(app, app.board.attempts.get(idx).map(|a| a.id));
 }
 
 pub(crate) fn move_active_status(app: &mut AppState, delta: i32) {
@@ -69,8 +66,11 @@ pub(crate) fn move_active_status(app: &mut AppState, delta: i32) {
         .iter()
         .position(|s| *s == app.board.tasks_active_column)
         .unwrap_or(0);
-    let next = crate::selection::clamp_index(cur, delta, statuses.len());
-    app.board.tasks_active_column = statuses[next];
+    let mut idx = cur;
+    if !crate::ui::list_nav::select_delta(&mut idx, delta, statuses.len()) {
+        return;
+    }
+    app.board.tasks_active_column = statuses[idx];
     ensure_selected_task_in_active_column(app);
 }
 

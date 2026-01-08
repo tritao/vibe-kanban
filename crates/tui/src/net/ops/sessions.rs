@@ -14,7 +14,7 @@ pub(crate) async fn stop_exec_http(base_url: &str, exec_id: Uuid) -> anyhow::Res
         &format!("/api/execution-processes/{exec_id}/stop"),
     );
     let resp = client.post(endpoint).send().await?;
-    let api = decode_api_response::<serde_json::Value>(resp).await?;
+    let api = decode_api_response::<()>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected stop request");
     }
@@ -63,7 +63,7 @@ pub(crate) async fn queue_follow_up_http(
     let resp = client.post(endpoint).json(&body).send().await?;
     let status = resp.status();
     let body_text = resp.text().await.unwrap_or_default();
-    let api: ApiResponseWire<serde_json::Value> = serde_json::from_str(&body_text)
+    let api: ApiResponseWire<()> = serde_json::from_str(&body_text)
         .with_context(|| format!("parse backend response (status {status})"))?;
     if !api.success {
         let msg = api
@@ -93,7 +93,7 @@ pub(crate) async fn follow_up_http(
     let resp = client.post(endpoint).json(&body).send().await?;
     let status = resp.status();
     let body_text = resp.text().await.unwrap_or_default();
-    let api: ApiResponseWire<serde_json::Value> = serde_json::from_str(&body_text)
+    let api: ApiResponseWire<()> = serde_json::from_str(&body_text)
         .with_context(|| format!("parse backend response (status {status})"))?;
     if !api.success {
         let msg = api

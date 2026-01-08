@@ -117,17 +117,21 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                 toasts::warn_short(app, block.message);
                 return;
             }
-            let Some(pr) = repo_ref.pr_info() else {
+            let Some(pr) = repo_ref.pr() else {
                 toasts::warn_short(app, "PR: none attached");
                 return;
             };
+            let Some(url) = pr.url() else {
+                toasts::warn_short(app, "PR: has no URL");
+                return;
+            };
 
-            match open_url(&pr.url) {
+            match open_url(url) {
                 Ok(()) => {
-                    toasts::ok_short(app, format!("PR: opened (PR#{})", pr.number));
+                    toasts::ok_short(app, format!("PR: opened (PR#{})", pr.number()));
                 }
                 Err(e) => {
-                    app.ui.set_notice(format!("PR URL: {}", pr.url));
+                    app.ui.set_notice(format!("PR URL: {url}"));
                     toasts::err_medium(app, format!("PR: failed to open ({e})"));
                 }
             }

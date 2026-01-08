@@ -1,13 +1,17 @@
-pub(crate) mod board_pane;
+mod board_pane;
 mod diff_list;
-pub(crate) mod diff_pane;
+mod diff_pane;
 mod diff_preview;
-pub(crate) mod diff_repo_bar;
+mod diff_repo_bar;
 mod exec_input;
 mod exec_log;
-pub(crate) mod exec_pane;
+mod exec_pane;
 mod task_lines;
 
+pub(crate) use board_pane::{BoardHit, BoardPane, BoardPaneEvent};
+pub(crate) use diff_pane::{DiffPane, DiffPaneEvent, sync_selected_repo_from_diff_selection};
+pub(crate) use diff_repo_bar::{DiffRepoAction, trigger_diff_repo_action};
+pub(crate) use exec_pane::{ExecPane, ExecPaneEvent};
 use ratatui::{Frame, layout::Rect};
 
 use crate::state::AppState;

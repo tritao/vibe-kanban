@@ -73,7 +73,6 @@ pub(super) fn append_normalized_entry(
     };
 
     let entry_type_tag = entry_type_ref.tag();
-    let entry_type = entry_type_ref.raw();
     let content_text = content.content_text();
 
     match NormalizedEntryType::parse(entry_type_tag) {
@@ -187,18 +186,9 @@ pub(super) fn append_normalized_entry(
             }
         }
         NormalizedEntryType::NextAction => {
-            let failed = entry_type
-                .get("failed")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let needs_setup = entry_type
-                .get("needs_setup")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(false);
-            let procs = entry_type
-                .get("execution_processes")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(0);
+            let failed = entry_type_ref.next_action_failed();
+            let needs_setup = entry_type_ref.next_action_needs_setup();
+            let procs = entry_type_ref.next_action_execution_processes();
             let text = format!(
                 "next action{} (execs: {}, setup: {})",
                 if failed { " (failed)" } else { "" },
@@ -309,29 +299,19 @@ pub(super) fn append_text_block(
 }
 
 pub(super) fn normalized_entry_text(entry: &serde_json::Value) -> Option<String> {
-    let content = entry
-        .get("content")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-    if !content.trim().is_empty() {
-        return Some(content);
+    let content = NormalizedContentRef::new(entry);
+    let content_text = content.content_text().to_string();
+    if !content_text.trim().is_empty() {
+        return Some(content_text);
     }
 
-    let entry_type = entry.get("entry_type")?;
-    let ty = entry_type.get("type").and_then(|v| v.as_str())?;
+    let entry_type = content.entry_type()?;
+    let ty = entry_type.tag();
     let kind = NormalizedEntryType::parse(ty);
     let label = match kind {
         NormalizedEntryType::ToolUse => {
-            let tool = entry_type
-                .get("tool_name")
-                .and_then(|v| v.as_str())
-                .unwrap_or("tool");
-            let status = entry_type
-                .get("status")
-                .and_then(|v| v.get("status"))
-                .and_then(|v| v.as_str())
-                .unwrap_or("created");
+            let tool = entry_type.tool_name().unwrap_or("tool");
+            let status = entry_type.tool_status_str().unwrap_or("created");
             format!("{tool} ({status})")
         }
         NormalizedEntryType::NextAction => "next action".to_string(),

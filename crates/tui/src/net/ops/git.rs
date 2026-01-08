@@ -62,9 +62,7 @@ pub(crate) async fn rebase_task_attempt_http(
     };
 
     let resp = client.post(endpoint).json(&body).send().await?;
-    let api =
-        decode_json_response::<ApiResponseWire<serde_json::Value, GitOperationErrorWire>>(resp)
-            .await?;
+    let api = decode_json_response::<ApiResponseWire<(), GitOperationErrorWire>>(resp).await?;
     if api.success {
         return Ok(());
     }
@@ -97,7 +95,7 @@ pub(crate) async fn abort_conflicts_http(
         .json(&RepoIdRequest { repo_id })
         .send()
         .await?;
-    let api = decode_json_response::<ApiResponseWire<serde_json::Value>>(resp).await?;
+    let api = decode_json_response::<ApiResponseWire<()>>(resp).await?;
     if !api.success {
         anyhow::bail!(
             "{}",
@@ -122,7 +120,7 @@ pub(crate) async fn merge_task_attempt_http(
         .json(&RepoIdRequest { repo_id })
         .send()
         .await?;
-    let api = decode_json_response::<ApiResponseWire<serde_json::Value>>(resp).await?;
+    let api = decode_json_response::<ApiResponseWire<()>>(resp).await?;
     if !api.success {
         anyhow::bail!(
             "{}",
@@ -153,8 +151,7 @@ pub(crate) async fn push_task_attempt_branch_http(
         .json(&RepoIdRequest { repo_id })
         .send()
         .await?;
-    let api =
-        decode_json_response::<ApiResponseWire<serde_json::Value, PushErrorWire>>(resp).await?;
+    let api = decode_json_response::<ApiResponseWire<(), PushErrorWire>>(resp).await?;
     if api.success {
         return Ok(());
     }
@@ -185,8 +182,7 @@ pub(crate) async fn force_push_task_attempt_branch_http(
         .json(&RepoIdRequest { repo_id })
         .send()
         .await?;
-    let api =
-        decode_json_response::<ApiResponseWire<serde_json::Value, PushErrorWire>>(resp).await?;
+    let api = decode_json_response::<ApiResponseWire<(), PushErrorWire>>(resp).await?;
     if !api.success {
         anyhow::bail!(
             "{}",
@@ -230,7 +226,7 @@ pub(crate) async fn change_target_branch_http(
         "new_target_branch": new_target_branch,
     });
     let resp = client.post(endpoint).json(&body).send().await?;
-    let api = decode_api_response::<serde_json::Value>(resp).await?;
+    let api = decode_api_response::<()>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected change-target-branch");
     }
@@ -253,7 +249,7 @@ pub(crate) async fn checkout_attempt_branch_http(
         "force": false,
     });
     let resp = client.post(endpoint).json(&body).send().await?;
-    let api = decode_api_response::<serde_json::Value>(resp).await?;
+    let api = decode_api_response::<()>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected checkout-branch");
     }

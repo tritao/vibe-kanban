@@ -56,6 +56,7 @@ impl<'a> EntryTypeRef<'a> {
         Self { v }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn raw(&self) -> &'a Value {
         self.v
     }
@@ -71,6 +72,10 @@ impl<'a> EntryTypeRef<'a> {
         self.v.get("denied_tool").and_then(|v| v.as_str())
     }
 
+    pub(crate) fn tool_name(&self) -> Option<&'a str> {
+        self.v.get("tool_name").and_then(|v| v.as_str())
+    }
+
     pub(crate) fn action_type(&self) -> Option<ActionTypeRef<'a>> {
         Some(ActionTypeRef::new(self.v.get("action_type")?))
     }
@@ -81,6 +86,27 @@ impl<'a> EntryTypeRef<'a> {
             return Some(s);
         }
         status.get("status").and_then(|v| v.as_str())
+    }
+
+    pub(crate) fn next_action_failed(&self) -> bool {
+        self.v
+            .get("failed")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn next_action_needs_setup(&self) -> bool {
+        self.v
+            .get("needs_setup")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    }
+
+    pub(crate) fn next_action_execution_processes(&self) -> u64 {
+        self.v
+            .get("execution_processes")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
     }
 }
 

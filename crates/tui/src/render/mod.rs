@@ -7,9 +7,7 @@ use crate::{
     layout::compute_main_layout,
     state::AppState,
     ui::{
-        components::{
-            UiComponent, board_pane::BoardPane, diff_pane::DiffPane, exec_pane::ExecPane,
-        },
+        components::{BoardPane, DiffPane, ExecPane, UiComponent},
         render_bottom_bar, render_composer_autocomplete, render_top_bar,
     },
 };
@@ -38,4 +36,5 @@ pub(crate) fn render(f: &mut Frame, app: &AppState) {
     render_composer_autocomplete(f, app, layout.exec_input);
 
     crate::ui::modals::render_overlays(f, app);
+    crate::ui::metrics::render_debug_overlay(f, app);
 }

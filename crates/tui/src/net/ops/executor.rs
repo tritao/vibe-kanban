@@ -14,17 +14,19 @@ pub(crate) async fn update_executor_profile_http(
     // Fetch current config from /api/info so we can PUT the full config object.
     let info_url = url(base_url, "/api/info");
     let resp = client.get(info_url).send().await?;
-    let api = decode_api_response::<serde_json::Value>(resp).await?;
+    #[derive(Debug, serde::Deserialize)]
+    struct InfoConfigDto {
+        config: serde_json::Value,
+    }
+
+    let api = decode_api_response::<InfoConfigDto>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected info request");
     }
-    let info = api
+    let mut config = api
         .into_data()
-        .ok_or_else(|| anyhow::anyhow!("missing info payload"))?;
-    let mut config = info
-        .get("config")
-        .cloned()
-        .ok_or_else(|| anyhow::anyhow!("missing config in info payload"))?;
+        .ok_or_else(|| anyhow::anyhow!("missing info payload"))?
+        .config;
 
     if let Some(obj) = config.as_object_mut() {
         obj.insert(
@@ -37,7 +39,7 @@ pub(crate) async fn update_executor_profile_http(
 
     let endpoint = url(base_url, "/api/config");
     let resp = client.put(endpoint).json(&config).send().await?;
-    let api = decode_api_response::<serde_json::Value>(resp).await?;
+    let api = decode_api_response::<()>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected config update");
     }
@@ -176,7 +178,7 @@ pub(crate) async fn update_model_settings_http(
         .body(body)
         .send()
         .await?;
-    let api = decode_api_response::<serde_json::Value>(resp).await?;
+    let api = decode_api_response::<()>(resp).await?;
     if !api.is_success() {
         anyhow::bail!("backend rejected profiles update");
     }
