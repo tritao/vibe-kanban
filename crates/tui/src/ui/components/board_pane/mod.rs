@@ -1,4 +1,4 @@
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyEvent, MouseEvent};
 use ratatui::{Frame, layout::Rect};
 
 use super::UiComponent;
@@ -21,8 +21,7 @@ pub(crate) struct BoardHit {
 
 pub(crate) enum BoardPaneEvent {
     Key(KeyEvent),
-    Click(BoardHit),
-    Wheel { status: TaskStatus, delta: i32 },
+    Mouse { mouse: MouseEvent, area: Rect },
 }
 
 pub(crate) struct BoardPane;
@@ -32,10 +31,6 @@ impl UiComponent for BoardPane {
 
     fn render(f: &mut Frame, app: &AppState, area: Rect) {
         render_board_pane(f, app, area);
-    }
-
-    fn hit_test(app: &AppState, area: Rect, col: u16, row: u16) -> Option<Self::Event> {
-        board_hit_at(app, area, col, row).map(BoardPaneEvent::Click)
     }
 
     fn on_event(app: &mut AppState, event: Self::Event) -> bool {

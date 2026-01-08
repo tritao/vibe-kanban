@@ -1,6 +1,6 @@
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, MouseEventKind};
 
-use super::{BoardPane, BoardPaneEvent};
+use super::{BoardPane, BoardPaneEvent, board_hit_at};
 use crate::{
     prefs::save_prefs,
     selection::find_task,
@@ -9,24 +9,38 @@ use crate::{
 
 pub(super) fn handle_event(app: &mut AppState, event: BoardPaneEvent) -> bool {
     match event {
-        BoardPaneEvent::Click(hit) => {
-            if app.ui.focus != FocusPane::Board {
-                return false;
+        BoardPaneEvent::Mouse { mouse, area } => {
+            let col = mouse.column;
+            let row = mouse.row;
+
+            match mouse.kind {
+                MouseEventKind::ScrollUp => {
+                    let Some(hit) = board_hit_at(app, area, col, row) else {
+                        return false;
+                    };
+                    app.ui.focus_board();
+                    crate::actions::selection::focus_board_section(app, hit.status);
+                    crate::actions::selection::select_adjacent_task(app, -1);
+                    true
+                }
+                MouseEventKind::ScrollDown => {
+                    let Some(hit) = board_hit_at(app, area, col, row) else {
+                        return false;
+                    };
+                    app.ui.focus_board();
+                    crate::actions::selection::focus_board_section(app, hit.status);
+                    crate::actions::selection::select_adjacent_task(app, 1);
+                    true
+                }
+                MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
+                    app.ui.focus_board();
+                    if let Some(hit) = board_hit_at(app, area, col, row) {
+                        crate::actions::selection::apply_board_hit(app, hit);
+                    }
+                    true
+                }
+                _ => false,
             }
-            crate::actions::selection::apply_board_hit(app, hit);
-            true
-        }
-        BoardPaneEvent::Wheel { status, delta } => {
-            if app.ui.focus != FocusPane::Board {
-                return false;
-            }
-            let delta = delta.signum();
-            if delta == 0 {
-                return false;
-            }
-            crate::actions::selection::focus_board_section(app, status);
-            crate::actions::selection::select_adjacent_task(app, delta);
-            true
         }
         BoardPaneEvent::Key(key) => {
             if app.ui.focus != FocusPane::Board {

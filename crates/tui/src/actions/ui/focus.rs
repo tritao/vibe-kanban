@@ -1,9 +1,5 @@
 use crate::state::AppState;
 
-pub(super) fn focus_board(app: &mut AppState) {
-    app.ui.focus_board();
-}
-
 pub(super) fn focus_execution(app: &mut AppState) {
     app.ui.focus_execution();
 }

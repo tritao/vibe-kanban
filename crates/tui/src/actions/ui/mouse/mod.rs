@@ -1,6 +1,5 @@
 use crossterm::event::MouseEvent;
 
-use super::focus;
 use crate::{
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     state::AppState,
@@ -25,8 +24,31 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
 
     let layout = compute_main_layout(current_terminal_rect(), app.ui.focus);
 
+    if matches!(
+        mouse.kind,
+        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left)
+    ) && app.exec.log_mouse_selecting
+    {
+        return <ExecPane as UiComponent>::on_event(
+            app,
+            ExecPaneEvent::Mouse {
+                mouse,
+                area: layout.exec,
+            },
+        );
+    }
+
     match mouse.kind {
         crossterm::event::MouseEventKind::ScrollUp => {
+            if rect_contains(layout.board, col, row) {
+                return <BoardPane as UiComponent>::on_event(
+                    app,
+                    BoardPaneEvent::Mouse {
+                        mouse,
+                        area: layout.board,
+                    },
+                );
+            }
             if rect_contains(layout.exec, col, row) {
                 return <ExecPane as UiComponent>::on_event(
                     app,
@@ -44,22 +66,18 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
                         area: layout.diff,
                     },
                 );
-            }
-            if let Some(hit) =
-                crate::ui::components::board_pane::board_hit_at(app, layout.board, col, row)
-            {
-                focus::focus_board(app);
-                let _ = <BoardPane as UiComponent>::on_event(
-                    app,
-                    BoardPaneEvent::Wheel {
-                        status: hit.status,
-                        delta: -1,
-                    },
-                );
-                return true;
             }
         }
         crossterm::event::MouseEventKind::ScrollDown => {
+            if rect_contains(layout.board, col, row) {
+                return <BoardPane as UiComponent>::on_event(
+                    app,
+                    BoardPaneEvent::Mouse {
+                        mouse,
+                        area: layout.board,
+                    },
+                );
+            }
             if rect_contains(layout.exec, col, row) {
                 return <ExecPane as UiComponent>::on_event(
                     app,
@@ -77,29 +95,17 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
                         area: layout.diff,
                     },
                 );
-            }
-            if let Some(hit) =
-                crate::ui::components::board_pane::board_hit_at(app, layout.board, col, row)
-            {
-                focus::focus_board(app);
-                let _ = <BoardPane as UiComponent>::on_event(
-                    app,
-                    BoardPaneEvent::Wheel {
-                        status: hit.status,
-                        delta: 1,
-                    },
-                );
-                return true;
             }
         }
         crossterm::event::MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
             if rect_contains(layout.board, col, row) {
-                focus::focus_board(app);
-                if let Some(evt) = <BoardPane as UiComponent>::hit_test(app, layout.board, col, row)
-                {
-                    return <BoardPane as UiComponent>::on_event(app, evt);
-                }
-                return true;
+                return <BoardPane as UiComponent>::on_event(
+                    app,
+                    BoardPaneEvent::Mouse {
+                        mouse,
+                        area: layout.board,
+                    },
+                );
             }
             if rect_contains(layout.exec, col, row) {
                 return <ExecPane as UiComponent>::on_event(
@@ -122,17 +128,6 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
         }
         crossterm::event::MouseEventKind::Drag(crossterm::event::MouseButton::Left) => {
             if rect_contains(layout.exec, col, row) {
-                return <ExecPane as UiComponent>::on_event(
-                    app,
-                    ExecPaneEvent::Mouse {
-                        mouse,
-                        area: layout.exec,
-                    },
-                );
-            }
-        }
-        crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left) => {
-            if app.exec.log_mouse_selecting {
                 return <ExecPane as UiComponent>::on_event(
                     app,
                     ExecPaneEvent::Mouse {
