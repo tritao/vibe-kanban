@@ -88,7 +88,7 @@ pub(crate) fn append_log_entry(
             );
         }
         crate::store::logs::LogEntryKind::NormalizedEntry => {
-            let Some(content) = entry_ref.normalized_content().map(|c| c.raw()) else {
+            let Some(content) = entry_ref.normalized_content() else {
                 return;
             };
 
@@ -102,10 +102,7 @@ pub(crate) fn append_log_entry(
                 return;
             }
 
-            let entry_type_tag = crate::store::logs::NormalizedContentRef::new(content)
-                .entry_type()
-                .map(|t| t.tag())
-                .unwrap_or("unknown");
+            let entry_type_tag = content.entry_type().map(|t| t.tag()).unwrap_or("unknown");
             let is_progress = matches!(entry_type_tag, "thinking" | "loading");
 
             // Visual separation between "cards"/blocks, but don't spam blank lines for

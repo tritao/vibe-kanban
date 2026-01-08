@@ -35,7 +35,7 @@ pub(super) fn append_normalized_entry(
     map: &mut Vec<usize>,
     state: &mut LogAssemblerState,
     entry_idx: usize,
-    entry: &serde_json::Value,
+    content: NormalizedContentRef<'_>,
     width: usize,
     render_mode: LogRenderMode,
     diff_theme: DiffTheme,
@@ -62,11 +62,10 @@ pub(super) fn append_normalized_entry(
         ])
     }
 
-    let content = NormalizedContentRef::new(entry);
     let entry_type_ref = match content.entry_type() {
         Some(v) => v,
         None => {
-            let fallback = entry.to_string();
+            let fallback = content.raw().to_string();
             push_line(lines, map, entry_idx, Line::from(fallback), width);
             return;
         }
@@ -234,7 +233,7 @@ pub(super) fn append_normalized_entry(
                     width,
                     render_mode,
                 );
-            } else if let Some(text) = normalized_entry_text(entry) {
+            } else if let Some(text) = normalized_entry_text(content.raw()) {
                 let mut rendered = if render_mode == LogRenderMode::Markdown {
                     render_markdown(&text, width.max(1), MdSoftBreakMode::Newline)
                 } else {
