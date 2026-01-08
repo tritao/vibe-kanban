@@ -20,7 +20,7 @@ pub(crate) fn request_stack_status_refresh(app: &mut AppState) {
         app,
         JobKey::StackStatus,
         repo_id,
-        |app| &mut app.diff.stack_status_gen_by_repo,
+        |app| &mut app.diff.stack_status.generations,
         move |base_url, net_tx, generation| async move {
             match stack_status_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
@@ -51,7 +51,7 @@ pub(crate) fn trigger_stack_enable(app: &mut AppState, attempt_id: Uuid, repo_id
         app,
         JobKey::StackStatus,
         repo_id,
-        |app| &mut app.diff.stack_status_gen_by_repo,
+        |app| &mut app.diff.stack_status.generations,
         move |base_url, net_tx, generation| async move {
             match stack_enable_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
@@ -90,7 +90,7 @@ pub(crate) fn trigger_stack_disable(
         app,
         JobKey::StackStatus,
         repo_id,
-        |app| &mut app.diff.stack_status_gen_by_repo,
+        |app| &mut app.diff.stack_status.generations,
         move |base_url, net_tx, generation| async move {
             match stack_disable_http(&base_url, attempt_id, repo_id, force).await {
                 Ok(status) => {
@@ -124,7 +124,7 @@ pub(crate) fn trigger_stack_push(app: &mut AppState, attempt_id: Uuid, repo_id: 
         app,
         JobKey::StackStatus,
         repo_id,
-        |app| &mut app.diff.stack_status_gen_by_repo,
+        |app| &mut app.diff.stack_status.generations,
         move |base_url, net_tx, generation| async move {
             match stack_push_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
@@ -158,7 +158,7 @@ pub(crate) fn trigger_stack_pop(app: &mut AppState, attempt_id: Uuid, repo_id: U
         app,
         JobKey::StackStatus,
         repo_id,
-        |app| &mut app.diff.stack_status_gen_by_repo,
+        |app| &mut app.diff.stack_status.generations,
         move |base_url, net_tx, generation| async move {
             match stack_pop_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
@@ -192,7 +192,7 @@ pub(crate) fn trigger_stack_undo(app: &mut AppState, attempt_id: Uuid, repo_id: 
         app,
         JobKey::StackStatus,
         repo_id,
-        |app| &mut app.diff.stack_status_gen_by_repo,
+        |app| &mut app.diff.stack_status.generations,
         move |base_url, net_tx, generation| async move {
             match stack_undo_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
@@ -226,7 +226,7 @@ pub(crate) fn trigger_stack_redo(app: &mut AppState, attempt_id: Uuid, repo_id: 
         app,
         JobKey::StackStatus,
         repo_id,
-        |app| &mut app.diff.stack_status_gen_by_repo,
+        |app| &mut app.diff.stack_status.generations,
         move |base_url, net_tx, generation| async move {
             match stack_redo_http(&base_url, attempt_id, repo_id).await {
                 Ok(status) => {
@@ -266,7 +266,7 @@ pub(crate) fn trigger_stack_new(
         app,
         JobKey::StackStatus,
         repo_id,
-        |app| &mut app.diff.stack_status_gen_by_repo,
+        |app| &mut app.diff.stack_status.generations,
         move |base_url, net_tx, generation| async move {
             match stack_new_http(&base_url, attempt_id, repo_id, name, message).await {
                 Ok(status) => {
@@ -306,7 +306,7 @@ pub(crate) fn trigger_stack_refresh(
         app,
         JobKey::StackStatus,
         repo_id,
-        |app| &mut app.diff.stack_status_gen_by_repo,
+        |app| &mut app.diff.stack_status.generations,
         move |base_url, net_tx, generation| async move {
             match stack_refresh_http(&base_url, attempt_id, repo_id, paths, allow_dirty_index).await
             {

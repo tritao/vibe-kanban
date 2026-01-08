@@ -15,7 +15,7 @@ pub(super) fn selected_stack_badge(
     repo: Option<&RepoBranchStatus>,
 ) -> Option<(String, Span<'static>)> {
     let repo_id = repo?.repo_id;
-    let status = app.diff.stack_status_by_repo.get(&repo_id)?;
+    let status = app.diff.stack_status.values.get(&repo_id)?;
     if !status.available {
         let (fg, bg) = crate::ui::palette::stack_badge_missing();
         return Some((

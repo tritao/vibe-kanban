@@ -8,7 +8,8 @@ pub(super) fn handle_commits_command(app: &mut AppState) -> Result<(), String> {
     if let Some(repo) = crate::state::repo_scope::selected_repo(app) {
         if app
             .diff
-            .stack_status_by_repo
+            .stack_status
+            .values
             .get(&repo.repo_id)
             .is_some_and(|s| s.available && s.enabled)
         {

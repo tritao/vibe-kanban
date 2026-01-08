@@ -103,8 +103,7 @@ pub(crate) struct DiffState {
     pub(crate) git_ops: HashMap<Uuid, GitOpState>,
     pub(crate) git_op_global: Option<GitOpState>,
 
-    pub(crate) stack_status_by_repo: HashMap<Uuid, super::types::StackStatusResponse>,
-    pub(crate) stack_status_gen_by_repo: crate::jobs::latest::LatestByKey<Uuid>,
+    pub(crate) stack_status: super::types::RepoLatestState<super::types::StackStatusResponse>,
 
     pub(crate) list_mode: DiffListMode,
     pub(crate) commits_by_repo: HashMap<Uuid, super::types::RepoListState<CommitEntry>>,
@@ -350,8 +349,7 @@ impl AppState {
                 git_ops: HashMap::new(),
                 git_op_global: None,
 
-                stack_status_by_repo: HashMap::new(),
-                stack_status_gen_by_repo: crate::jobs::latest::LatestByKey::default(),
+                stack_status: super::types::RepoLatestState::default(),
 
                 list_mode: DiffListMode::Files,
                 commits_by_repo: HashMap::new(),

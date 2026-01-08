@@ -134,7 +134,8 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
             if let Some(repo) = crate::state::repo_scope::selected_repo(app) {
                 if app
                     .diff
-                    .stack_status_by_repo
+                    .stack_status
+                    .values
                     .get(&repo.repo_id)
                     .is_some_and(|s| s.available && s.enabled)
                 {

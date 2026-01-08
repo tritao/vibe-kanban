@@ -50,14 +50,15 @@ pub(super) fn stack_status_loaded(
 ) -> NetApplyResult {
     if !app
         .diff
-        .stack_status_gen_by_repo
+        .stack_status
+        .generations
         .is_latest_for(&repo_id, generation)
     {
         return NetApplyResult::changed(true);
     }
     app.ui
         .clear_error_scope(crate::state::UiMessageKey::StackOp);
-    app.diff.stack_status_by_repo.insert(repo_id, status);
+    app.diff.stack_status.values.insert(repo_id, status);
     NetApplyResult::changed(true)
 }
 
