@@ -33,7 +33,7 @@ pub(crate) enum DiffRepoAction {
 }
 
 impl DiffRepoAction {
-    pub(crate) fn git_op_kind(self) -> Option<crate::events::GitOpKind> {
+    pub(super) fn git_op_kind(self) -> Option<crate::events::GitOpKind> {
         match self {
             DiffRepoAction::RefreshStatus => Some(crate::events::GitOpKind::Status),
             DiffRepoAction::Merge => Some(crate::events::GitOpKind::Merge),
