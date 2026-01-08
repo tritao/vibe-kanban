@@ -1329,25 +1329,12 @@ impl ContainerService for LocalContainerService {
                     // rebase/merge from the target), the stored baseline can become stale and
                     // make the diff include upstream changes. In that case, refresh the baseline
                     // to the current merge-base so the diff reflects only the attempt changes.
-                    let refreshed = (|| {
-                        let (_ahead, behind) =
-                            self.git()
-                                .get_branch_status(&repo.path, branch, target_branch)?;
-                        if behind != 0 {
-                            return Ok::<Option<Commit>, services::services::git::GitServiceError>(
-                                None,
-                            );
-                        }
-                        let current =
-                            self.git()
-                                .get_base_commit(&repo.path, branch, target_branch)?;
-                        if current.to_string() == stored.to_string() {
-                            return Ok(None);
-                        }
-                        Ok(Some(current))
-                    })();
-
-                    match refreshed {
+                    match self.git().maybe_refresh_diff_base_commit(
+                        &repo.path,
+                        branch,
+                        target_branch,
+                        &stored,
+                    ) {
                         Ok(Some(current)) => {
                             let _ = WorkspaceRepo::update_diff_base_oid(
                                 &self.db.pool,

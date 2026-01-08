@@ -1020,6 +1020,28 @@ impl GitService {
         Ok(Commit::new(oid))
     }
 
+    /// If the stored diff baseline is stale (e.g. the attempt branch has rebased/merged the target
+    /// so `behind == 0`), refresh it to the current merge-base.
+    ///
+    /// Returns `Ok(Some(new_base))` when the baseline should be updated, otherwise `Ok(None)`.
+    pub fn maybe_refresh_diff_base_commit(
+        &self,
+        repo_path: &Path,
+        branch_name: &str,
+        base_branch_name: &str,
+        stored_base: &Commit,
+    ) -> Result<Option<Commit>, GitServiceError> {
+        let (_ahead, behind) = self.get_branch_status(repo_path, branch_name, base_branch_name)?;
+        if behind != 0 {
+            return Ok(None);
+        }
+        let current = self.get_base_commit(repo_path, branch_name, base_branch_name)?;
+        if current.to_string() == stored_base.to_string() {
+            return Ok(None);
+        }
+        Ok(Some(current))
+    }
+
     pub fn get_remote_branch_status(
         &self,
         repo_path: &Path,
