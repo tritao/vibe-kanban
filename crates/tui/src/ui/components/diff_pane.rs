@@ -7,10 +7,7 @@ use super::{
     diff_preview::{DiffPreview, DiffPreviewEvent},
     diff_repo_bar::{DiffRepoAction, DiffRepoBar, DiffRepoBarEvent},
 };
-use crate::{
-    prefs::save_prefs,
-    state::{AppState, FocusPane},
-};
+use crate::{prefs::save_prefs, state::AppState};
 
 pub(crate) enum DiffPaneEvent {
     Key(KeyEvent),
@@ -104,10 +101,6 @@ fn handle_diff_mouse(app: &mut AppState, mouse: MouseEvent, area: Rect) -> bool 
 }
 
 fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
-    if app.ui.focus != FocusPane::Diff {
-        return false;
-    }
-
     if <DiffRepoBar as UiComponent>::on_event(app, DiffRepoBarEvent::Key(key)) {
         return true;
     }

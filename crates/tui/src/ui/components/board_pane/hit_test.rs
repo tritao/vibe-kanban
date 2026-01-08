@@ -8,7 +8,7 @@ use crate::{
     util::{board_statuses, window_for_list},
 };
 
-pub(crate) fn board_hit_at(app: &AppState, area: Rect, col: u16, row: u16) -> Option<BoardHit> {
+pub(super) fn board_hit_at(app: &AppState, area: Rect, col: u16, row: u16) -> Option<BoardHit> {
     if !rect_contains(area, col, row) {
         return None;
     }

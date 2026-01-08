@@ -9,7 +9,6 @@ mod input;
 mod layout;
 mod render;
 
-pub(crate) use hit_test::board_hit_at;
 pub(crate) use render::render_board_pane;
 
 #[derive(Debug, Clone, Copy)]

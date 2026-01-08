@@ -1,10 +1,10 @@
 use crossterm::event::{KeyCode, MouseEventKind};
 
-use super::{BoardPane, BoardPaneEvent, board_hit_at};
+use super::{BoardPane, BoardPaneEvent, hit_test::board_hit_at};
 use crate::{
     prefs::save_prefs,
     selection::find_task,
-    state::{AppState, ConfirmAction, ConfirmAltAction, ConfirmState, DeleteTaskMode, FocusPane},
+    state::{AppState, ConfirmAction, ConfirmAltAction, ConfirmState, DeleteTaskMode},
 };
 
 pub(super) fn handle_event(app: &mut AppState, event: BoardPaneEvent) -> bool {
@@ -42,57 +42,52 @@ pub(super) fn handle_event(app: &mut AppState, event: BoardPaneEvent) -> bool {
                 _ => false,
             }
         }
-        BoardPaneEvent::Key(key) => {
-            if app.ui.focus != FocusPane::Board {
-                return false;
+        BoardPaneEvent::Key(key) => match key.code {
+            KeyCode::Char('c') => {
+                app.board.show_cancelled = !app.board.show_cancelled;
+                crate::actions::selection::normalize_after_cancelled_toggle(app);
+                app.prefs.show_cancelled = app.board.show_cancelled;
+                save_prefs(&app.prefs);
+                true
             }
-            match key.code {
-                KeyCode::Char('c') => {
-                    app.board.show_cancelled = !app.board.show_cancelled;
-                    crate::actions::selection::normalize_after_cancelled_toggle(app);
-                    app.prefs.show_cancelled = app.board.show_cancelled;
-                    save_prefs(&app.prefs);
-                    true
-                }
-                KeyCode::Char('n') => {
-                    crate::ui::open_create_task_modal(app, None);
-                    true
-                }
-                KeyCode::Char('N') => {
-                    crate::ui::open_create_task_modal(app, app.board.selected_task_id);
-                    true
-                }
-                KeyCode::Char('d') => {
-                    BoardPane::open_delete_task_confirm(app);
-                    true
-                }
-                KeyCode::Char('K') => {
-                    crate::actions::selection::move_active_status(app, -1);
-                    true
-                }
-                KeyCode::Char('J') => {
-                    crate::actions::selection::move_active_status(app, 1);
-                    true
-                }
-                KeyCode::Up | KeyCode::Char('k') => {
-                    crate::actions::selection::select_adjacent_task(app, -1);
-                    true
-                }
-                KeyCode::Down | KeyCode::Char('j') => {
-                    crate::actions::selection::select_adjacent_task(app, 1);
-                    true
-                }
-                KeyCode::Left => {
-                    crate::actions::selection::request_move_selected_task(app, -1);
-                    true
-                }
-                KeyCode::Right => {
-                    crate::actions::selection::request_move_selected_task(app, 1);
-                    true
-                }
-                _ => false,
+            KeyCode::Char('n') => {
+                crate::ui::open_create_task_modal(app, None);
+                true
             }
-        }
+            KeyCode::Char('N') => {
+                crate::ui::open_create_task_modal(app, app.board.selected_task_id);
+                true
+            }
+            KeyCode::Char('d') => {
+                BoardPane::open_delete_task_confirm(app);
+                true
+            }
+            KeyCode::Char('K') => {
+                crate::actions::selection::move_active_status(app, -1);
+                true
+            }
+            KeyCode::Char('J') => {
+                crate::actions::selection::move_active_status(app, 1);
+                true
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                crate::actions::selection::select_adjacent_task(app, -1);
+                true
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                crate::actions::selection::select_adjacent_task(app, 1);
+                true
+            }
+            KeyCode::Left => {
+                crate::actions::selection::request_move_selected_task(app, -1);
+                true
+            }
+            KeyCode::Right => {
+                crate::actions::selection::request_move_selected_task(app, 1);
+                true
+            }
+            _ => false,
+        },
     }
 }
 

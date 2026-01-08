@@ -8,7 +8,7 @@ use super::{
 };
 use crate::{
     prefs::save_prefs,
-    state::{AppState, FocusPane, LogRenderMode, LogViewMode},
+    state::{AppState, LogRenderMode, LogViewMode},
 };
 
 pub(crate) enum ExecPaneEvent {
@@ -37,10 +37,6 @@ impl UiComponent for ExecPane {
 }
 
 fn handle_exec_key(app: &mut AppState, key: KeyEvent) -> bool {
-    if app.ui.focus != FocusPane::Execution {
-        return false;
-    }
-
     match key.code {
         KeyCode::Char('m') => {
             app.exec.log_render_mode = match app.exec.log_render_mode {
