@@ -121,7 +121,7 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
         return;
     };
     crate::ui::loading::start_with_delay(
-        app.diff.commits_loading_by_repo.entry(repo_id).or_default(),
+        &mut app.diff.commits_by_repo.entry(repo_id).or_default().loading,
         crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY,
     );
 
@@ -170,23 +170,15 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
     if crate::jobs::job_running(app, JobKey::CommitList) {
         return;
     }
-    if !app
-        .diff
-        .commits_has_more_by_repo
-        .get(&repo_id)
-        .copied()
-        .unwrap_or(true)
-    {
+    let (has_more, offset) = {
+        let state = app.diff.commits_by_repo.entry(repo_id).or_default();
+        (state.has_more, state.items.len())
+    };
+    if !has_more {
         return;
     }
-    let offset = app
-        .diff
-        .commits_by_repo
-        .get(&repo_id)
-        .map(|v| v.len())
-        .unwrap_or(0);
     crate::ui::loading::start_with_delay(
-        app.diff.commits_loading_by_repo.entry(repo_id).or_default(),
+        &mut app.diff.commits_by_repo.entry(repo_id).or_default().loading,
         crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY,
     );
 
@@ -237,7 +229,7 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
         .diff
         .commits_by_repo
         .get(&repo_id)
-        .map(|v| v.as_slice())
+        .map(|v| v.items.as_slice())
         .unwrap_or(&[]);
     if commits.is_empty() {
         return;
@@ -304,20 +296,13 @@ pub(crate) fn apply_commit_list_page(
     append: bool,
     has_more: bool,
 ) {
-    app.diff
-        .commits_loading_by_repo
-        .entry(repo_id)
-        .or_default()
-        .stop();
-    app.diff.commits_has_more_by_repo.insert(repo_id, has_more);
+    let state = app.diff.commits_by_repo.entry(repo_id).or_default();
+    state.loading.stop();
+    state.has_more = has_more;
     if append {
-        app.diff
-            .commits_by_repo
-            .entry(repo_id)
-            .or_default()
-            .extend(commits);
+        state.items.extend(commits);
     } else {
-        app.diff.commits_by_repo.insert(repo_id, commits);
+        state.items = commits;
         app.diff.selected_commit_index = 0;
     }
     request_commit_preview_refresh(app);

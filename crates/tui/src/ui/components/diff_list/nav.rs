@@ -31,7 +31,7 @@ pub(super) fn commits_for_selected_repo<'a>(app: &'a AppState) -> &'a [CommitEnt
         .map(|r| r.repo_id);
     repo_id
         .and_then(|id| app.diff.commits_by_repo.get(&id))
-        .map(|v| v.as_slice())
+        .map(|v| v.items.as_slice())
         .unwrap_or(&[])
 }
 

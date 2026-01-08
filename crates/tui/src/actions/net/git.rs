@@ -118,9 +118,10 @@ pub(super) fn commit_preview_failed(
 
 pub(super) fn commit_list_failed(app: &mut AppState, repo_id: uuid::Uuid) -> NetApplyResult {
     app.diff
-        .commits_loading_by_repo
+        .commits_by_repo
         .entry(repo_id)
         .or_default()
+        .loading
         .stop();
     NetApplyResult::changed(true)
 }

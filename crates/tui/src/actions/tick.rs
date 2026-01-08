@@ -180,7 +180,12 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         if let Some(repo) = crate::state::repo_scope::selected_repo(app) {
             let repo_id = repo.repo_id;
             let running = job_running(app, JobKey::CommitList);
-            if let Some(ind) = app.diff.commits_loading_by_repo.get_mut(&repo_id) {
+            if let Some(ind) = app
+                .diff
+                .commits_by_repo
+                .get_mut(&repo_id)
+                .map(|s| &mut s.loading)
+            {
                 if crate::ui::loading::tick_with_delay(
                     ind,
                     now,

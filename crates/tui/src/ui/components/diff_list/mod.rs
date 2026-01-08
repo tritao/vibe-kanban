@@ -23,15 +23,15 @@ pub(super) fn commit_footer(app: &AppState) -> CommitFooter {
     };
     let loading = app
         .diff
-        .commits_loading_by_repo
+        .commits_by_repo
         .get(&repo_id)
-        .map(|i| i.visible())
+        .map(|s| s.loading.visible())
         .unwrap_or(false);
     let has_more = app
         .diff
-        .commits_has_more_by_repo
+        .commits_by_repo
         .get(&repo_id)
-        .copied()
+        .map(|s| s.has_more)
         .unwrap_or(false);
     CommitFooter { loading, has_more }
 }

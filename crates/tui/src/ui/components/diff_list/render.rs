@@ -189,7 +189,7 @@ pub(super) fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
         .map(|r| r.repo_id);
     let commits = repo_id
         .and_then(|id| app.diff.commits_by_repo.get(&id))
-        .map(|v| v.as_slice())
+        .map(|v| v.items.as_slice())
         .unwrap_or(&[]);
     let footer = super::commit_footer(app);
     let loading = footer.loading;
