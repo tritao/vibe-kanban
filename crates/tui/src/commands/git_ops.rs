@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::run_net_job,
-    events::{GitOpKind, NetEvent},
+    events::{GitOpKind, NetEvent, NetOpError},
     net::ops::branch_status_http,
     state::{AppState, GitOpState, JobKey, PendingExecHook},
 };
@@ -35,10 +35,11 @@ pub(crate) fn request_branch_status_refresh(app: &mut AppState) {
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::BranchStatus,
-                            message: format!("branch status failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("branch status", e)
+                                .with_key(crate::state::UiMessageKey::BranchStatus)
+                                .into_event(),
+                        )
                         .await;
                 }
             }
@@ -73,10 +74,11 @@ pub(crate) fn schedule_branch_status_refresh(app: &mut AppState, delay: Duration
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::BranchStatus,
-                            message: format!("branch status failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("branch status", e)
+                                .with_key(crate::state::UiMessageKey::BranchStatus)
+                                .into_event(),
+                        )
                         .await;
                 }
             }

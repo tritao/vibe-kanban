@@ -183,10 +183,12 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
             let repo_id = repo.repo_id;
             let running = job_running(app, JobKey::CommitList);
             if let Some(ind) = app.diff.commits_loading_by_repo.get_mut(&repo_id) {
-                if ind.delay != crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY {
-                    ind.delay = crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY;
-                }
-                if ind.tick(now, running) {
+                if crate::ui::loading::tick_with_delay(
+                    ind,
+                    now,
+                    running,
+                    crate::ui::constants::COMMIT_LIST_LOADING_INDICATOR_DELAY,
+                ) {
                     dirty = true;
                 }
             }

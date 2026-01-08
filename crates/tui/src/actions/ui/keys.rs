@@ -7,6 +7,7 @@ use super::{
 use crate::{
     commands::submit_composer,
     state::{AppState, FocusPane},
+    ui::components,
 };
 
 pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> super::UiApplyResult {
@@ -99,24 +100,9 @@ pub(super) fn reduce_key(app: &mut AppState, key: KeyEvent) -> super::UiApplyRes
     }
 
     let handled = match app.ui.focus {
-        FocusPane::Board => {
-            <crate::ui::components::BoardPane as crate::ui::components::UiComponent>::on_event(
-                app,
-                crate::ui::components::BoardPaneEvent::Key(key),
-            )
-        }
-        FocusPane::Diff => {
-            <crate::ui::components::DiffPane as crate::ui::components::UiComponent>::on_event(
-                app,
-                crate::ui::components::DiffPaneEvent::Key(key),
-            )
-        }
-        FocusPane::Execution => {
-            <crate::ui::components::ExecPane as crate::ui::components::UiComponent>::on_event(
-                app,
-                crate::ui::components::ExecPaneEvent::Key(key),
-            )
-        }
+        FocusPane::Board => components::handle_board_key(app, key),
+        FocusPane::Diff => components::handle_diff_key(app, key),
+        FocusPane::Execution => components::handle_exec_key(app, key),
     };
     if handled {
         return super::UiApplyResult::changed(true);

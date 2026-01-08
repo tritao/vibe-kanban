@@ -3,9 +3,7 @@ use crossterm::event::MouseEvent;
 use crate::{
     layout::{compute_main_layout, current_terminal_rect, rect_contains},
     state::AppState,
-    ui::components::{
-        BoardPane, BoardPaneEvent, DiffPane, DiffPaneEvent, ExecPane, ExecPaneEvent, UiComponent,
-    },
+    ui::components,
 };
 
 pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
@@ -28,41 +26,17 @@ pub(super) fn reduce_mouse(app: &mut AppState, mouse: MouseEvent) -> bool {
                 | crossterm::event::MouseEventKind::Up(crossterm::event::MouseButton::Left)
         )
     {
-        return <ExecPane as UiComponent>::on_event(
-            app,
-            ExecPaneEvent::Mouse {
-                mouse,
-                area: layout.exec,
-            },
-        );
+        return components::handle_exec_mouse(app, mouse, layout.exec);
     }
 
     if rect_contains(layout.board, col, row) {
-        return <BoardPane as UiComponent>::on_event(
-            app,
-            BoardPaneEvent::Mouse {
-                mouse,
-                area: layout.board,
-            },
-        );
+        return components::handle_board_mouse(app, mouse, layout.board);
     }
     if rect_contains(layout.exec, col, row) {
-        return <ExecPane as UiComponent>::on_event(
-            app,
-            ExecPaneEvent::Mouse {
-                mouse,
-                area: layout.exec,
-            },
-        );
+        return components::handle_exec_mouse(app, mouse, layout.exec);
     }
     if rect_contains(layout.diff, col, row) {
-        return <DiffPane as UiComponent>::on_event(
-            app,
-            DiffPaneEvent::Mouse {
-                mouse,
-                area: layout.diff,
-            },
-        );
+        return components::handle_diff_mouse(app, mouse, layout.diff);
     }
 
     false

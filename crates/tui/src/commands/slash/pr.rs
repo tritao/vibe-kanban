@@ -4,7 +4,7 @@ use super::super::{
 };
 use crate::{
     commands::open_url,
-    events::{GitOpKind, NetEvent},
+    events::{GitOpKind, NetEvent, NetOpError},
     net::ops::{
         CreateGitHubPrRequest, attach_pr_http, branch_status_http, create_pr_http,
         get_pr_comments_http,
@@ -157,10 +157,11 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::PullRequestOp,
-                            message: format!("pr create failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("pr create", e)
+                                .with_key(crate::state::UiMessageKey::PullRequestOp)
+                                .into_event(),
+                        )
                         .await;
                     let _ = net_tx
                         .send(NetEvent::GitOpFinished {
@@ -229,10 +230,11 @@ fn handle_pr_attach_command(app: &mut AppState, tokens: &[String]) -> Result<(),
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::PullRequestOp,
-                            message: format!("pr attach failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("pr attach", e)
+                                .with_key(crate::state::UiMessageKey::PullRequestOp)
+                                .into_event(),
+                        )
                         .await;
                     let _ = net_tx
                         .send(NetEvent::GitOpFinished {
@@ -288,10 +290,11 @@ fn handle_pr_comments_command(app: &mut AppState, tokens: &[String]) -> Result<(
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::PullRequestOp,
-                            message: format!("pr comments failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("pr comments", e)
+                                .with_key(crate::state::UiMessageKey::PullRequestOp)
+                                .into_event(),
+                        )
                         .await;
                     let _ = net_tx
                         .send(NetEvent::GitOpFinished {

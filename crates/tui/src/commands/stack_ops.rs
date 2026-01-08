@@ -1,7 +1,7 @@
 use uuid::Uuid;
 
 use crate::{
-    events::NetEvent,
+    events::{NetEvent, NetOpError},
     net::ops::{
         stack_disable_http, stack_enable_http, stack_new_http, stack_pop_http, stack_push_http,
         stack_redo_http, stack_refresh_http, stack_status_http, stack_undo_http,
@@ -34,10 +34,11 @@ pub(crate) fn request_stack_status_refresh(app: &mut AppState) {
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::StackOp,
-                            message: format!("stack status failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("stack status", e)
+                                .with_key(crate::state::UiMessageKey::StackOp)
+                                .into_event(),
+                        )
                         .await;
                 }
             }
@@ -67,10 +68,11 @@ pub(crate) fn trigger_stack_enable(app: &mut AppState, attempt_id: Uuid, repo_id
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::StackOp,
-                            message: format!("stack enable failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("stack enable", e)
+                                .with_key(crate::state::UiMessageKey::StackOp)
+                                .into_event(),
+                        )
                         .await;
                 }
             }
@@ -105,10 +107,11 @@ pub(crate) fn trigger_stack_disable(
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::StackOp,
-                            message: format!("stack disable failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("stack disable", e)
+                                .with_key(crate::state::UiMessageKey::StackOp)
+                                .into_event(),
+                        )
                         .await;
                 }
             }
@@ -138,10 +141,11 @@ pub(crate) fn trigger_stack_push(app: &mut AppState, attempt_id: Uuid, repo_id: 
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::StackOp,
-                            message: format!("stack push failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("stack push", e)
+                                .with_key(crate::state::UiMessageKey::StackOp)
+                                .into_event(),
+                        )
                         .await;
                 }
             }
@@ -171,10 +175,11 @@ pub(crate) fn trigger_stack_pop(app: &mut AppState, attempt_id: Uuid, repo_id: U
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::StackOp,
-                            message: format!("stack pop failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("stack pop", e)
+                                .with_key(crate::state::UiMessageKey::StackOp)
+                                .into_event(),
+                        )
                         .await;
                 }
             }
@@ -204,10 +209,11 @@ pub(crate) fn trigger_stack_undo(app: &mut AppState, attempt_id: Uuid, repo_id: 
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::StackOp,
-                            message: format!("stack undo failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("stack undo", e)
+                                .with_key(crate::state::UiMessageKey::StackOp)
+                                .into_event(),
+                        )
                         .await;
                 }
             }
@@ -237,10 +243,11 @@ pub(crate) fn trigger_stack_redo(app: &mut AppState, attempt_id: Uuid, repo_id: 
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::StackOp,
-                            message: format!("stack redo failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("stack redo", e)
+                                .with_key(crate::state::UiMessageKey::StackOp)
+                                .into_event(),
+                        )
                         .await;
                 }
             }
@@ -276,10 +283,11 @@ pub(crate) fn trigger_stack_new(
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::StackOp,
-                            message: format!("stack new failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("stack new", e)
+                                .with_key(crate::state::UiMessageKey::StackOp)
+                                .into_event(),
+                        )
                         .await;
                 }
             }
@@ -316,10 +324,11 @@ pub(crate) fn trigger_stack_refresh(
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::StackOp,
-                            message: format!("stack refresh failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("stack refresh", e)
+                                .with_key(crate::state::UiMessageKey::StackOp)
+                                .into_event(),
+                        )
                         .await;
                 }
             }

@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::{
     commands::run_net_job,
-    events::NetEvent,
+    events::{NetEvent, NetOpError},
     net::ops::{commit_list_http, commit_show_http},
     state::{AppState, CommitEntry, DiffListMode, JobKey, repo_scope::selected_repo_id},
 };
@@ -142,10 +142,11 @@ pub(crate) fn request_commit_list_refresh(app: &mut AppState) {
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::CommitList,
-                            message: format!("commit list failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("commit list", e)
+                                .with_key(crate::state::UiMessageKey::CommitList)
+                                .into_event(),
+                        )
                         .await;
                     let _ = net_tx.send(NetEvent::CommitListFailed { repo_id }).await;
                 }
@@ -207,10 +208,11 @@ pub(crate) fn request_commit_list_more(app: &mut AppState) {
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::CommitList,
-                            message: format!("commit list failed: {e}"),
-                        })
+                        .send(
+                            NetOpError::new("commit list", e)
+                                .with_key(crate::state::UiMessageKey::CommitList)
+                                .into_event(),
+                        )
                         .await;
                     let _ = net_tx.send(NetEvent::CommitListFailed { repo_id }).await;
                 }
@@ -260,12 +262,13 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
                         .await;
                 }
                 Err(e) => {
-                    let message = format!("commit show failed: {e}");
+                    let message = crate::fmt::op_failed("commit show", &e);
                     let _ = net_tx
-                        .send(NetEvent::ErrorKey {
-                            key: crate::state::UiMessageKey::CommitPreview,
-                            message: message.clone(),
-                        })
+                        .send(
+                            NetOpError::new("commit show", e)
+                                .with_key(crate::state::UiMessageKey::CommitPreview)
+                                .into_event(),
+                        )
                         .await;
                     let _ = net_tx
                         .send(NetEvent::CommitPreviewFailed {
