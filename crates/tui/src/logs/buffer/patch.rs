@@ -1,15 +1,15 @@
-use crate::store::log_patch;
+use crate::store::{log_patch, log_root::LogRoot};
 
 pub(super) fn apply_log_patch_resilient(
-    store: &mut serde_json::Value,
+    store: &mut LogRoot,
     patch: &json_patch::Patch,
 ) -> anyhow::Result<()> {
-    log_patch::ensure_entries_array(store);
+    store.ensure_entries_array();
 
     // Fast-path: json_patch is much faster, but it will "insert" again on reconnect when we
     // replay history (Add at an index that already exists). Detect that and use the resilient
     // idempotent path instead.
-    let existing_len = log_patch::entries_len(store);
+    let existing_len = store.entries_len();
     let has_replay_add = patch.iter().any(|op| {
         if let json_patch::PatchOperation::Add(add) = op {
             let p = add.path.to_string();
@@ -22,7 +22,7 @@ pub(super) fn apply_log_patch_resilient(
         false
     });
 
-    if !has_replay_add && json_patch::patch(store, patch).is_ok() {
+    if !has_replay_add && json_patch::patch(store.as_value_mut(), patch).is_ok() {
         return Ok(());
     }
 
@@ -35,8 +35,7 @@ pub(super) fn apply_log_patch_resilient(
                 if let Some((idx, is_exact_entry)) =
                     log_patch::parse_entries_index_and_is_exact_entry(&p)
                 {
-                    log_patch::ensure_entries_array(store);
-                    let entries = log_patch::entries_array_mut(store);
+                    let entries = store.entries_mut();
                     if is_exact_entry {
                         let v = value.clone();
                         // Idempotent semantics: if the index already exists (replay/reconnect),
@@ -51,19 +50,22 @@ pub(super) fn apply_log_patch_resilient(
                         continue;
                     }
                     if idx < entries.len() {
-                        let _ = json_patch::patch(store, &json_patch::Patch(vec![op.clone()]));
+                        let _ = json_patch::patch(
+                            store.as_value_mut(),
+                            &json_patch::Patch(vec![op.clone()]),
+                        );
                     }
                     continue;
                 }
-                let _ = json_patch::patch(store, &json_patch::Patch(vec![op.clone()]));
+                let _ =
+                    json_patch::patch(store.as_value_mut(), &json_patch::Patch(vec![op.clone()]));
             }
             PatchOperation::Replace(ReplaceOperation { path, value }) => {
                 let p = path.to_string();
                 if let Some((idx, is_exact_entry)) =
                     log_patch::parse_entries_index_and_is_exact_entry(&p)
                 {
-                    log_patch::ensure_entries_array(store);
-                    let entries = log_patch::entries_array_mut(store);
+                    let entries = store.entries_mut();
                     if is_exact_entry {
                         let v = value.clone();
                         if idx < entries.len() {
@@ -76,19 +78,22 @@ pub(super) fn apply_log_patch_resilient(
                         continue;
                     }
                     if idx < entries.len() {
-                        let _ = json_patch::patch(store, &json_patch::Patch(vec![op.clone()]));
+                        let _ = json_patch::patch(
+                            store.as_value_mut(),
+                            &json_patch::Patch(vec![op.clone()]),
+                        );
                     }
                     continue;
                 }
-                let _ = json_patch::patch(store, &json_patch::Patch(vec![op.clone()]));
+                let _ =
+                    json_patch::patch(store.as_value_mut(), &json_patch::Patch(vec![op.clone()]));
             }
             PatchOperation::Remove(RemoveOperation { path }) => {
                 let p = path.to_string();
                 if let Some((idx, is_exact_entry)) =
                     log_patch::parse_entries_index_and_is_exact_entry(&p)
                 {
-                    log_patch::ensure_entries_array(store);
-                    let entries = log_patch::entries_array_mut(store);
+                    let entries = store.entries_mut();
                     if is_exact_entry {
                         if idx < entries.len() {
                             entries.remove(idx);
@@ -96,14 +101,19 @@ pub(super) fn apply_log_patch_resilient(
                         continue;
                     }
                     if idx < entries.len() {
-                        let _ = json_patch::patch(store, &json_patch::Patch(vec![op.clone()]));
+                        let _ = json_patch::patch(
+                            store.as_value_mut(),
+                            &json_patch::Patch(vec![op.clone()]),
+                        );
                     }
                     continue;
                 }
-                let _ = json_patch::patch(store, &json_patch::Patch(vec![op.clone()]));
+                let _ =
+                    json_patch::patch(store.as_value_mut(), &json_patch::Patch(vec![op.clone()]));
             }
             _ => {
-                let _ = json_patch::patch(store, &json_patch::Patch(vec![op.clone()]));
+                let _ =
+                    json_patch::patch(store.as_value_mut(), &json_patch::Patch(vec![op.clone()]));
             }
         }
     }

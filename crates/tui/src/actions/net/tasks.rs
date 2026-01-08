@@ -9,7 +9,7 @@ pub(super) fn tasks_stream_status(app: &mut AppState, status: StreamStatus) -> b
 }
 
 pub(super) fn tasks_reset(app: &mut AppState) -> bool {
-    app.board.tasks_store = serde_json::json!({ "tasks": {} });
+    app.board.tasks_store = crate::store::tasks::empty_tasks_store();
     sel::select_task(app, None);
     app.board.pending_select_task_id = None;
     true

@@ -10,7 +10,7 @@ pub(super) fn exec_stream_status(app: &mut AppState, status: StreamStatus) -> bo
 }
 
 pub(super) fn exec_reset(app: &mut AppState) -> bool {
-    app.exec.exec_store = serde_json::json!({ "execution_processes": {} });
+    app.exec.exec_store = crate::store::exec::empty_exec_store();
     sel::select_exec(app, None);
     clear_pending_branch_status_refresh(app);
     true

@@ -19,6 +19,8 @@ mod slash;
 mod slash_tests;
 mod state;
 mod store;
+#[cfg(test)]
+mod test_support;
 mod text;
 mod ui;
 mod util;

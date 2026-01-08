@@ -269,7 +269,7 @@ impl AppState {
                 project_filter: String::new(),
 
                 projects_status: StreamStatus::Disconnected,
-                projects_store: serde_json::json!({ "projects": {} }),
+                projects_store: crate::store::projects::empty_projects_store(),
                 projects_loaded_once: false,
                 selected_project_id: prefs.selected_project_id,
                 selected_project_index: 0,
@@ -278,7 +278,7 @@ impl AppState {
                 show_cancelled: prefs.show_cancelled,
 
                 tasks_status: StreamStatus::Disconnected,
-                tasks_store: serde_json::json!({ "tasks": {} }),
+                tasks_store: crate::store::tasks::empty_tasks_store(),
                 selected_task_id: None,
                 pending_select_task_id: None,
                 tasks_active_column: TaskStatus::Todo,
@@ -291,7 +291,7 @@ impl AppState {
 
             exec: ExecState {
                 exec_status: StreamStatus::Disconnected,
-                exec_store: serde_json::json!({ "execution_processes": {} }),
+                exec_store: crate::store::exec::empty_exec_store(),
                 selected_exec_id: None,
 
                 log_status: StreamStatus::Disconnected,
@@ -325,7 +325,7 @@ impl AppState {
 
             diff: DiffState {
                 diff_status: StreamStatus::Disconnected,
-                diff_store: serde_json::json!({ "entries": {} }),
+                diff_store: crate::store::diff::empty_diff_store(),
                 diff_stats_only: false,
                 diff_show_untracked: true,
                 selected_diff_index: 0,

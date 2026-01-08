@@ -2,6 +2,10 @@ pub(crate) struct DiffStore<'a> {
     root: &'a serde_json::Value,
 }
 
+pub(crate) fn empty_diff_store() -> serde_json::Value {
+    serde_json::json!({ "entries": {} })
+}
+
 pub(crate) struct DiffEntryContent<'a> {
     root: &'a serde_json::Value,
 }

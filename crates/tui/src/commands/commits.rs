@@ -244,7 +244,7 @@ pub(crate) fn request_commit_preview_refresh(app: &mut AppState) {
     crate::ui::loading::start_with_default_delay(&mut app.diff.commit_preview_loading, true);
     app.diff.commit_preview_text = None;
     app.diff.commit_preview_render_width = 0;
-    crate::ui::async_jobs::run_latest(
+    crate::commands::run_latest_job(
         app,
         JobKey::CommitPreview,
         |app| &mut app.diff.commit_preview_gen,

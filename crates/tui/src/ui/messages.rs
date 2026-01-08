@@ -3,6 +3,7 @@ pub(crate) mod notices {
 
     pub(crate) const COMMITS_REFRESHING: &str = "Commits: refreshing…";
     pub(crate) const COMMITS_LOADED: &str = "Commits: loaded.";
+    pub(crate) const LOADING_REPOS: &str = "Loading repos…";
 
     pub(crate) const STACK_REFRESHING: &str = "Stack: refreshing…";
 
@@ -46,7 +47,20 @@ pub(crate) mod errors {
     pub(crate) const NO_TASK_SELECTED: &str = "no task selected";
     pub(crate) const NO_REPO_SELECTED: &str = "no repo selected";
     pub(crate) const NO_ATTEMPT_SELECTED: &str = "no attempt selected";
+    pub(crate) const NO_PROJECT_SELECTED: &str = "no project selected";
     pub(crate) const NO_REPO_STATUS_LOADED: &str = "no repo status loaded yet (run /status)";
     #[allow(dead_code)]
     pub(crate) const NO_EXECUTOR_SELECTED: &str = "no executor selected (try /executor)";
+
+    pub(crate) const BRANCH_PICKER_NO_MATCHING_BRANCHES: &str = "No matching branches.";
+    pub(crate) const BRANCH_PICKER_NO_ATTEMPT_SELECTED: &str =
+        "No attempt selected (select a task/attempt first).";
+
+    pub(crate) const COMMITS_UNAVAILABLE_STACK_MODE: &str =
+        "Commits view unavailable while stack mode is enabled.";
+    pub(crate) const STACK_NEEDS_REPO_STATUS: &str = "Stack: load repo status first (press S)";
+    pub(crate) const BRANCHES_NEEDS_REPO_STATUS: &str =
+        "Branches: load repo status first (press S)";
+    pub(crate) const TARGET_BRANCH_NEEDS_REPO_STATUS: &str =
+        "Target branch: load repo status first (press S)";
 }

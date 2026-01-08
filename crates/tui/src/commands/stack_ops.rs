@@ -16,7 +16,7 @@ pub(crate) fn request_stack_status_refresh(app: &mut AppState) {
     let Some(repo_id) = selected_repo_id(app) else {
         return;
     };
-    crate::ui::async_jobs::run_latest_for_repo(
+    crate::commands::run_latest_job_for_repo(
         app,
         JobKey::StackStatus,
         repo_id,
@@ -46,7 +46,7 @@ pub(crate) fn request_stack_status_refresh(app: &mut AppState) {
 }
 
 pub(crate) fn trigger_stack_enable(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
-    crate::ui::async_jobs::run_latest_for_repo(
+    crate::commands::run_latest_job_for_repo(
         app,
         JobKey::StackStatus,
         repo_id,
@@ -84,7 +84,7 @@ pub(crate) fn trigger_stack_disable(
     repo_id: Uuid,
     force: bool,
 ) {
-    crate::ui::async_jobs::run_latest_for_repo(
+    crate::commands::run_latest_job_for_repo(
         app,
         JobKey::StackStatus,
         repo_id,
@@ -117,7 +117,7 @@ pub(crate) fn trigger_stack_disable(
 }
 
 pub(crate) fn trigger_stack_push(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
-    crate::ui::async_jobs::run_latest_for_repo(
+    crate::commands::run_latest_job_for_repo(
         app,
         JobKey::StackStatus,
         repo_id,
@@ -150,7 +150,7 @@ pub(crate) fn trigger_stack_push(app: &mut AppState, attempt_id: Uuid, repo_id: 
 }
 
 pub(crate) fn trigger_stack_pop(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
-    crate::ui::async_jobs::run_latest_for_repo(
+    crate::commands::run_latest_job_for_repo(
         app,
         JobKey::StackStatus,
         repo_id,
@@ -183,7 +183,7 @@ pub(crate) fn trigger_stack_pop(app: &mut AppState, attempt_id: Uuid, repo_id: U
 }
 
 pub(crate) fn trigger_stack_undo(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
-    crate::ui::async_jobs::run_latest_for_repo(
+    crate::commands::run_latest_job_for_repo(
         app,
         JobKey::StackStatus,
         repo_id,
@@ -216,7 +216,7 @@ pub(crate) fn trigger_stack_undo(app: &mut AppState, attempt_id: Uuid, repo_id: 
 }
 
 pub(crate) fn trigger_stack_redo(app: &mut AppState, attempt_id: Uuid, repo_id: Uuid) {
-    crate::ui::async_jobs::run_latest_for_repo(
+    crate::commands::run_latest_job_for_repo(
         app,
         JobKey::StackStatus,
         repo_id,
@@ -255,7 +255,7 @@ pub(crate) fn trigger_stack_new(
     name: Option<String>,
     message: String,
 ) {
-    crate::ui::async_jobs::run_latest_for_repo(
+    crate::commands::run_latest_job_for_repo(
         app,
         JobKey::StackStatus,
         repo_id,
@@ -294,7 +294,7 @@ pub(crate) fn trigger_stack_refresh(
     paths: Option<Vec<String>>,
     allow_dirty_index: bool,
 ) {
-    crate::ui::async_jobs::run_latest_for_repo(
+    crate::commands::run_latest_job_for_repo(
         app,
         JobKey::StackStatus,
         repo_id,

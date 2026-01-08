@@ -94,7 +94,8 @@ pub(super) fn handle_event(app: &mut AppState, event: BoardPaneEvent) -> bool {
 impl BoardPane {
     pub(super) fn open_delete_task_confirm(app: &mut AppState) {
         let Some(task_id) = app.board.selected_task_id else {
-            app.ui.set_error("No task selected.");
+            app.ui
+                .set_error(crate::ui::messages::errors::NO_TASK_SELECTED);
             return;
         };
         let title = find_task(&app.board.tasks_store, task_id)

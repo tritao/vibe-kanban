@@ -24,20 +24,7 @@ pub(crate) fn append_local_user_message(app: &mut AppState, exec_id: Uuid, messa
     push_exec_order(app, app.board.selected_attempt_id, exec_id);
 
     let buf = app.exec.log_buffers.entry(exec_id).or_default();
-    buf.ensure_init();
-    if !buf
-        .store
-        .get("entries")
-        .and_then(|v| v.as_array())
-        .is_some()
-    {
-        buf.store = serde_json::json!({ "entries": [] });
-    }
-    let entries = buf
-        .store
-        .get_mut("entries")
-        .and_then(|v| v.as_array_mut())
-        .expect("entries array");
+    let entries = buf.store.entries_mut();
 
     let entry_idx = entries.len();
     entries.push(serde_json::json!({
@@ -246,7 +233,9 @@ fn rebuild_log_view_cache(app: &mut AppState) {
         app.exec.log_line_targets.push(None);
 
         if let Some(buf) = app.exec.log_buffers.get(&exec_id) {
-            if let Some(params) = crate::store::logs::LogStore::new(&buf.store).model_params() {
+            if let Some(params) =
+                crate::store::logs::LogStore::new(buf.store.as_value()).model_params()
+            {
                 if last_params.as_ref() != Some(&params) {
                     last_params = Some(params.clone());
                     let mut text = format!("  model: {}", params.model);
@@ -322,7 +311,7 @@ pub(crate) fn flush_log_buffers(app: &mut AppState, width: usize) -> bool {
                 }
             }
             Err(e) => {
-                app.ui.set_error(format!("failed to apply log patch: {e}"));
+                app.ui.set_error(crate::fmt::op_failed("log patch", e));
                 app.exec.log_status = StreamStatus::Error;
                 any = true;
             }
@@ -361,13 +350,7 @@ pub(crate) fn toggle_selected_log_entry(app: &mut AppState) {
     let Some(buf) = app.exec.log_buffers.get_mut(&sel.exec_id) else {
         return;
     };
-    buf.ensure_init();
-    let entries = buf
-        .store
-        .get("entries")
-        .and_then(|v| v.as_array())
-        .map(|v| v.as_slice())
-        .unwrap_or(&[]);
+    let entries = buf.store.entries();
     if entries.is_empty() {
         return;
     }

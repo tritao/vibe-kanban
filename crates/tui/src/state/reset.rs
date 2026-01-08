@@ -3,7 +3,7 @@ use ratatui::text::Line;
 use crate::state::{AppState, DiffListMode};
 
 pub(crate) fn reset_diff_stream_state(app: &mut AppState) {
-    app.diff.diff_store = serde_json::json!({ "entries": {} });
+    app.diff.diff_store = crate::store::diff::empty_diff_store();
     app.diff.selected_diff_index = 0;
     app.diff.diff_scroll.offset = 0;
     app.diff.invalidate_diff_preview_cache();
@@ -22,7 +22,7 @@ pub(crate) fn reset_diff_stream_state(app: &mut AppState) {
 }
 
 pub(crate) fn reset_exec_stream_state(app: &mut AppState) {
-    app.exec.exec_store = serde_json::json!({ "execution_processes": {} });
+    app.exec.exec_store = crate::store::exec::empty_exec_store();
     app.exec.selected_exec_id = None;
     app.exec.log_selected = None;
     let _ = app.exec_sel_tx.send(None);

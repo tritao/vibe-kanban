@@ -4,7 +4,10 @@ use anyhow::Context;
 use ratatui::text::Line;
 use uuid::Uuid;
 
-use crate::state::{DiffTheme, LogMode, LogRenderMode};
+use crate::{
+    state::{DiffTheme, LogMode, LogRenderMode},
+    store::log_root::LogRoot,
+};
 
 mod patch;
 mod view;
@@ -96,7 +99,7 @@ impl PreparedLogCache {
 
 #[derive(Debug)]
 pub(crate) struct ExecLogBuffer {
-    pub(crate) store: serde_json::Value,
+    pub(crate) store: LogRoot,
     pub(crate) pending_patch: json_patch::Patch,
     pub(crate) collapsed: Vec<bool>,
     render_caches: HashMap<u16, RenderCache>,
@@ -106,7 +109,7 @@ pub(crate) struct ExecLogBuffer {
 impl Default for ExecLogBuffer {
     fn default() -> Self {
         Self {
-            store: serde_json::Value::Null,
+            store: LogRoot::empty(),
             pending_patch: Default::default(),
             collapsed: vec![],
             render_caches: HashMap::new(),
@@ -156,14 +159,8 @@ impl ExecLogBuffer {
         }
     }
 
-    pub(crate) fn ensure_init(&mut self) {
-        if self.store.is_null() {
-            self.store = serde_json::json!({ "entries": [] });
-        }
-    }
-
     pub(crate) fn reset(&mut self) {
-        self.store = serde_json::json!({ "entries": [] });
+        self.store = LogRoot::empty();
         self.pending_patch.0.clear();
         self.collapsed.clear();
         self.render_caches.clear();
@@ -171,7 +168,6 @@ impl ExecLogBuffer {
     }
 
     pub(crate) fn enqueue_patch(&mut self, patch: json_patch::Patch) {
-        self.ensure_init();
         if let Some(min_idx) = patch::log_patch_min_entry_index(&patch) {
             for c in self.render_caches.values_mut() {
                 c.dirty_from_entry = Some(
@@ -201,8 +197,6 @@ impl ExecLogBuffer {
         render_mode: LogRenderMode,
         diff_theme: DiffTheme,
     ) -> anyhow::Result<bool> {
-        self.ensure_init();
-
         let has_patch = !self.pending_patch.0.is_empty();
         let width_u16 = width.max(1).min(u16::MAX as usize) as u16;
         let cache_missing = !self.render_caches.contains_key(&width_u16);
@@ -224,12 +218,7 @@ impl ExecLogBuffer {
         }
 
         {
-            let entries = self
-                .store
-                .get("entries")
-                .and_then(|v| v.as_array())
-                .map(|v| v.as_slice())
-                .unwrap_or(&[]);
+            let entries = self.store.entries();
 
             if self.collapsed.len() > entries.len() {
                 self.collapsed.truncate(entries.len());
@@ -275,12 +264,7 @@ impl ExecLogBuffer {
             cache.assembler_state = cache.entry_end_states.last().copied().unwrap_or_default();
         }
 
-        let entries = self
-            .store
-            .get("entries")
-            .and_then(|v| v.as_array())
-            .map(|v| v.as_slice())
-            .unwrap_or(&[]);
+        let entries = self.store.entries();
 
         for idx in rebuild_from..entries.len() {
             let entry = &entries[idx];
@@ -322,7 +306,7 @@ impl ExecLogBuffer {
 #[derive(Debug, Clone)]
 pub(crate) struct LogPrewarmSnapshot {
     pub(crate) exec_id: Uuid,
-    store: serde_json::Value,
+    store: LogRoot,
     collapsed: Vec<bool>,
 }
 
@@ -335,7 +319,7 @@ impl LogPrewarmSnapshot {
         diff_theme: DiffTheme,
     ) -> PreparedLogCache {
         build_prepared_log_cache(
-            &self.store,
+            self.store.as_value(),
             &self.collapsed,
             width,
             log_mode,

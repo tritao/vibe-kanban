@@ -146,7 +146,8 @@ pub(crate) fn handle_project_setup_key(app: &mut AppState, key: KeyEvent) -> boo
                 return false;
             }
             let Some(project_id) = app.board.selected_project_id else {
-                app.ui.set_error("no project selected");
+                app.ui
+                    .set_error(crate::ui::messages::errors::NO_PROJECT_SELECTED);
                 return true;
             };
             let Some(repo_path) = state.repo_path.clone() else {

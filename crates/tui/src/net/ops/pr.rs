@@ -114,8 +114,15 @@ pub(crate) enum GetPrCommentsErrorWire {
 }
 
 #[derive(Debug, serde::Deserialize)]
+pub(crate) struct PullRequestComment {
+    #[allow(dead_code)]
+    #[serde(default)]
+    pub(crate) body: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
 pub(crate) struct PrCommentsResponse {
-    pub(crate) comments: Vec<serde_json::Value>,
+    pub(crate) comments: Vec<PullRequestComment>,
 }
 
 pub(crate) async fn get_pr_comments_http(

@@ -139,7 +139,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     .is_some_and(|s| s.available && s.enabled)
                 {
                     app.ui
-                        .set_error("Commits view unavailable while stack mode is enabled.");
+                        .set_error(crate::ui::messages::errors::COMMITS_UNAVAILABLE_STACK_MODE);
                     return true;
                 }
             }
@@ -190,7 +190,8 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     app,
                     DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
                 );
-                app.ui.set_error("Stack: load repo status first (press S)");
+                app.ui
+                    .set_error(crate::ui::messages::errors::STACK_NEEDS_REPO_STATUS);
                 return true;
             }
             let Some(repo) = crate::state::repo_scope::selected_repo(app) else {
@@ -209,7 +210,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
                 );
                 app.ui
-                    .set_error("Branches: load repo status first (press S)");
+                    .set_error(crate::ui::messages::errors::BRANCHES_NEEDS_REPO_STATUS);
                 return true;
             }
             let Some(repo) = crate::state::repo_scope::selected_repo(app) else {
@@ -232,7 +233,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
                     DiffRepoBarEvent::Action(DiffRepoAction::RefreshStatus),
                 );
                 app.ui
-                    .set_error("Target branch: load repo status first (press S)");
+                    .set_error(crate::ui::messages::errors::TARGET_BRANCH_NEEDS_REPO_STATUS);
                 return true;
             }
             let Some(repo) = crate::state::repo_scope::selected_repo(app) else {

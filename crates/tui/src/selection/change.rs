@@ -101,11 +101,7 @@ pub(crate) fn select_exec(app: &mut AppState, exec_id: Option<Uuid>) {
     app.exec.selected_exec_id = exec_id;
     app.ui.clear_messages();
     if let Some(exec_id) = exec_id {
-        app.exec
-            .log_buffers
-            .entry(exec_id)
-            .or_default()
-            .ensure_init();
+        let _ = app.exec.log_buffers.entry(exec_id).or_default();
         app.exec.log_view_dirty = true;
     }
     app.exec.log_selected = None;

@@ -166,7 +166,8 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
         dirty = true;
     }
     if placeholder.show_notice {
-        app.ui.set_notice("Loading repos…");
+        app.ui
+            .set_notice(crate::ui::messages::notices::LOADING_REPOS);
         dirty = true;
     }
 

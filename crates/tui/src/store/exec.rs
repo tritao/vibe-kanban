@@ -2,6 +2,10 @@ use uuid::Uuid;
 
 use crate::state::{ExecRow, ExecStatus, RunReason, Timestamp};
 
+pub(crate) fn empty_exec_store() -> serde_json::Value {
+    serde_json::json!({ "execution_processes": {} })
+}
+
 pub(crate) struct ExecStore<'a> {
     root: &'a serde_json::Value,
 }

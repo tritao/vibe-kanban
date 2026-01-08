@@ -197,7 +197,7 @@ pub(crate) fn handle_branch_picker_key(app: &mut AppState, key: KeyEvent) -> boo
                 Some(id) => id,
                 None => {
                     app.ui
-                        .set_error("No attempt selected (select a task/attempt first).");
+                        .set_error(crate::ui::messages::errors::BRANCH_PICKER_NO_ATTEMPT_SELECTED);
                     return true;
                 }
             };
@@ -216,7 +216,8 @@ pub(crate) fn handle_branch_picker_key(app: &mut AppState, key: KeyEvent) -> boo
                 .collect();
 
             if visible.is_empty() {
-                app.ui.set_error("No matching branches.");
+                app.ui
+                    .set_error(crate::ui::messages::errors::BRANCH_PICKER_NO_MATCHING_BRANCHES);
                 return true;
             }
             let idx = state.selected_index.min(visible.len().saturating_sub(1));

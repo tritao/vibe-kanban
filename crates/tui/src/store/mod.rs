@@ -6,6 +6,7 @@ pub(crate) mod executor_profiles;
 pub(crate) mod info;
 pub(crate) mod log_entry;
 pub(crate) mod log_patch;
+pub(crate) mod log_root;
 pub(crate) mod logs;
 pub(crate) mod pr;
 pub(crate) mod projects;
