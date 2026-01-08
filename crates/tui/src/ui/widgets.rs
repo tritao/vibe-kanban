@@ -1,6 +1,6 @@
 use ratatui::{
     style::{Color, Modifier, Style},
-    text::Span,
+    text::{Line, Span},
 };
 
 pub(crate) fn focused_border(active: bool) -> Style {
@@ -27,4 +27,11 @@ pub(crate) fn badge(text: impl Into<String>, fg: Color, bg: Color) -> Span<'stat
         format!(" {} ", text.into()),
         Style::default().fg(fg).bg(bg).add_modifier(Modifier::BOLD),
     )
+}
+
+pub(crate) fn dim_line(text: impl Into<String>) -> Line<'static> {
+    Line::from(Span::styled(
+        text.into(),
+        Style::default().add_modifier(Modifier::DIM),
+    ))
 }

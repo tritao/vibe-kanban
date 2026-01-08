@@ -1,18 +1,8 @@
 use std::time::Instant;
 
-use ratatui::{
-    style::{Modifier, Style},
-    text::{Line, Span},
-};
+use ratatui::text::Line;
 
 use crate::state::LoadingState;
-
-fn dim_line(text: impl Into<String>) -> Line<'static> {
-    Line::from(Span::styled(
-        text.into(),
-        Style::default().add_modifier(Modifier::DIM),
-    ))
-}
 
 pub(crate) fn tick_with_placeholder(
     now: Instant,
@@ -30,7 +20,7 @@ pub(crate) fn tick_with_placeholder(
     if state.visible() && state.placeholder_pending {
         let insert = should_insert(lines);
         if insert {
-            *lines = vec![dim_line(placeholder_text)];
+            *lines = vec![crate::ui::widgets::dim_line(placeholder_text)];
         }
         if insert || clear_pending_once_visible {
             state.placeholder_pending = false;
