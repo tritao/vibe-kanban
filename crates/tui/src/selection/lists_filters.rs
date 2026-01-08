@@ -31,26 +31,11 @@ pub(crate) fn filtered_projects(app: &AppState) -> Vec<ProjectRow> {
 }
 
 pub(crate) fn projects_list(store: &serde_json::Value) -> Vec<ProjectRow> {
-    let Some(projects_obj) = ProjectsStore::new(store).projects_object() else {
-        return vec![];
-    };
-
-    let mut rows = Vec::with_capacity(projects_obj.len());
-    for (id_str, project) in projects_obj.iter() {
-        let Ok(id) = Uuid::parse_str(id_str) else {
-            continue;
-        };
-        let name = project
-            .get("name")
-            .and_then(|v| v.as_str())
-            .or_else(|| project.get("title").and_then(|v| v.as_str()))
-            .unwrap_or("(unnamed)")
-            .to_string();
-        rows.push(ProjectRow { id, name });
-    }
-
-    rows.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    rows
+    ProjectsStore::new(store)
+        .projects()
+        .into_iter()
+        .map(|(id, name)| ProjectRow { id, name })
+        .collect()
 }
 
 pub(crate) fn exec_list(store: &serde_json::Value) -> Vec<ExecRow> {
