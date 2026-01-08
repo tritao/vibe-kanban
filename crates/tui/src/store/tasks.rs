@@ -2,10 +2,6 @@ use uuid::Uuid;
 
 use crate::state::{TaskRow, TaskStatus, Timestamp};
 
-pub(crate) fn empty_tasks_store() -> serde_json::Value {
-    serde_json::json!({ "tasks": {} })
-}
-
 pub(crate) struct TasksStore<'a> {
     root: &'a serde_json::Value,
 }

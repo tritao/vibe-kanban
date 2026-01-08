@@ -1,7 +1,10 @@
 use super::{DiffRepoAction, shared};
 use crate::{
-    commands::{begin_git_op, open_url, resolve_repo_for_command, trigger_abort_conflicts},
-    events::{GitOpKind, NetEvent},
+    commands::{
+        begin_git_op, ensure_attempt_selected, ensure_repo_status_loaded, open_url,
+        resolve_repo_for_command, trigger_abort_conflicts,
+    },
+    events::{GitOpKind, NetEvent, NetOpError},
     layout::{compute_main_layout, current_terminal_rect},
     net::ops::{
         CreateGitHubPrRequest, branch_status_http, create_pr_http, merge_task_attempt_http,
@@ -12,16 +15,16 @@ use crate::{
         repo_status::{GitRepoAction, RepoStatusRef, RepoStatuses},
         tasks_list::find_task,
     },
-    ui::{guards, toasts},
+    ui::toasts,
 };
 
 pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoAction) {
     match action {
         DiffRepoAction::ResolveConflicts => {
-            if guards::ensure_attempt_selected(app, "Conflicts").is_none() {
+            if ensure_attempt_selected(app, "Conflicts").is_none() {
                 return;
             };
-            if !guards::ensure_repo_status_loaded(app, "Conflicts") {
+            if !ensure_repo_status_loaded(app, "Conflicts") {
                 return;
             }
 
@@ -65,11 +68,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             );
         }
         DiffRepoAction::OpenConflict => {
-            let Some(attempt_id) = app.board.selected_attempt_id else {
-                toasts::err_short(app, "Open: no attempt selected");
+            let Some(attempt_id) = ensure_attempt_selected(app, "Open") else {
                 return;
             };
-            if !guards::ensure_repo_status_loaded(app, "Open") {
+            if !ensure_repo_status_loaded(app, "Open") {
                 return;
             }
 
@@ -101,7 +103,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                     }
                     Err(e) => {
                         let _ = net_tx
-                            .send(NetEvent::Error(format!("open editor failed: {e}")))
+                            .send(NetOpError::new("open editor", e).into_event())
                             .await;
                     }
                 }
@@ -137,11 +139,10 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             }
         }
         DiffRepoAction::AbortConflicts => {
-            let Some(attempt_id) = app.board.selected_attempt_id else {
-                toasts::err_short(app, "Abort: no attempt selected");
+            let Some(attempt_id) = ensure_attempt_selected(app, "Abort") else {
                 return;
             };
-            if !guards::ensure_repo_status_loaded(app, "Abort") {
+            if !ensure_repo_status_loaded(app, "Abort") {
                 return;
             }
 
@@ -220,7 +221,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                     }
                     Err(e) => {
                         let _ = net_tx
-                            .send(NetEvent::Error(crate::fmt::op_failed("branch status", e)))
+                            .send(NetOpError::new("branch status", e).into_event())
                             .await;
                         let _ = net_tx
                             .send(NetEvent::GitOpFinished {
@@ -318,7 +319,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
             let title = app
                 .board
                 .selected_task_id
-                .and_then(|id| find_task(&app.board.tasks_store, id).map(|t| t.title))
+                .and_then(|id| find_task(app.board.tasks_store.as_value(), id).map(|t| t.title))
                 .unwrap_or_else(|| "Vibe Kanban PR".to_string());
             crate::commands::spawn_net_task(app, move |base_url, net_tx| async move {
                 match create_pr_http(
@@ -360,7 +361,7 @@ pub(crate) fn trigger_diff_repo_action(app: &mut AppState, action: DiffRepoActio
                     }
                     Err(e) => {
                         let _ = net_tx
-                            .send(NetEvent::Error(format!("pr create failed: {e}")))
+                            .send(NetOpError::new("create pr", e).into_event())
                             .await;
                         let _ = net_tx
                             .send(NetEvent::GitOpFinished {

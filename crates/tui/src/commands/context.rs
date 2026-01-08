@@ -16,6 +16,34 @@ pub(crate) fn require_repo_status_loaded(app: &mut AppState) -> Result<(), Strin
     Ok(())
 }
 
+pub(crate) fn ensure_attempt_selected(app: &mut AppState, context: &str) -> Option<Uuid> {
+    let Some(attempt_id) = app.board.selected_attempt_id else {
+        crate::ui::guards::toast_short(
+            app,
+            format!(
+                "{context}: {}",
+                crate::ui::messages::errors::NO_ATTEMPT_SELECTED
+            ),
+            crate::ui::palette::toast_err(),
+        );
+        return None;
+    };
+    Some(attempt_id)
+}
+
+pub(crate) fn ensure_repo_status_loaded(app: &mut AppState, context: &str) -> bool {
+    if !app.diff.repo_statuses.is_empty() {
+        return true;
+    }
+    request_branch_status_refresh(app);
+    crate::ui::guards::toast_short(
+        app,
+        format!("{context}: loading repo status…"),
+        crate::ui::palette::toast_warn(),
+    );
+    false
+}
+
 pub(crate) fn resolve_repo_for_command(
     app: &mut AppState,
     repo_arg: Option<&str>,

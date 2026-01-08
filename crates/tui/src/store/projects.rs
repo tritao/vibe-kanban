@@ -1,9 +1,5 @@
 use uuid::Uuid;
 
-pub(crate) fn empty_projects_store() -> serde_json::Value {
-    serde_json::json!({ "projects": {} })
-}
-
 pub(crate) struct ProjectsStore<'a> {
     root: &'a serde_json::Value,
 }

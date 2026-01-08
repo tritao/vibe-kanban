@@ -129,9 +129,7 @@ pub(crate) fn handle_project_setup_key(app: &mut AppState, key: KeyEvent) -> boo
                     }
                     Err(e) => {
                         let _ = net_tx
-                            .send(crate::events::NetEvent::Error(format!(
-                                "create project failed: {e}"
-                            )))
+                            .send(crate::events::NetOpError::new("create project", e).into_event())
                             .await;
                     }
                 }
@@ -182,9 +180,7 @@ pub(crate) fn handle_project_setup_key(app: &mut AppState, key: KeyEvent) -> boo
                     }
                     Err(e) => {
                         let _ = net_tx
-                            .send(crate::events::NetEvent::Error(format!(
-                                "add repository failed: {e}"
-                            )))
+                            .send(crate::events::NetOpError::new("add repository", e).into_event())
                             .await;
                     }
                 }

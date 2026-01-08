@@ -50,7 +50,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
 
     // Keep a local record of what the user sent in the run logs, since the backend log stream
     // does not always include user messages.
-    let mut execs_for_log = exec_list(&app.exec.exec_store);
+    let mut execs_for_log = exec_list(app.exec.exec_store.as_value());
     execs_for_log.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     let current_exec_id = app
         .exec
@@ -80,7 +80,7 @@ pub(crate) fn submit_composer(app: &mut AppState) -> bool {
     let project_id = app.board.selected_project_id;
     let executor_profile = app.ui.selected_executor_profile.clone();
 
-    let execs = exec_list(&app.exec.exec_store);
+    let execs = exec_list(app.exec.exec_store.as_value());
     let active = app
         .exec
         .selected_exec_id

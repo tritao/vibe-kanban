@@ -31,7 +31,7 @@ use clap::Parser;
 use tokio::sync::mpsc;
 
 use crate::{
-    events::{NetEvent, UiEvent},
+    events::{NetEvent, NetOpError, UiEvent},
     net::ops::stop_exec_http,
     state::{AppState, ConfirmAction},
 };
@@ -102,7 +102,7 @@ fn handle_confirm_action(app: &mut AppState, action: ConfirmAction) {
                     Ok(()) => {}
                     Err(e) => {
                         let _ = net_tx
-                            .send(NetEvent::Error(format!("stop exec failed: {e}")))
+                            .send(NetOpError::new("stop exec", e).into_event())
                             .await;
                     }
                 }
@@ -127,7 +127,7 @@ fn handle_confirm_action(app: &mut AppState, action: ConfirmAction) {
                     }
                     Err(e) => {
                         let _ = net_tx
-                            .send(NetEvent::Error(format!("delete task failed: {e}")))
+                            .send(NetOpError::new("delete task", e).into_event())
                             .await;
                     }
                 }

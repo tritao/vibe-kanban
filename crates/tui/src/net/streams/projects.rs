@@ -5,7 +5,7 @@ use tokio::sync::{mpsc, watch};
 use tokio_tungstenite::tungstenite;
 
 use super::common::{WsParsed, connect_ws, parse_ws_message};
-use crate::events::{NetEvent, StreamStatus};
+use crate::events::{NetEvent, NetOpError, StreamStatus};
 
 pub(crate) async fn projects_stream_task(
     base_url: String,
@@ -54,9 +54,13 @@ pub(crate) async fn projects_stream_task(
                                     WsParsed::Ignored => {}
                                     WsParsed::Error(e) => {
                                         let _ = net_tx
-                                            .send(NetEvent::Error(format!(
-                                                "projects stream message error: {e}"
-                                            )))
+                                            .send(
+                                                NetOpError::new(
+                                                    "projects stream message",
+                                                    anyhow::anyhow!(e),
+                                                )
+                                                .into_event(),
+                                            )
                                             .await;
                                     }
                                 },
@@ -64,7 +68,13 @@ pub(crate) async fn projects_stream_task(
                                 Ok(_) => {}
                                 Err(e) => {
                                     let _ = net_tx
-                                        .send(NetEvent::Error(format!("projects stream: {e}")))
+                                        .send(
+                                            NetOpError::new(
+                                                "projects stream",
+                                                anyhow::Error::new(e),
+                                            )
+                                            .into_event(),
+                                        )
                                         .await;
                                     break;
                                 }
@@ -84,7 +94,7 @@ pub(crate) async fn projects_stream_task(
                     .send(NetEvent::ProjectsStreamStatus(StreamStatus::Error))
                     .await;
                 let _ = net_tx
-                    .send(NetEvent::Error(format!("projects stream connect: {e}")))
+                    .send(NetOpError::new("projects stream connect", e).into_event())
                     .await;
             }
         }

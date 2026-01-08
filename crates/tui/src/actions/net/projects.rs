@@ -52,16 +52,6 @@ pub(super) fn projects_stream_status(app: &mut AppState, status: StreamStatus) -
 }
 
 pub(super) fn projects_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
-    fn ensure_projects_root(v: &mut serde_json::Value) {
-        if !v.is_object() {
-            *v = serde_json::json!({});
-        }
-        let obj = v.as_object_mut().expect("object");
-        if !obj.contains_key("projects") || !obj.get("projects").is_some_and(|p| p.is_object()) {
-            obj.insert("projects".to_string(), serde_json::json!({}));
-        }
-    }
-
     fn patch_with_projects_upserts(patch: &json_patch::Patch) -> json_patch::Patch {
         use json_patch::{AddOperation, PatchOperation, ReplaceOperation};
         let mut out: Vec<PatchOperation> = Vec::with_capacity(patch.0.len());
@@ -87,12 +77,11 @@ pub(super) fn projects_patch(app: &mut AppState, patch: json_patch::Patch) -> bo
         json_patch::Patch(out)
     }
 
-    ensure_projects_root(&mut app.board.projects_store);
-    if let Err(e) = json_patch::patch(&mut app.board.projects_store, &patch) {
+    if let Err(e) = app.board.projects_store.apply_patch(&patch) {
         // Fallback: treat project replaces as upserts to handle cases where we missed an
         // insert patch but still receive a replace for that ID.
         let patched = patch_with_projects_upserts(&patch);
-        if let Err(e2) = json_patch::patch(&mut app.board.projects_store, &patched) {
+        if let Err(e2) = app.board.projects_store.apply_patch(&patched) {
             app.ui.set_error(format!(
                 "failed to apply projects patch: {e} (fallback also failed: {e2})"
             ));
@@ -104,7 +93,7 @@ pub(super) fn projects_patch(app: &mut AppState, patch: json_patch::Patch) -> bo
 
     sel::reconcile_projects_selection(app);
     let projects_empty =
-        crate::store::projects_list::projects_list(&app.board.projects_store).is_empty();
+        crate::store::projects_list::projects_list(app.board.projects_store.as_value()).is_empty();
 
     if app.ui.launch_dir_explicit
         && !app.ui.launch_match_done
@@ -125,9 +114,7 @@ pub(super) fn projects_patch(app: &mut AppState, patch: json_patch::Patch) -> bo
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(crate::events::NetEvent::Error(format!(
-                            "project match failed: {e}"
-                        )))
+                        .send(crate::events::NetOpError::new("project match", e).into_event())
                         .await;
                     let _ = net_tx
                         .send(crate::events::NetEvent::ProjectMatchResult { project_id: None })

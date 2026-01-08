@@ -10,11 +10,19 @@ fn copy_diff_files_emits_copy_effect() {
     let mut app = crate::test_support::mk_app();
     app.ui.focus = FocusPane::Diff;
     app.ui.diff_focus = DiffFocus::Files;
-    app.diff.diff_store = serde_json::json!({
-        "entries": {
-            "a.txt": { "type": "DIFF", "content": { "change": "modified", "additions": 1, "deletions": 0 } }
+    app.diff.diff_store = crate::store::roots::DiffRoot::empty();
+    let patch: json_patch::Patch = serde_json::from_value(serde_json::json!([
+        {
+            "op": "add",
+            "path": "/entries/a.txt",
+            "value": {
+                "type": "DIFF",
+                "content": { "change": "modified", "additions": 1, "deletions": 0 }
+            }
         }
-    });
+    ]))
+    .unwrap();
+    app.diff.diff_store.apply_patch(&patch).unwrap();
     app.diff.selected_diff_index = 1; // 0 is ALL
     crate::selection::change::on_diff_file_selected(&mut app);
 
@@ -122,7 +130,7 @@ fn composer_enter_with_no_attempt_keeps_composer_open() {
     app.ui.composer.buffer = "hello".to_string();
     app.ui.composer.set_end();
     app.board.selected_attempt_id = None;
-    app.exec.exec_store = crate::store::exec::empty_exec_store();
+    app.exec.exec_store = crate::store::roots::ExecRoot::empty();
 
     let res = super::reduce_ui(
         &mut app,

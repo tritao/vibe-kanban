@@ -1,4 +1,8 @@
-use crate::{events::NetEvent, net::ops::delete_task_http, state::AppState};
+use crate::{
+    events::{NetEvent, NetOpError},
+    net::ops::delete_task_http,
+    state::AppState,
+};
 
 pub(super) fn handle_delete_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     let Some(task_id) = app.board.selected_task_id else {
@@ -26,7 +30,7 @@ pub(super) fn handle_delete_command(app: &mut AppState, tokens: &[String]) -> Re
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::Error(format!("delete task failed: {e}")))
+                        .send(NetOpError::new("delete task", e).into_event())
                         .await;
                 }
             }

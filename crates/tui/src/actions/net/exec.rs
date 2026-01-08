@@ -10,14 +10,14 @@ pub(super) fn exec_stream_status(app: &mut AppState, status: StreamStatus) -> bo
 }
 
 pub(super) fn exec_reset(app: &mut AppState) -> bool {
-    app.exec.exec_store = crate::store::exec::empty_exec_store();
+    app.exec.exec_store = crate::store::roots::ExecRoot::empty();
     sel::select_exec(app, None);
     clear_pending_branch_status_refresh(app);
     true
 }
 
 pub(super) fn exec_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
-    if let Err(e) = json_patch::patch(&mut app.exec.exec_store, &patch) {
+    if let Err(e) = app.exec.exec_store.apply_patch(&patch) {
         app.ui.set_error(format!("failed to apply exec patch: {e}"));
         app.exec.exec_status = StreamStatus::Error;
         return true;

@@ -276,14 +276,12 @@ pub(crate) fn handle_branch_picker_key(app: &mut AppState, key: KeyEvent) -> boo
                         }
                     }
                     Err(e) => {
+                        let op = match mode {
+                            BranchPickerMode::Checkout => "checkout branch",
+                            BranchPickerMode::ChangeTarget => "change target branch",
+                        };
                         let _ = net_tx
-                            .send(crate::events::NetEvent::Error(format!(
-                                "{} failed: {e}",
-                                match mode {
-                                    BranchPickerMode::Checkout => "checkout branch",
-                                    BranchPickerMode::ChangeTarget => "change target branch",
-                                }
-                            )))
+                            .send(crate::events::NetOpError::new(op, e).into_event())
                             .await;
                     }
                 }

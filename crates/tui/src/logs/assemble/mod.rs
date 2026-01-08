@@ -43,12 +43,9 @@ pub(crate) fn append_log_entry(
     }
 
     let entry_ref = crate::store::logs::LogEntryRef::new(entry);
-    let Some(ty) = entry_ref.ty() else {
-        return;
-    };
 
-    match ty {
-        "STDOUT" => {
+    match entry_ref.kind() {
+        crate::store::logs::LogEntryKind::Stdout => {
             let Some(text) = entry_ref.stream_text() else {
                 return;
             };
@@ -69,7 +66,7 @@ pub(crate) fn append_log_entry(
                 width,
             );
         }
-        "STDERR" => {
+        crate::store::logs::LogEntryKind::Stderr => {
             let Some(text) = entry_ref.stream_text() else {
                 return;
             };
@@ -90,7 +87,7 @@ pub(crate) fn append_log_entry(
                 width,
             );
         }
-        "NORMALIZED_ENTRY" => {
+        crate::store::logs::LogEntryKind::NormalizedEntry => {
             let Some(content) = entry_ref.normalized_content().map(|c| c.raw()) else {
                 return;
             };
@@ -150,6 +147,6 @@ pub(crate) fn append_log_entry(
                 collapsed.get(entry_idx).copied().unwrap_or(false),
             );
         }
-        _ => {}
+        crate::store::logs::LogEntryKind::Other => {}
     }
 }

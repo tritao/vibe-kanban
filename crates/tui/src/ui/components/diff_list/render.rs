@@ -23,7 +23,7 @@ fn files_border_style(app: &AppState) -> Style {
 }
 
 pub(super) fn render_files_list(f: &mut Frame, app: &AppState, area: Rect) {
-    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+    let rows = crate::store::diff::DiffStore::new(app.diff.diff_store.as_value())
         .rows_with_all_filtered(app.diff.diff_show_untracked);
     let file_count = rows.len().saturating_sub(1);
     let border_style = files_border_style(app);
@@ -244,17 +244,12 @@ pub(super) fn render_commit_list(f: &mut Frame, app: &AppState, area: Rect) {
             })
             .collect()
     };
-    if loading {
-        items.push(ListItem::new(Line::from(Span::styled(
-            "Loading…",
-            Style::default().add_modifier(Modifier::DIM),
-        ))));
-    } else if has_more {
-        items.push(ListItem::new(Line::from(Span::styled(
-            "PgDn: older commits",
-            Style::default().add_modifier(Modifier::DIM),
-        ))));
-    }
+    crate::ui::list_footer::push_loading_or_more_hint(
+        &mut items,
+        loading,
+        has_more,
+        "PgDn: older commits",
+    );
 
     let widget = List::new(items)
         .block(

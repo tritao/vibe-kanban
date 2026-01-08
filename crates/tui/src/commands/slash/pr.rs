@@ -106,7 +106,7 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
         .or_else(|| {
             app.board
                 .selected_task_id
-                .and_then(|id| find_task(&app.board.tasks_store, id).map(|t| t.title))
+                .and_then(|id| find_task(app.board.tasks_store.as_value(), id).map(|t| t.title))
         })
         .ok_or_else(|| "missing --title and no task selected".to_string())?;
 

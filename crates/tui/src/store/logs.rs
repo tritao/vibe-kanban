@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-pub(crate) use super::log_entry::{EntryTypeRef, LogEntryRef, NormalizedContentRef};
+pub(crate) use super::log_entry::{EntryTypeRef, LogEntryKind, LogEntryRef, NormalizedContentRef};
 use crate::logs::model_params::{ModelParams, parse_system_message_for_model_params};
 
 pub(crate) struct LogStore<'a> {
@@ -16,7 +16,7 @@ impl<'a> LogStore<'a> {
         let entries = self.root.get("entries")?.as_array()?;
         for entry in entries {
             let entry = LogEntryRef::new(entry);
-            if entry.ty()? != "NORMALIZED_ENTRY" {
+            if entry.kind() != LogEntryKind::NormalizedEntry {
                 continue;
             }
             let content = entry.normalized_content()?;

@@ -2,13 +2,13 @@ use uuid::Uuid;
 
 use super::ids::{select_attempt, select_task};
 use crate::{
-    events::NetEvent,
+    events::NetOpError,
     state::{AppState, TaskStatus},
     store::{tasks_board::board_tasks_by_status, tasks_list::find_task},
     ui::components::BoardHit,
 };
 pub(in crate::actions) fn ensure_selected_task_in_active_column(app: &mut AppState) {
-    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
+    let by_status = board_tasks_by_status(app.board.tasks_store.as_value(), &app.board.task_filter);
     let list = match app.board.tasks_active_column {
         TaskStatus::Todo => &by_status.todo,
         TaskStatus::InProgress => &by_status.inprogress,
@@ -75,7 +75,7 @@ pub(crate) fn move_active_status(app: &mut AppState, delta: i32) {
 }
 
 pub(crate) fn select_adjacent_task(app: &mut AppState, delta: i32) {
-    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
+    let by_status = board_tasks_by_status(app.board.tasks_store.as_value(), &app.board.task_filter);
     if by_status.todo.is_empty()
         && by_status.inprogress.is_empty()
         && by_status.inreview.is_empty()
@@ -222,7 +222,7 @@ pub(crate) fn request_move_selected_task(app: &mut AppState, direction: i32) {
     let Some(task_id) = app.board.selected_task_id else {
         return;
     };
-    let Some(task) = find_task(&app.board.tasks_store, task_id) else {
+    let Some(task) = find_task(app.board.tasks_store.as_value(), task_id) else {
         return;
     };
     let Some(next) = next_status(task.status, direction) else {
@@ -234,7 +234,7 @@ pub(crate) fn request_move_selected_task(app: &mut AppState, direction: i32) {
     tokio::spawn(async move {
         if let Err(e) = crate::net::ops::update_task_status_http(&base_url, task_id, next).await {
             let _ = net_tx
-                .send(NetEvent::Error(format!("status update failed: {e}")))
+                .send(NetOpError::new("update task status", e).into_event())
                 .await;
         }
     });

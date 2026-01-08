@@ -98,11 +98,11 @@ impl BoardPane {
                 .set_error(crate::ui::messages::errors::NO_TASK_SELECTED);
             return;
         };
-        let title = find_task(&app.board.tasks_store, task_id)
+        let title = find_task(app.board.tasks_store.as_value(), task_id)
             .map(|t| t.title)
             .unwrap_or_else(|| task_id.to_string());
 
-        let all_tasks = tasks_all(&app.board.tasks_store);
+        let all_tasks = tasks_all(app.board.tasks_store.as_value());
         let mut children_by_parent: std::collections::HashMap<uuid::Uuid, Vec<uuid::Uuid>> =
             std::collections::HashMap::new();
         for t in &all_tasks {

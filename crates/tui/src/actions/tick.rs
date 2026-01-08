@@ -42,7 +42,7 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     if app.exec.log_render_width != app.exec.log_target_render_width
         && !app.exec.log_buffers.is_empty()
     {
-        let mut execs = exec_list(&app.exec.exec_store);
+        let mut execs = exec_list(app.exec.exec_store.as_value());
         execs.sort_by(|a, b| a.created_at.cmp(&b.created_at));
         let primary_opt = app
             .exec
@@ -103,7 +103,8 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     let diff_inner_width_u16 = layout.diff_preview.width.saturating_sub(2);
     let diff_inner_width = diff_inner_width_u16 as usize;
     let diff_width_changed = app.diff.diff_preview_cache_width != diff_inner_width_u16;
-    let has_diffs = crate::store::diff::DiffStore::new(&app.diff.diff_store).has_entries();
+    let has_diffs =
+        crate::store::diff::DiffStore::new(app.diff.diff_store.as_value()).has_entries();
     if diff_width_changed {
         app.diff.diff_preview_cache_width = diff_inner_width_u16;
         app.diff.invalidate_diff_preview_cache();

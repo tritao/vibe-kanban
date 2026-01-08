@@ -149,7 +149,7 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
     f.render_widget(Clear, area);
 
     let project_name = app.board.selected_project_id.and_then(|id| {
-        projects_list::projects_list(&app.board.projects_store)
+        projects_list::projects_list(app.board.projects_store.as_value())
             .into_iter()
             .find(|p| p.id == id)
             .map(|p| p.name)
@@ -158,7 +158,7 @@ pub(crate) fn render_create_task_modal(f: &mut Frame, app: &AppState, state: &Cr
 
     let parent_label = state
         .parent_task_id
-        .and_then(|id| find_task(&app.board.tasks_store, id))
+        .and_then(|id| find_task(app.board.tasks_store.as_value(), id))
         .map(|t| t.title)
         .unwrap_or_else(|| "none".to_string());
 
@@ -502,9 +502,7 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
             }
             Err(e) => {
                 let _ = net_tx
-                    .send(crate::events::NetEvent::Error(format!(
-                        "create task failed: {e}"
-                    )))
+                    .send(crate::events::NetOpError::new("create task", e).into_event())
                     .await;
             }
         }

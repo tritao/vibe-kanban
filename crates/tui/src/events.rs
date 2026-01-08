@@ -163,3 +163,32 @@ pub(crate) enum NetEvent {
         message: String,
     },
 }
+
+pub(crate) struct NetOpError {
+    pub(crate) key: Option<UiMessageKey>,
+    pub(crate) op: &'static str,
+    pub(crate) err: anyhow::Error,
+}
+
+impl NetOpError {
+    pub(crate) fn new(op: &'static str, err: impl Into<anyhow::Error>) -> Self {
+        Self {
+            key: None,
+            op,
+            err: err.into(),
+        }
+    }
+
+    pub(crate) fn with_key(mut self, key: UiMessageKey) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    pub(crate) fn into_event(self) -> NetEvent {
+        let msg = crate::fmt::op_failed(self.op, self.err);
+        match self.key {
+            Some(key) => NetEvent::ErrorKey { key, message: msg },
+            None => NetEvent::Error(msg),
+        }
+    }
+}

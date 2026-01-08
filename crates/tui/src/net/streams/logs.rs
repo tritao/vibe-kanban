@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::common::{WsConnectError, WsParsed, connect_ws_detailed, parse_ws_message};
 use crate::{
-    events::{NetEvent, StreamStatus},
+    events::{NetEvent, NetOpError, StreamStatus},
     state::{LogMode, UiMessageKey},
 };
 
@@ -102,13 +102,29 @@ pub(crate) async fn logs_stream_task(
                                     }
                                     WsParsed::Ignored => {}
                                     WsParsed::Error(e) => {
-                                        let _ = net_tx.send(NetEvent::Error(format!("log stream message error: {e}"))).await;
+                                        let _ = net_tx
+                                            .send(
+                                                NetOpError::new(
+                                                    "log stream message",
+                                                    anyhow::anyhow!(e),
+                                                )
+                                                .into_event(),
+                                            )
+                                            .await;
                                     }
                                 },
                                 Ok(tungstenite::Message::Close(_)) => break,
                                 Ok(_) => {}
                                 Err(e) => {
-                                    let _ = net_tx.send(NetEvent::Error(format!("log stream: {e}"))).await;
+                                    let _ = net_tx
+                                        .send(
+                                            NetOpError::new(
+                                                "log stream",
+                                                anyhow::Error::new(e),
+                                            )
+                                            .into_event(),
+                                        )
+                                        .await;
                                     break;
                                 }
                             }
@@ -157,10 +173,11 @@ pub(crate) async fn logs_stream_task(
                     .send(NetEvent::LogStreamStatus(StreamStatus::Error))
                     .await;
                 let _ = net_tx
-                    .send(NetEvent::ErrorKey {
-                        key: UiMessageKey::LogStreamConnect,
-                        message: format!("log stream connect: {e}"),
-                    })
+                    .send(
+                        NetOpError::new("log stream connect", anyhow::Error::new(e))
+                            .with_key(UiMessageKey::LogStreamConnect)
+                            .into_event(),
+                    )
                     .await;
             }
         }

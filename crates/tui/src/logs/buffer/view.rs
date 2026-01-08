@@ -54,7 +54,7 @@ pub(crate) fn maybe_attach_pending_user_log(app: &mut AppState) {
     };
 
     let prev = app.exec.pending_user_log_prev_exec_id;
-    let mut execs = exec_list(&app.exec.exec_store);
+    let mut execs = exec_list(app.exec.exec_store.as_value());
     execs.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     let latest = execs.last().map(|e| e.id);
 
@@ -162,7 +162,7 @@ pub(crate) fn enqueue_log_patch(
     let mut attempt_for_order = attempt_id;
     if attempt_for_order.is_some() {
         let is_selected = app.exec.selected_exec_id == Some(exec_id);
-        let in_store = exec_list(&app.exec.exec_store)
+        let in_store = exec_list(app.exec.exec_store.as_value())
             .iter()
             .any(|e| e.id == exec_id);
         if !is_selected && !in_store {
@@ -179,7 +179,7 @@ pub(crate) fn enqueue_log_patch(
 }
 
 fn rebuild_log_view_cache(app: &mut AppState) {
-    let mut execs = exec_list(&app.exec.exec_store);
+    let mut execs = exec_list(app.exec.exec_store.as_value());
     execs.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     let mut ordered: Vec<Uuid> = execs.iter().map(|e| e.id).collect();

@@ -1,5 +1,7 @@
 use crate::{
-    events::NetEvent, net::ops::update_model_settings_http, state::AppState,
+    events::{NetEvent, NetOpError},
+    net::ops::update_model_settings_http,
+    state::AppState,
     store::executor_profiles::ExecutorProfilesStore,
 };
 
@@ -89,9 +91,7 @@ pub(super) fn handle_model_command(app: &mut AppState, tokens: &[String]) -> Res
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::Error(format!(
-                            "failed to update model settings: {e}"
-                        )))
+                        .send(NetOpError::new("update model settings", e).into_event())
                         .await;
                 }
             }

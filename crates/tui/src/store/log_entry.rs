@@ -1,5 +1,13 @@
 use serde_json::Value;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LogEntryKind {
+    Stdout,
+    Stderr,
+    NormalizedEntry,
+    Other,
+}
+
 pub(crate) struct LogEntryRef<'a> {
     v: &'a Value,
 }
@@ -13,12 +21,21 @@ impl<'a> LogEntryRef<'a> {
         self.v.get("type").and_then(|v| v.as_str())
     }
 
+    pub(crate) fn kind(&self) -> LogEntryKind {
+        match self.ty() {
+            Some("STDOUT") => LogEntryKind::Stdout,
+            Some("STDERR") => LogEntryKind::Stderr,
+            Some("NORMALIZED_ENTRY") => LogEntryKind::NormalizedEntry,
+            _ => LogEntryKind::Other,
+        }
+    }
+
     pub(crate) fn stream_text(&self) -> Option<&'a str> {
         self.v.get("content").and_then(|v| v.as_str())
     }
 
     pub(crate) fn normalized_content(&self) -> Option<NormalizedContentRef<'a>> {
-        if self.ty()? != "NORMALIZED_ENTRY" {
+        if self.kind() != LogEntryKind::NormalizedEntry {
             return None;
         }
         Some(NormalizedContentRef::new(self.v.get("content")?))

@@ -1,5 +1,9 @@
 use super::require_selected_attempt_id;
-use crate::{events::NetEvent, net::ops::open_editor_http, state::AppState};
+use crate::{
+    events::{NetEvent, NetOpError},
+    net::ops::open_editor_http,
+    state::AppState,
+};
 
 pub(super) fn handle_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), String> {
     if tokens.len() < 2 {
@@ -23,7 +27,7 @@ pub(super) fn handle_open_command(app: &mut AppState, tokens: &[String]) -> Resu
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::Error(format!("open editor failed: {e}")))
+                        .send(NetOpError::new("open editor", e).into_event())
                         .await;
                 }
             }

@@ -35,13 +35,13 @@ pub(crate) fn build_top_bar(app: &AppState) -> TopBarVm {
     let project_name = app
         .board
         .selected_project_id
-        .and_then(|id| ProjectsStore::new(&app.board.projects_store).project_name(id))
+        .and_then(|id| ProjectsStore::new(app.board.projects_store.as_value()).project_name(id))
         .unwrap_or_else(|| "(no project)".to_string());
 
     let task_title = app
         .board
         .selected_task_id
-        .and_then(|id| find_task(&app.board.tasks_store, id).map(|t| t.title))
+        .and_then(|id| find_task(app.board.tasks_store.as_value(), id).map(|t| t.title))
         .unwrap_or_else(|| "—".to_string());
 
     let attempt_branch = app

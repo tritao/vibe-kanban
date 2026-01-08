@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub(super) fn render_board_pane(f: &mut Frame, app: &AppState, area: Rect) {
-    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
+    let by_status = board_tasks_by_status(app.board.tasks_store.as_value(), &app.board.task_filter);
     let statuses = board_statuses(app);
     let needs = super::layout::board_section_needs(app);
     let heights = super::layout::allocate_board_section_heights(&needs, area.height);

@@ -157,7 +157,7 @@ fn handle_diff_key(app: &mut AppState, key: KeyEvent) -> bool {
             app.diff.diff_show_untracked = !app.diff.diff_show_untracked;
             app.diff.invalidate_diff_preview_cache();
 
-            let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+            let rows = crate::store::diff::DiffStore::new(app.diff.diff_store.as_value())
                 .rows_with_all_filtered(app.diff.diff_show_untracked);
             app.diff.clamp_selected_diff_index(rows.len());
             sync_selected_repo_from_diff_selection(app);
@@ -262,7 +262,7 @@ fn selected_repo_status_from_diff(app: &AppState) -> Option<usize> {
     if app.diff.repo_statuses.is_empty() {
         return None;
     }
-    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+    let rows = crate::store::diff::DiffStore::new(app.diff.diff_store.as_value())
         .rows_with_all_filtered(app.diff.diff_show_untracked);
     let selected = rows.get(app.diff.selected_diff_index)?;
     let path = selected

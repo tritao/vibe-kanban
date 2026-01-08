@@ -6,6 +6,7 @@ pub(crate) mod execution;
 pub(crate) mod geometry;
 pub(crate) mod guards;
 pub(crate) mod layout;
+pub(crate) mod list_footer;
 pub(crate) mod list_nav;
 pub(crate) mod loading;
 pub(crate) mod loading_placeholders;

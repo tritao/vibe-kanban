@@ -6,7 +6,7 @@ use tokio_tungstenite::tungstenite;
 use uuid::Uuid;
 
 use super::common::{WsParsed, connect_ws, parse_ws_message};
-use crate::events::{NetEvent, StreamStatus};
+use crate::events::{NetEvent, NetOpError, StreamStatus};
 
 pub(crate) async fn diff_stream_task(
     base_url: String,
@@ -108,13 +108,29 @@ pub(crate) async fn diff_stream_task(
                                     }
                                     WsParsed::Finished | WsParsed::Ignored => {}
                                     WsParsed::Error(e) => {
-                                        let _ = net_tx.send(NetEvent::Error(format!("diff stream parse: {e}"))).await;
+                                        let _ = net_tx
+                                            .send(
+                                                NetOpError::new(
+                                                    "diff stream message",
+                                                    anyhow::anyhow!(e),
+                                                )
+                                                .into_event(),
+                                            )
+                                            .await;
                                     }
                                 },
                                 Ok(tungstenite::Message::Close(_)) => break,
                                 Ok(_) => {}
                                 Err(e) => {
-                                    let _ = net_tx.send(NetEvent::Error(format!("diff stream: {e}"))).await;
+                                    let _ = net_tx
+                                        .send(
+                                            NetOpError::new(
+                                                "diff stream",
+                                                anyhow::Error::new(e),
+                                            )
+                                            .into_event(),
+                                        )
+                                        .await;
                                     break;
                                 }
                             }
@@ -133,7 +149,7 @@ pub(crate) async fn diff_stream_task(
                     .send(NetEvent::DiffStreamStatus(StreamStatus::Error))
                     .await;
                 let _ = net_tx
-                    .send(NetEvent::Error(format!("diff stream connect: {e}")))
+                    .send(NetOpError::new("diff stream connect", e).into_event())
                     .await;
             }
         }

@@ -9,14 +9,14 @@ pub(super) fn tasks_stream_status(app: &mut AppState, status: StreamStatus) -> b
 }
 
 pub(super) fn tasks_reset(app: &mut AppState) -> bool {
-    app.board.tasks_store = crate::store::tasks::empty_tasks_store();
+    app.board.tasks_store = crate::store::roots::TasksRoot::empty();
     sel::select_task(app, None);
     app.board.pending_select_task_id = None;
     true
 }
 
 pub(super) fn tasks_patch(app: &mut AppState, patch: json_patch::Patch) -> bool {
-    if let Err(e) = json_patch::patch(&mut app.board.tasks_store, &patch) {
+    if let Err(e) = app.board.tasks_store.apply_patch(&patch) {
         app.ui
             .set_error(format!("failed to apply tasks patch: {e}"));
         app.board.tasks_status = StreamStatus::Error;

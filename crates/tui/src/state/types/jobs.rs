@@ -51,10 +51,10 @@ impl PendingExecHook {
 
     pub(crate) fn on_exec_store_updated(
         mut self,
-        exec_store: &serde_json::Value,
+        exec_store: &crate::store::roots::ExecRoot,
     ) -> PendingExecHookUpdate {
         if self.wait_new_exec {
-            let mut execs = exec_list(exec_store);
+            let mut execs = exec_list(exec_store.as_value());
             execs.sort_by(|a, b| a.created_at.cmp(&b.created_at));
             if let Some(latest) = execs.last().map(|e| e.id) {
                 if self.prev_exec_id != Some(latest) {
@@ -72,7 +72,7 @@ impl PendingExecHook {
             };
         };
 
-        let execs = exec_list(exec_store);
+        let execs = exec_list(exec_store.as_value());
         let is_running = execs
             .iter()
             .find(|e| e.id == exec_id)

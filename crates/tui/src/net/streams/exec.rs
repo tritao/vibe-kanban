@@ -6,7 +6,7 @@ use tokio_tungstenite::tungstenite;
 use uuid::Uuid;
 
 use super::common::{WsParsed, connect_ws, parse_ws_message};
-use crate::events::{NetEvent, StreamStatus};
+use crate::events::{NetEvent, NetOpError, StreamStatus};
 
 pub(crate) async fn exec_stream_task(
     base_url: String,
@@ -85,13 +85,29 @@ pub(crate) async fn exec_stream_task(
                                     }
                                     WsParsed::Ignored => {}
                                     WsParsed::Error(e) => {
-                                        let _ = net_tx.send(NetEvent::Error(format!("exec stream message error: {e}"))).await;
+                                        let _ = net_tx
+                                            .send(
+                                                NetOpError::new(
+                                                    "exec stream message",
+                                                    anyhow::anyhow!(e),
+                                                )
+                                                .into_event(),
+                                            )
+                                            .await;
                                     }
                                 },
                                 Ok(tungstenite::Message::Close(_)) => break,
                                 Ok(_) => {}
                                 Err(e) => {
-                                    let _ = net_tx.send(NetEvent::Error(format!("exec stream: {e}"))).await;
+                                    let _ = net_tx
+                                        .send(
+                                            NetOpError::new(
+                                                "exec stream",
+                                                anyhow::Error::new(e),
+                                            )
+                                            .into_event(),
+                                        )
+                                        .await;
                                     break;
                                 }
                             }
@@ -110,7 +126,7 @@ pub(crate) async fn exec_stream_task(
                     .send(NetEvent::ExecStreamStatus(StreamStatus::Error))
                     .await;
                 let _ = net_tx
-                    .send(NetEvent::Error(format!("exec stream connect: {e}")))
+                    .send(NetOpError::new("exec stream connect", e).into_event())
                     .await;
             }
         }

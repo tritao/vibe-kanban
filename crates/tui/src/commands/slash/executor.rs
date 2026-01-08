@@ -1,5 +1,5 @@
 use crate::{
-    events::NetEvent,
+    events::{NetEvent, NetOpError},
     net::ops::update_executor_profile_http,
     state::{AppState, ExecutorProfileSelection},
 };
@@ -75,9 +75,7 @@ pub(super) fn handle_executor_command(app: &mut AppState, tokens: &[String]) -> 
                 }
                 Err(e) => {
                     let _ = net_tx
-                        .send(NetEvent::Error(format!(
-                            "failed to update executor profile: {e}"
-                        )))
+                        .send(NetOpError::new("update executor profile", e).into_event())
                         .await;
                 }
             }

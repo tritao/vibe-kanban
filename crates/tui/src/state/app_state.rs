@@ -20,7 +20,7 @@ pub(crate) struct BoardState {
     pub(crate) project_filter: String,
 
     pub(crate) projects_status: StreamStatus,
-    pub(crate) projects_store: serde_json::Value,
+    pub(crate) projects_store: crate::store::roots::ProjectsRoot,
     pub(crate) projects_loaded_once: bool,
     pub(crate) selected_project_id: Option<Uuid>,
     pub(crate) selected_project_index: usize,
@@ -29,7 +29,7 @@ pub(crate) struct BoardState {
     pub(crate) show_cancelled: bool,
 
     pub(crate) tasks_status: StreamStatus,
-    pub(crate) tasks_store: serde_json::Value,
+    pub(crate) tasks_store: crate::store::roots::TasksRoot,
     pub(crate) selected_task_id: Option<Uuid>,
     pub(crate) pending_select_task_id: Option<Uuid>,
     pub(crate) tasks_active_column: TaskStatus,
@@ -42,7 +42,7 @@ pub(crate) struct BoardState {
 
 pub(crate) struct ExecState {
     pub(crate) exec_status: StreamStatus,
-    pub(crate) exec_store: serde_json::Value,
+    pub(crate) exec_store: crate::store::roots::ExecRoot,
     pub(crate) selected_exec_id: Option<Uuid>,
 
     pub(crate) log_status: StreamStatus,
@@ -77,7 +77,7 @@ pub(crate) struct ExecState {
 
 pub(crate) struct DiffState {
     pub(crate) diff_status: StreamStatus,
-    pub(crate) diff_store: serde_json::Value,
+    pub(crate) diff_store: crate::store::roots::DiffRoot,
     pub(crate) diff_stats_only: bool,
     pub(crate) diff_show_untracked: bool,
     pub(crate) selected_diff_index: usize,
@@ -269,7 +269,7 @@ impl AppState {
                 project_filter: String::new(),
 
                 projects_status: StreamStatus::Disconnected,
-                projects_store: crate::store::projects::empty_projects_store(),
+                projects_store: crate::store::roots::ProjectsRoot::empty(),
                 projects_loaded_once: false,
                 selected_project_id: prefs.selected_project_id,
                 selected_project_index: 0,
@@ -278,7 +278,7 @@ impl AppState {
                 show_cancelled: prefs.show_cancelled,
 
                 tasks_status: StreamStatus::Disconnected,
-                tasks_store: crate::store::tasks::empty_tasks_store(),
+                tasks_store: crate::store::roots::TasksRoot::empty(),
                 selected_task_id: None,
                 pending_select_task_id: None,
                 tasks_active_column: TaskStatus::Todo,
@@ -291,7 +291,7 @@ impl AppState {
 
             exec: ExecState {
                 exec_status: StreamStatus::Disconnected,
-                exec_store: crate::store::exec::empty_exec_store(),
+                exec_store: crate::store::roots::ExecRoot::empty(),
                 selected_exec_id: None,
 
                 log_status: StreamStatus::Disconnected,
@@ -325,7 +325,7 @@ impl AppState {
 
             diff: DiffState {
                 diff_status: StreamStatus::Disconnected,
-                diff_store: crate::store::diff::empty_diff_store(),
+                diff_store: crate::store::roots::DiffRoot::empty(),
                 diff_stats_only: false,
                 diff_show_untracked: true,
                 selected_diff_index: 0,

@@ -25,7 +25,7 @@ pub(crate) fn diff_patch_touches_key(patch: &json_patch::Patch, key: &str) -> bo
 pub(crate) fn on_diff_entries_patched(app: &mut AppState, patch: &json_patch::Patch) {
     use crate::diff::DIFF_ALL_KEY;
 
-    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+    let rows = crate::store::diff::DiffStore::new(app.diff.diff_store.as_value())
         .rows_with_all_filtered(app.diff.diff_show_untracked);
     if rows.is_empty() {
         return;
@@ -105,7 +105,7 @@ pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
     let generation = app.diff.diff_preview_gen.current();
     let width_u16 = (width.min(u16::MAX as usize)) as u16;
     let req = build_diff_preview_request(
-        &app.diff.diff_store,
+        app.diff.diff_store.as_value(),
         app.diff.selected_diff_index,
         app.diff.diff_show_untracked,
     );

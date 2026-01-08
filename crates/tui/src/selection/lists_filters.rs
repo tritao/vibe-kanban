@@ -14,7 +14,7 @@ fn contains_ci(haystack: &str, needle: &str) -> bool {
 }
 
 pub(crate) fn filtered_projects(app: &AppState) -> Vec<projects_list::ProjectRow> {
-    let mut list = projects_list::projects_list(&app.board.projects_store);
+    let mut list = projects_list::projects_list(app.board.projects_store.as_value());
     let q = app.board.project_filter.trim();
     if !q.is_empty() {
         list.retain(|p| contains_ci(&p.name, q));

@@ -34,7 +34,7 @@ pub(in crate::actions) fn reconcile_projects_selection(app: &mut AppState) {
 }
 
 pub(in crate::actions) fn reconcile_tasks_selection(app: &mut AppState) {
-    let tasks = tasks_filtered(&app.board.tasks_store, &app.board.task_filter);
+    let tasks = tasks_filtered(app.board.tasks_store.as_value(), &app.board.task_filter);
     if tasks.is_empty() {
         select_task(app, None);
         return;
@@ -57,7 +57,7 @@ pub(in crate::actions) fn reconcile_tasks_selection(app: &mut AppState) {
         }
     }
 
-    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
+    let by_status = board_tasks_by_status(app.board.tasks_store.as_value(), &app.board.task_filter);
     let chosen = match app.board.tasks_active_column {
         TaskStatus::Todo => by_status.todo.first().map(|i| &i.task),
         TaskStatus::InProgress => by_status.inprogress.first().map(|i| &i.task),
@@ -132,7 +132,7 @@ fn ensure_task_selection(app: &mut AppState) {
         return;
     }
 
-    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
+    let by_status = board_tasks_by_status(app.board.tasks_store.as_value(), &app.board.task_filter);
     let list = match app.board.tasks_active_column {
         TaskStatus::Todo => &by_status.todo,
         TaskStatus::InProgress => &by_status.inprogress,
@@ -182,7 +182,7 @@ fn ensure_attempt_selection(app: &mut AppState) {
 }
 
 pub(in crate::actions) fn ensure_exec_selection(app: &mut AppState) {
-    let execs = exec_list(&app.exec.exec_store);
+    let execs = exec_list(app.exec.exec_store.as_value());
     select_exec(app, active_exec_id(&execs));
 }
 
@@ -190,7 +190,7 @@ pub(in crate::actions) fn sync_tasks_active_column(app: &mut AppState) {
     let Some(task_id) = app.board.selected_task_id else {
         return;
     };
-    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
+    let by_status = board_tasks_by_status(app.board.tasks_store.as_value(), &app.board.task_filter);
     for status in crate::util::board_statuses(app) {
         let list = match status {
             TaskStatus::Todo => &by_status.todo,
@@ -206,7 +206,7 @@ pub(in crate::actions) fn sync_tasks_active_column(app: &mut AppState) {
     }
 
     // Fallback: if the task isn't visible in the current board view, keep prior behavior.
-    if let Some(task) = find_task(&app.board.tasks_store, task_id) {
+    if let Some(task) = find_task(app.board.tasks_store.as_value(), task_id) {
         app.board.tasks_active_column = match task.status {
             TaskStatus::Cancelled if !app.board.show_cancelled => TaskStatus::Done,
             other => other,

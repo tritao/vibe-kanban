@@ -18,7 +18,8 @@ pub(crate) use commits::{
     select_commits_mode, select_files_mode,
 };
 pub(crate) use context::{
-    require_repo_status_loaded, require_selected_attempt_id, resolve_repo_for_command,
+    ensure_attempt_selected, ensure_repo_status_loaded, require_repo_status_loaded,
+    require_selected_attempt_id, resolve_repo_for_command,
 };
 pub(crate) use git_ops::{
     arm_branch_status_refresh_after_next_exec, arm_branch_status_refresh_for_exec, begin_git_op,

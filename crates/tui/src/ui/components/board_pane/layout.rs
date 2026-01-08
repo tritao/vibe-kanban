@@ -71,7 +71,7 @@ pub(super) fn task_index_in(list: &[BoardTaskItem], task_id: Option<uuid::Uuid>)
 }
 
 pub(super) fn board_section_needs(app: &AppState) -> Vec<u16> {
-    let by_status = board_tasks_by_status(&app.board.tasks_store, &app.board.task_filter);
+    let by_status = board_tasks_by_status(app.board.tasks_store.as_value(), &app.board.task_filter);
     let statuses = board_statuses(app);
     statuses
         .iter()

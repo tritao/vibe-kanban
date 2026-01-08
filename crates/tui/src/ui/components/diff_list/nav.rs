@@ -4,7 +4,7 @@ use crate::{
 };
 
 pub(super) fn select_diff_file(app: &mut AppState, idx: usize) -> bool {
-    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+    let rows = crate::store::diff::DiffStore::new(app.diff.diff_store.as_value())
         .rows_with_all_filtered(app.diff.diff_show_untracked);
     if !list_nav::select_index(&mut app.diff.selected_diff_index, idx, rows.len()) {
         return false;
@@ -14,7 +14,7 @@ pub(super) fn select_diff_file(app: &mut AppState, idx: usize) -> bool {
 }
 
 pub(super) fn select_adjacent_diff_file(app: &mut AppState, delta: i32) -> bool {
-    let rows = crate::store::diff::DiffStore::new(&app.diff.diff_store)
+    let rows = crate::store::diff::DiffStore::new(app.diff.diff_store.as_value())
         .rows_with_all_filtered(app.diff.diff_show_untracked);
     if !list_nav::select_delta(&mut app.diff.selected_diff_index, delta, rows.len()) {
         return false;
