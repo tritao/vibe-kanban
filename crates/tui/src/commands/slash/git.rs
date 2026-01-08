@@ -82,8 +82,9 @@ pub(super) fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Re
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     if let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) {
+        let state = r.action_state(GitRepoAction::Rebase);
         if old.is_none() && onto.is_none() {
-            if let Some(block) = r.action_block(GitRepoAction::Rebase) {
+            if let Some(block) = state.block {
                 match block.severity {
                     GitActionBlockSeverity::Ok => crate::ui::toasts::ok_short(app, block.message),
                     GitActionBlockSeverity::Warn => {
@@ -92,8 +93,8 @@ pub(super) fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Re
                 }
                 return Ok(());
             }
-        } else if let Some(block) = r
-            .action_block(GitRepoAction::Rebase)
+        } else if let Some(block) = state
+            .block
             .filter(|b| matches!(b.severity, GitActionBlockSeverity::Warn))
         {
             crate::ui::toasts::warn_short(app, block.message);
@@ -131,7 +132,7 @@ pub(super) fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Res
     let (repo_id, repo_name) = resolve_repo_for_command(app, repo_arg.as_deref())?;
 
     if let Some(r) = RepoStatuses::new(&app.diff.repo_statuses).get_by_id(repo_id) {
-        if let Some(block) = r.action_block(GitRepoAction::Merge) {
+        if let Some(block) = r.action_state(GitRepoAction::Merge).block {
             match block.severity {
                 GitActionBlockSeverity::Ok => crate::ui::toasts::ok_short(app, block.message),
                 GitActionBlockSeverity::Warn => crate::ui::toasts::warn_short(app, block.message),

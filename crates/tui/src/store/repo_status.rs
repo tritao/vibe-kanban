@@ -25,6 +25,12 @@ pub(crate) struct GitActionBlock {
     pub(crate) message: String,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct GitActionState {
+    pub(crate) enabled: bool,
+    pub(crate) block: Option<GitActionBlock>,
+}
+
 pub(crate) struct RepoStatuses<'a> {
     repos: &'a [RepoBranchStatus],
 }
@@ -164,20 +170,12 @@ impl<'a> RepoStatusRef<'a> {
         self.pr().map(|p| p.badge())
     }
 
-    pub(crate) fn can_merge(self) -> bool {
-        self.action_block(GitRepoAction::Merge).is_none()
-    }
-
-    pub(crate) fn can_rebase(self) -> bool {
-        self.action_block(GitRepoAction::Rebase).is_none()
-    }
-
-    pub(crate) fn can_create_pr(self) -> bool {
-        self.action_block(GitRepoAction::CreatePr).is_none()
-    }
-
-    pub(crate) fn can_open_pr(self) -> bool {
-        self.action_block(GitRepoAction::OpenPr).is_none()
+    pub(crate) fn action_state(self, action: GitRepoAction) -> GitActionState {
+        let block = self.action_block(action);
+        GitActionState {
+            enabled: block.is_none(),
+            block,
+        }
     }
 
     pub(crate) fn action_block(self, action: GitRepoAction) -> Option<GitActionBlock> {

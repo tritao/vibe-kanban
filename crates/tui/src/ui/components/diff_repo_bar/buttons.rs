@@ -6,7 +6,7 @@ use super::{DiffRepoAction, shared};
 use crate::{
     events::GitOpKind,
     state::{AppState, RepoBranchStatus},
-    store::repo_status::RepoStatusRef,
+    store::repo_status::{GitRepoAction, RepoStatusRef},
     ui::button_row::ButtonSpec,
 };
 
@@ -67,12 +67,22 @@ pub(super) fn repo_bar_button_specs(
             DiffRepoAction::ResolveConflicts
             | DiffRepoAction::OpenConflict
             | DiffRepoAction::AbortConflicts => attempt_selected && has_conflicts,
-            DiffRepoAction::Merge => attempt_selected && repo_ref.is_some_and(|r| r.can_merge()),
-            DiffRepoAction::Rebase => attempt_selected && repo_ref.is_some_and(|r| r.can_rebase()),
-            DiffRepoAction::CreatePr => {
-                attempt_selected && repo_ref.is_some_and(|r| r.can_create_pr())
+            DiffRepoAction::Merge => {
+                attempt_selected
+                    && repo_ref.is_some_and(|r| r.action_state(GitRepoAction::Merge).enabled)
             }
-            DiffRepoAction::OpenPr => attempt_selected && repo_ref.is_some_and(|r| r.can_open_pr()),
+            DiffRepoAction::Rebase => {
+                attempt_selected
+                    && repo_ref.is_some_and(|r| r.action_state(GitRepoAction::Rebase).enabled)
+            }
+            DiffRepoAction::CreatePr => {
+                attempt_selected
+                    && repo_ref.is_some_and(|r| r.action_state(GitRepoAction::CreatePr).enabled)
+            }
+            DiffRepoAction::OpenPr => {
+                attempt_selected
+                    && repo_ref.is_some_and(|r| r.action_state(GitRepoAction::OpenPr).enabled)
+            }
         }
     };
 
