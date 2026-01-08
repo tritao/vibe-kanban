@@ -2,6 +2,7 @@ mod actions;
 mod badges;
 mod buttons;
 mod hit_test;
+mod layout;
 mod render;
 mod shared;
 
