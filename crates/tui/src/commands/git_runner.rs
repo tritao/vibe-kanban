@@ -78,6 +78,18 @@ pub(crate) fn spawn_repo_git_op<F, Fut, E>(
                     .await;
             }
             Err(e) => {
+                // Even on failure, the repo state may have changed (e.g. rebase left conflicts or
+                // started an in-progress state). Refresh status so the UI reflects reality.
+                if outcome.refresh_branch_status {
+                    if let Ok(statuses) = branch_status_http(&base_url, attempt_id).await {
+                        let _ = net_tx
+                            .send(NetEvent::BranchStatusLoaded {
+                                attempt_id,
+                                statuses,
+                            })
+                            .await;
+                    }
+                }
                 let _ = net_tx
                     .send(NetEvent::Error(crate::fmt::op_failed(
                         kind.label().to_lowercase().as_str(),

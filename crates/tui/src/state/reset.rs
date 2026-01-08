@@ -38,5 +38,6 @@ pub(crate) fn reset_attempt_scoped_state(app: &mut AppState) {
     app.diff.repo_statuses.clear();
     app.diff.branch_status_loaded_attempt_id = None;
     app.diff.branch_status_loaded_at = None;
+    app.diff.branch_status_auto_next_at = None;
     app.diff.selected_repo_index = 0;
 }

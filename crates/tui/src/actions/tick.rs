@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ratatui::{layout::Rect, text::Line};
 
@@ -10,7 +10,7 @@ use crate::{
     jobs::{job_running, reap_finished_jobs, replace_blocking_job},
     layout::{clamp_scroll_offsets, compute_main_layout},
     logs::flush_log_buffers,
-    state::{AppState, JobKey},
+    state::{AppState, FocusPane, JobKey},
     store::exec_list::exec_list,
 };
 
@@ -151,6 +151,31 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
     }
     if update_git_activity_indicators(app, now) {
         dirty = true;
+    }
+
+    // While the diff pane is focused, keep repo status reasonably fresh so action enablement and
+    // conflict indicators remain accurate without requiring manual `S`.
+    if app.ui.focus == FocusPane::Diff
+        && app.board.selected_attempt_id.is_some()
+        && !app.diff.repo_statuses.is_empty()
+        && !job_running(app, JobKey::BranchStatus)
+        && !job_running(app, JobKey::BranchStatusAuto)
+    {
+        let stale = app
+            .diff
+            .branch_status_loaded_at
+            .map(|t| now.saturating_duration_since(t))
+            .unwrap_or(crate::ui::constants::BRANCH_STATUS_AUTO_REFRESH_INTERVAL);
+        let due = app
+            .diff
+            .branch_status_auto_next_at
+            .map(|t| now >= t)
+            .unwrap_or(stale >= crate::ui::constants::BRANCH_STATUS_AUTO_REFRESH_INTERVAL);
+        if due {
+            app.diff.branch_status_auto_next_at =
+                Some(now + crate::ui::constants::BRANCH_STATUS_AUTO_REFRESH_INTERVAL);
+            crate::commands::schedule_branch_status_refresh_debounced(app, Duration::ZERO);
+        }
     }
 
     // If repo status isn't loaded yet, show a delayed "Loading repos…" notice while the refresh

@@ -74,6 +74,8 @@ pub(super) fn branch_status_loaded(
     app.diff.repo_statuses = statuses;
     app.diff.branch_status_loaded_attempt_id = Some(attempt_id);
     app.diff.branch_status_loaded_at = Some(Instant::now());
+    app.diff.branch_status_auto_next_at =
+        Some(Instant::now() + crate::ui::constants::BRANCH_STATUS_AUTO_REFRESH_INTERVAL);
     NetApplyResult::changed(true).with_effects(NetEffects {
         sync_selected_repo: true,
         refresh_stack_status: true,
