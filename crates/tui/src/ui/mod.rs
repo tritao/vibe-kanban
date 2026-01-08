@@ -13,6 +13,7 @@ pub(crate) mod loading_placeholders;
 pub(crate) mod messages;
 pub(crate) mod modals;
 pub(crate) mod palette;
+pub(crate) mod scheduler;
 pub(crate) mod scroll;
 pub(crate) mod scroll_model;
 pub(crate) mod toast_presets;

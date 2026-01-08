@@ -64,39 +64,42 @@ pub(crate) fn schedule_diff_preview_refresh(app: &mut AppState, delay: Duration)
     // Cancel any in-flight diff preview generation; a newer one will replace it.
     cancel_diff_preview_job(app);
     let now = Instant::now();
-    let next = now + delay;
-    app.diff.diff_preview_pending = true;
-    app.diff.diff_preview_next_refresh_at = match app.diff.diff_preview_next_refresh_at {
-        Some(existing) => Some(existing.min(next)),
-        None => Some(next),
-    };
+    crate::ui::scheduler::schedule_soonest(
+        &mut app.diff.diff_preview_pending,
+        &mut app.diff.diff_preview_next_refresh_at,
+        now,
+        delay,
+    );
 }
 
 pub(crate) fn schedule_diff_preview_refresh_debounced(app: &mut AppState, delay: Duration) {
     // Debounce (push the refresh further out as new patches arrive).
     cancel_diff_preview_job(app);
     let now = Instant::now();
-    let next = now + delay;
-    app.diff.diff_preview_pending = true;
-    app.diff.diff_preview_next_refresh_at = match app.diff.diff_preview_next_refresh_at {
-        Some(existing) => Some(existing.max(next)),
-        None => Some(next),
-    };
+    crate::ui::scheduler::schedule_debounced(
+        &mut app.diff.diff_preview_pending,
+        &mut app.diff.diff_preview_next_refresh_at,
+        now,
+        delay,
+    );
 }
 
 pub(crate) fn diff_preview_refresh_ready(app: &AppState, now: Instant) -> bool {
-    app.diff.diff_preview_pending
-        && app
-            .diff
-            .diff_preview_next_refresh_at
-            .map(|t| now >= t)
-            .unwrap_or(true)
+    crate::ui::scheduler::debounced_ready(
+        app.diff.diff_preview_pending,
+        app.diff.diff_preview_next_refresh_at,
+        now,
+    )
 }
 
 pub(crate) fn cancel_diff_preview_job(app: &mut AppState) {
     app.diff.diff_preview_gen.next();
     cancel_job(app, JobKey::DiffPreview);
     app.diff.diff_preview_loading.stop();
+    crate::ui::scheduler::clear_debounced(
+        &mut app.diff.diff_preview_pending,
+        &mut app.diff.diff_preview_next_refresh_at,
+    );
 }
 
 pub(crate) fn request_diff_preview_async(app: &mut AppState, width: usize) {
