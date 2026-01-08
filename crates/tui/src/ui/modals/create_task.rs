@@ -475,11 +475,7 @@ fn submit_create_task_state(app: &mut AppState, state: CreateTaskState) {
     let status = state.status;
     let parent_task_id = state.parent_task_id;
 
-    app.ui.set_toast(
-        "Creating task…",
-        crate::ui::palette::toast_info(),
-        Some(crate::ui::constants::TOAST_SHORT),
-    );
+    crate::ui::toasts::info_short(app, "Creating task…");
 
     let base_url = app.backend_url.clone();
     let net_tx = app.net_tx.clone();

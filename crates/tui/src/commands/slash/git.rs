@@ -86,19 +86,14 @@ pub(super) fn handle_rebase_command(app: &mut AppState, tokens: &[String]) -> Re
 
     if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
         if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
-            app.ui.set_toast(
-                "Rebase: conflicts in progress (resolve/abort first)".to_string(),
-                crate::ui::palette::toast_warn(),
-                Some(crate::ui::constants::TOAST_SHORT),
+            crate::ui::toasts::warn_short(
+                app,
+                "Rebase: conflicts in progress (resolve/abort first)",
             );
             return Ok(());
         }
         if old.is_none() && onto.is_none() && r.status.commits_behind.unwrap_or(0) == 0 {
-            app.ui.set_toast(
-                "Rebase: already up to date".to_string(),
-                crate::ui::palette::toast_ok(),
-                Some(crate::ui::constants::TOAST_SHORT),
-            );
+            crate::ui::toasts::ok_short(app, "Rebase: already up to date");
             return Ok(());
         }
     }
@@ -134,19 +129,14 @@ pub(super) fn handle_merge_command(app: &mut AppState, tokens: &[String]) -> Res
 
     if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
         if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
-            app.ui.set_toast(
-                "Merge: conflicts in progress (resolve/abort first)".to_string(),
-                crate::ui::palette::toast_warn(),
-                Some(crate::ui::constants::TOAST_SHORT),
+            crate::ui::toasts::warn_short(
+                app,
+                "Merge: conflicts in progress (resolve/abort first)",
             );
             return Ok(());
         }
         if r.status.commits_ahead.unwrap_or(0) == 0 {
-            app.ui.set_toast(
-                "Merge: nothing to merge (up to date)".to_string(),
-                crate::ui::palette::toast_ok(),
-                Some(crate::ui::constants::TOAST_SHORT),
-            );
+            crate::ui::toasts::ok_short(app, "Merge: nothing to merge (up to date)");
             return Ok(());
         }
     }

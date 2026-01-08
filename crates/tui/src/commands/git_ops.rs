@@ -195,11 +195,7 @@ pub(crate) fn begin_git_op(
     } else {
         format!(" ({repo_name})")
     };
-    app.ui.set_toast(
-        format!("Git: {}…{scope}", kind.label()),
-        crate::ui::palette::toast_warn(),
-        None,
-    );
+    crate::ui::toasts::warn_sticky(app, format!("Git: {}…{scope}", kind.label()));
     true
 }
 
@@ -222,15 +218,11 @@ pub(crate) fn finish_git_op(
         }
     }
 
-    app.ui.set_toast(
-        message,
-        if ok {
-            crate::ui::palette::toast_ok()
-        } else {
-            crate::ui::palette::toast_err()
-        },
-        Some(crate::ui::constants::TOAST_MEDIUM),
-    );
+    if ok {
+        crate::ui::toasts::ok_medium(app, message);
+    } else {
+        crate::ui::toasts::err_medium(app, message);
+    }
 }
 
 pub(crate) fn update_git_activity_indicators(app: &mut AppState, now: Instant) -> bool {

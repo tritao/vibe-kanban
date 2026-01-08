@@ -66,11 +66,7 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
         match eff {
             Effect::CopyOsc52(text) => {
                 if let Err(e) = copy_to_clipboard_osc52(&text) {
-                    app.ui.set_toast(
-                        format!("Copy failed: {e}"),
-                        crate::ui::palette::toast_err(),
-                        Some(crate::ui::constants::TOAST_SHORT),
-                    );
+                    crate::ui::toasts::err_short(app, format!("Copy failed: {e}"));
                     dirty = true;
                 }
             }
@@ -83,23 +79,21 @@ pub(super) fn run_effects(app: &mut AppState, effects: Vec<Effect>) -> bool {
                 match res {
                     Ok(()) => {
                         app.ui.mouse_capture_enabled = enabled;
-                        app.ui.set_toast(
+                        crate::ui::toasts::ok_short(
+                            app,
                             if enabled {
                                 "Mouse capture enabled".to_string()
                             } else {
                                 "Mouse capture disabled (terminal text selection enabled)"
                                     .to_string()
                             },
-                            crate::ui::palette::toast_ok(),
-                            Some(crate::ui::constants::TOAST_SHORT),
                         );
                         dirty = true;
                     }
                     Err(e) => {
-                        app.ui.set_toast(
+                        crate::ui::toasts::err_short(
+                            app,
                             format!("Mouse capture toggle failed: {e}"),
-                            crate::ui::palette::toast_err(),
-                            Some(crate::ui::constants::TOAST_SHORT),
                         );
                         dirty = true;
                     }

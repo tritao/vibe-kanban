@@ -62,15 +62,12 @@ pub(crate) fn build_diff_preview_request(
         return DiffPreviewRequest::None;
     };
 
-    let entries = diff_store.get("entries").and_then(|v| v.as_object());
+    let store = crate::store::diff::DiffStore::new(diff_store);
 
     if selected.key == DIFF_ALL_KEY {
         let mut items: Vec<DiffPreviewItem> = vec![];
         for row in rows.iter().skip(1) {
-            let Some(content) = entries
-                .and_then(|e| e.get(&row.key))
-                .and_then(|v| v.get("content"))
-            else {
+            let Some(content) = store.entry_content(&row.key) else {
                 continue;
             };
 
@@ -115,9 +112,7 @@ pub(crate) fn build_diff_preview_request(
         return DiffPreviewRequest::All { items };
     }
 
-    let content = entries
-        .and_then(|e| e.get(&selected.key))
-        .and_then(|v| v.get("content"));
+    let content = store.entry_content(&selected.key);
     let Some(content) = content else {
         return DiffPreviewRequest::Single {
             key: selected.key.clone(),

@@ -65,25 +65,19 @@ pub(super) fn reduce_tick(app: &mut AppState, now: Instant, term: Rect) -> bool 
             let diff_theme = app.diff.diff_theme;
             let net_tx = app.net_tx.clone();
 
-            let mut snapshot: Vec<(uuid::Uuid, serde_json::Value, Vec<bool>)> = vec![];
+            let mut snapshot: Vec<crate::logs::buffer::LogPrewarmSnapshot> = vec![];
             for id in include.iter().copied() {
                 if let Some(buf) = app.exec.log_buffers.get(&id) {
-                    snapshot.push((id, buf.store.clone(), buf.collapsed.clone()));
+                    snapshot.push(buf.prewarm_snapshot(id));
                 }
             }
 
             replace_blocking_job(app, JobKey::LogPrewarm, move || {
-                for (exec_id, store, collapsed) in snapshot {
-                    let cache = crate::logs::buffer::build_prepared_log_cache(
-                        &store,
-                        &collapsed,
-                        target_width as usize,
-                        log_mode,
-                        render_mode,
-                        diff_theme,
-                    );
+                for snap in snapshot {
+                    let cache =
+                        snap.build_cache(target_width as usize, log_mode, render_mode, diff_theme);
                     let _ = net_tx.blocking_send(crate::events::NetEvent::LogPrewarmReady {
-                        exec_id,
+                        exec_id: snap.exec_id,
                         width: target_width,
                         generation,
                         cache,

@@ -57,11 +57,7 @@ fn handle_pr_open_command(app: &mut AppState, tokens: &[String]) -> Result<(), S
 
     match open_url(&pr.url) {
         Ok(()) => {
-            app.ui.set_toast(
-                format!("PR: opened (PR#{}, {repo_name})", pr.number),
-                crate::ui::palette::toast_ok(),
-                Some(crate::ui::constants::TOAST_SHORT),
-            );
+            crate::ui::toasts::ok_short(app, format!("PR: opened (PR#{}, {repo_name})", pr.number));
             Ok(())
         }
         Err(e) => {
@@ -92,19 +88,11 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
 
     if let Some(r) = app.diff.repo_statuses.iter().find(|r| r.repo_id == repo_id) {
         if r.status.is_rebase_in_progress || !r.status.conflicted_files.is_empty() {
-            app.ui.set_toast(
-                "PR: conflicts in progress (resolve/abort first)".to_string(),
-                crate::ui::palette::toast_warn(),
-                Some(crate::ui::constants::TOAST_SHORT),
-            );
+            crate::ui::toasts::warn_short(app, "PR: conflicts in progress (resolve/abort first)");
             return Ok(());
         }
         if r.status.commits_ahead.unwrap_or(0) == 0 {
-            app.ui.set_toast(
-                "PR: no changes to open (up to date)".to_string(),
-                crate::ui::palette::toast_ok(),
-                Some(crate::ui::constants::TOAST_SHORT),
-            );
+            crate::ui::toasts::ok_short(app, "PR: no changes to open (up to date)");
             return Ok(());
         }
         let pr_open = r.status.merges.iter().find_map(|m| match m {
@@ -112,11 +100,7 @@ fn handle_pr_create_command(app: &mut AppState, tokens: &[String]) -> Result<(),
             _ => None,
         });
         if let Some(n) = pr_open {
-            app.ui.set_toast(
-                format!("PR: already exists (PR#{n})"),
-                crate::ui::palette::toast_ok(),
-                Some(crate::ui::constants::TOAST_SHORT),
-            );
+            crate::ui::toasts::ok_short(app, format!("PR: already exists (PR#{n})"));
             return Ok(());
         }
     }

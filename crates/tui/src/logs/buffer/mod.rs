@@ -148,6 +148,14 @@ impl ExecLogBuffer {
         self.render_caches.insert(width, cache.into_render_cache());
     }
 
+    pub(crate) fn prewarm_snapshot(&self, exec_id: Uuid) -> LogPrewarmSnapshot {
+        LogPrewarmSnapshot {
+            exec_id,
+            store: self.store.clone(),
+            collapsed: self.collapsed.clone(),
+        }
+    }
+
     pub(crate) fn ensure_init(&mut self) {
         if self.store.is_null() {
             self.store = serde_json::json!({ "entries": [] });
@@ -308,6 +316,32 @@ impl ExecLogBuffer {
             .unwrap_or(cache.lines.len());
         let slice = cache.lines.get(start..end).unwrap_or(&[]);
         Some(crate::util::lines_plain_text(slice))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct LogPrewarmSnapshot {
+    pub(crate) exec_id: Uuid,
+    store: serde_json::Value,
+    collapsed: Vec<bool>,
+}
+
+impl LogPrewarmSnapshot {
+    pub(crate) fn build_cache(
+        &self,
+        width: usize,
+        log_mode: LogMode,
+        render_mode: LogRenderMode,
+        diff_theme: DiffTheme,
+    ) -> PreparedLogCache {
+        build_prepared_log_cache(
+            &self.store,
+            &self.collapsed,
+            width,
+            log_mode,
+            render_mode,
+            diff_theme,
+        )
     }
 }
 

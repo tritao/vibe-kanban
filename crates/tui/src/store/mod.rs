@@ -4,3 +4,4 @@ pub(crate) mod executor_profiles;
 pub(crate) mod logs;
 pub(crate) mod projects;
 pub(crate) mod tasks;
+pub(crate) mod tasks_hierarchy;
